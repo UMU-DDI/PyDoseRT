@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from pydose_rt import ModelConfig
 from pydose_rt.layers import FluenceMapLayer
-from engine.utils.grad_monitor import GradMonitor
+from pydose_rt.engine.utils.grad_monitor import GradMonitor
 
 @pytest.fixture
 def fluence_map_layer(default_config):

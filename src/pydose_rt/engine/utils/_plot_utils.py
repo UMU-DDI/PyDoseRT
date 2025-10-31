@@ -10,7 +10,7 @@ from matplotlib.animation import FFMpegWriter
 
 
 import engine.utils.path_utils as path_utils
-from engine.config import config as PARAMS
+from pydose_rt.engine.config import config as PARAMS
 
 
 # Function to rotate a NumPy array

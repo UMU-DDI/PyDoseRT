@@ -11,16 +11,16 @@ from types import MappingProxyType
 
 from pydose_rt import ModelConfig
 
-# from engine.data import DataGenerator
-from engine.data_augment import DataGenerator
+# from pydose_rt.engine.data import DataGenerator
+from pydose_rt.engine.data_augment import DataGenerator
 import engine.utils.plot_utils as plot_utils
 from pydose_rt.layers.FluenceMapLayer import FluenceMapLayer
 from pydose_rt.layers.FluenceVolumeLayer import FluenceVolumeLayer
 from pydose_rt import DoseEngine
 
-from engine.data_augment import DataGenerator  # Your converted PyTorch DataGenerator
+from pydose_rt.engine.data_augment import DataGenerator  # Your converted PyTorch DataGenerator
 from torch.utils.data import DataLoader  # PyTorch DataLoader
-from engine.simple_dose_model import *
+from pydose_rt.engine.simple_dose_model import *
 
 batch_size = 1
 number_of_leaf_pairs = 60

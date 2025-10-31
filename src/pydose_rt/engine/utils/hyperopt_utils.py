@@ -10,7 +10,7 @@ from termcolor import colored
 import time
 import random
 import engine.utils.path_utils as path_utils
-from engine.config import config
+from pydose_rt.engine.config import config
 import scipy.stats as stat
 
 

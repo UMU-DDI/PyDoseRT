@@ -1,6 +1,6 @@
 from comet_ml import API
 from database.confidential.pwd import Confidential
-from engine.config import config as PARAMS
+from pydose_rt.engine.config import config as PARAMS
 
 
 def log_args_to_comet(args, experiment):

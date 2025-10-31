@@ -23,7 +23,7 @@ from skimage import measure
 import matplotlib.pyplot as plt
 import math
 from scipy.spatial import ConvexHull
-from engine.utils.test_utils import TestSetup
+from pydose_rt.engine.utils.test_utils import TestSetup
 
 
 def get_beam_axes(beam_dir: torch.Tensor):

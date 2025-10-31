@@ -4,10 +4,10 @@ import numpy as np
 import torch
 import pytest
 from torch.utils.data import DataLoader
-from engine.config import config as PARAMS
+from pydose_rt.engine.config import config as PARAMS
 
 # adapt import to your project structure:
-from engine.data_augment import DataGenerator
+from pydose_rt.engine.data_augment import DataGenerator
 
 
 import matplotlib.pyplot as plt

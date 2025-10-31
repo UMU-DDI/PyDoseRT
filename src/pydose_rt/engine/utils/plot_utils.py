@@ -13,14 +13,14 @@ from typing import Union, List, Tuple
 
 
 import engine.utils.path_utils as path_utils
-from engine.config import config as PARAMS
+from pydose_rt.engine.config import config as PARAMS
 
-from engine.utils.utils import (
+from pydose_rt.engine.utils.utils import (
     compute_valid_leaf_mask_minh,
     compute_valid_leaf_mask,
     animate_ct_and_doses,
 )
-from engine.utils.mask_utils import get_body_mask_from_normalized_ct
+from pydose_rt.engine.utils.mask_utils import get_body_mask_from_normalized_ct
 from pydose_rt.DoseEngine import DoseEngine
 
 

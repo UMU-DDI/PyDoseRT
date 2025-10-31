@@ -21,14 +21,14 @@ tf.get_logger().setLevel("ERROR")
 
 # from models.data import DataGenerator
 import engine.utils.test_utils as test_utils
-from engine.config import config as PARAMS
-from engine._data import DataGenerator
+from pydose_rt.engine.config import config as PARAMS
+from pydose_rt.engine._data import DataGenerator
 
 # from models.layers import FluenceMapLayer
-from engine.model import build_unet_without_dose_layer, build_full_model
+from pydose_rt.engine.model import build_unet_without_dose_layer, build_full_model
 from pydose_rt import ModelConfig
-from engine.utils.plot_utils import Plotter
-from engine._loss import (
+from pydose_rt.engine.utils.plot_utils import Plotter
+from pydose_rt.engine._loss import (
     dose_loss,
     auxiliary_loss,
     TrainableLossWeightsNormalized,
