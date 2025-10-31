@@ -17,15 +17,15 @@ import torch.nn.functional as F
 from pydose_rt import ModelConfig
 from pydose_rt import DoseEngine
 from pydose_rt.layers import ValidParametersLayer
-from pydose_rt.engine.utils.plotting import *
+from pydose_rt.utils.plotting import *
 from pydose_rt.utils.kernel import *
-from pydose_rt.engine.utils.grad_monitor import GradMonitor
+from pydose_rt.utils.grad_monitor import GradMonitor
 from torch.utils.data import DataLoader  # PyTorch DataLoader
-from pydose_rt.engine.data_augment import DataGenerator
-from pydose_rt.engine.config import config as PARAMS
+from pydose_rt.utils.data_augment import DataGenerator
+from pydose_rt.utils.config import config as PARAMS
 import numpy as np
 from skimage import measure
-from pydose_rt.engine.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, result_validation
+from pydose_rt.utils.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, result_validation
 import cv2
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

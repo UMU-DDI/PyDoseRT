@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from pydose_rt.engine.data import DataGenerator
+from pydose_rt.utils.data import DataGenerator
 from pydose_rt import ModelConfig
 
 

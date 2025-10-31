@@ -9,8 +9,8 @@ from matplotlib.colors import ListedColormap
 from matplotlib.animation import FFMpegWriter
 
 
-import engine.utils.path_utils as path_utils
-from pydose_rt.engine.config import config as PARAMS
+import pydose_rt.utils.path_utils as path_utils
+from pydose_rt.utils.config import config as PARAMS
 
 
 # Function to rotate a NumPy array

@@ -9,8 +9,8 @@ from hyperopt import fmin, tpe, hp, Trials, STATUS_OK
 from termcolor import colored
 import time
 import random
-import engine.utils.path_utils as path_utils
-from pydose_rt.engine.config import config
+import pydose_rt.utils.path_utils as path_utils
+from pydose_rt.utils.config import config
 import scipy.stats as stat
 
 

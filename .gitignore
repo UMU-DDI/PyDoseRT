@@ -10,12 +10,13 @@ videos/**
 **/__pycache__
 *.idea
 Output/**
+.vscode/
 out/
+dist/
 .env
 models/Output/
 Plangenerator/videos
 Plangenerator/checkpoints
-*.json
 *.npz
 *.mat
 *.zip

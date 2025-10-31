@@ -8,7 +8,7 @@ import json
 import scipy.ndimage
 from torch.utils.data import Dataset, DataLoader
 from scipy.ndimage import gaussian_filter
-from pydose_rt.engine.config import config as PARAMS
+from pydose_rt.utils.config import config as PARAMS
 
 
 # -------------------------

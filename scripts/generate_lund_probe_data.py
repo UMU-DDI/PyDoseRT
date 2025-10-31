@@ -8,7 +8,7 @@ import pandas as pd
 import SimpleITK as sitk
 import scipy
 import itertools
-import engine.utils.path_utils as path_utils
+import pydose_rt.utils.path_utils as path_utils
 from typing import Dict, List, Tuple
 
 ### Make 256x256 and 128x128 versions of the same dataset.

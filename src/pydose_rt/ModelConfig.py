@@ -1,10 +1,13 @@
+import json
+from pathlib import Path
 from pydantic import Field, computed_field, model_validator
 from pydantic_settings import SettingsConfigDict, BaseSettings
 import numpy as np
 import torch
 import math
 from typing import Any, Dict, ClassVar, Optional
-
+_THIS_DIR = Path(__file__).resolve().parent
+_PRESET_DIR_DEFAULT = _THIS_DIR / "presets"   # <--- now relative to this module file
 
 class ModelConfig(BaseSettings):
     preset: Optional[str] = Field(
@@ -94,60 +97,47 @@ class ModelConfig(BaseSettings):
         description="The device used for the calculations",
     )
 
-    # Registry of presets. Add as many as you like.
-    PRESETS: ClassVar[dict[str, dict[str, Any]]] = {
-        "test": {
-            "ct_array_shape": (64, 64, 64),
-            "resolution": (0.3, 0.3, 0.3),
-            "field_size": (40, 40),
-            "number_of_leaf_pairs": 10,
-            "tpr_20_10": 0.72,
-            "number_of_cps": 24,
-        },
-        "lund-probe": {
-            "ct_array_shape": (96, 256, 256),
-            "resolution": (0.416, 0.15625, 0.15625),
-            "mean_photon_energy_MeV": 0.8686360716819763, # Temporary, needs to be calibrated
-            "downsampling_factor": (1, 1, 1),
-            "field_size": (40, 40),
-            "number_of_leaf_pairs": 60,
-            "tpr_20_10": 0.72,
-            "number_of_cps": 240,
-        },
-        "umea": {
-            "ct_array_shape": (320, 128, 128),
-            "resolution": (0.25, 0.5, 0.5),
-            "field_size": (40, 40),
-            "number_of_leaf_pairs": 60,
-            "number_of_cps": 240,
-            "mean_photon_energy_MeV": 0.8686360716819763,
-            "tpr_20_10": 0.72, 
-            "starting_angle": 0.0,
-            "iso_center": (0.0, 0.0, 0.0),
-        },
-    }
+    @staticmethod
+    def _load_preset_json(name: str, base_dir: Path) -> dict[str, Any]:
+        """
+        Read presets/{name}.json and return its dict. Raise a nice error if missing.
+        """
+        path = base_dir / f"{name}.json"
+        if not path.is_file():
+            # Build a helpful error listing available preset files
+            available = sorted(p.stem for p in base_dir.glob("*.json"))
+            valid = ", ".join(available) if available else "(no presets found)"
+            raise ValueError(
+                f"Unknown preset '{name}'. Expected a JSON at '{path}'. "
+                f"Valid presets: {valid}"
+            )
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"Preset file '{path}' must contain a JSON object at the top level.")
+        return data
 
     @model_validator(mode="before")
     @classmethod
     def _apply_preset(cls, data: Any) -> Any:
         """
-        Merge selected preset values into the incoming data before validation.
+        Merge selected preset values from JSON into incoming data before validation.
+
         Precedence (highest → lowest):
             1) Explicit kwargs (passed to ModelConfig(...))
             2) Environment variables (handled by BaseSettings later)
-            3) Preset values (from PRESETS)
+            3) Preset values (from presets/{name}.json)
             4) Field defaults
         """
         if not isinstance(data, dict):
+            # nothing to do if the source isn’t a dict (pydantic internals)
             return data
+
         name = data.get("preset")
         if not name:
             return data
-        try:
-            preset_values = cls.PRESETS[name]
-        except KeyError as e:
-            valid = ", ".join(sorted(cls.PRESETS))
-            raise ValueError(f"Unknown preset '{name}'. Valid presets: {valid}") from e
+
+        preset_values = cls._load_preset_json(name, _PRESET_DIR_DEFAULT)
 
         # Merge so explicit kwargs in `data` override preset entries.
         # (Env vars will still override later because BaseSettings.)

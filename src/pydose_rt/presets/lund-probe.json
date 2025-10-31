@@ -1,0 +1,10 @@
+{
+    "ct_array_shape": [96, 256, 256],
+    "resolution": [0.416, 0.15625, 0.15625],
+    "mean_photon_energy_MeV": 0.8686360716819763, # Temporary, needs to be calibrated
+    "downsampling_factor": [1, 1, 1],
+    "field_size": [40, 40],
+    "number_of_leaf_pairs": 60,
+    "tpr_20_10": 0.72,
+    "number_of_cps": 240,
+}

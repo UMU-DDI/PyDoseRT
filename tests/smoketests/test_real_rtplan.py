@@ -7,7 +7,7 @@ import os
 import torch
 from pydose_rt import ModelConfig
 from pydose_rt import DoseEngine
-from pydose_rt.engine.utils.data_loading import load_rtp_data
+from pydose_rt.utils.data_loading import load_rtp_data
 import SimpleITK as sitk
 
 def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path):

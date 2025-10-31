@@ -9,7 +9,7 @@ Copyright (c) 2023, Vu Hoang Minh. All rights reserved.
 
 import os
 import ntpath
-from pydose_rt.engine.utils.print_utils import print_separator
+from pydose_rt.utils.print_utils import print_separator
 import glob
 import argparse
 

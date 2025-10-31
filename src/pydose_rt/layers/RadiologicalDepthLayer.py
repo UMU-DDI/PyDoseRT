@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 
 from pydose_rt.ModelConfig import ModelConfig
-from pydose_rt.engine.utils.plotting import convert_HU_to_density
+from pydose_rt.utils.plotting import convert_HU_to_density
 
 
 class RadiologicalDepthLayer(nn.Module):

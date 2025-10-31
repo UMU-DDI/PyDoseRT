@@ -10,7 +10,7 @@ import scipy.ndimage
 from scipy import ndimage
 from torch.utils.data import Dataset, DataLoader
 from scipy.ndimage import gaussian_filter
-from pydose_rt.engine.config import config as PARAMS
+from pydose_rt.utils.config import config as PARAMS
 
 # Optional: import torchio only if user passes transform; safe to import here
 import torchio as tio

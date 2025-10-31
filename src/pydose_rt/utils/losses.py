@@ -2,9 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pydose_rt.engine.config import config as PARAMS
+from pydose_rt.utils.config import config as PARAMS
 from pydose_rt import ModelConfig
-from pydose_rt.engine.utils.test_utils import TestSetup
+from pydose_rt.utils.test_utils import TestSetup
 
 
 # ======================================================================================

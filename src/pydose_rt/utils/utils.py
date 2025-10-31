@@ -3,7 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import scipy.ndimage as ndi
-from pydose_rt.engine.utils.test_utils import TestSetup
+from pydose_rt.utils.test_utils import TestSetup
 
 # from pydose_rt import ModelConfig
 
