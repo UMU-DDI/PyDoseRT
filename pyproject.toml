@@ -1,0 +1,60 @@
+
+[project]
+name = "pydose_rt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name="Gerd Heilemann", email="gerd.heilemann@meduniwien.ac.at" },
+    { name="Josef Lundman", email="josef@lundman.eu" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch>=1.13.1",
+    "numpy>=1.21.0",
+    "scipy>=1.13.1",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "matplotlib>=3.5.0",
+    "imageio>=2.37.0",
+    "pydicom>=2.3.0",
+    "rt-utils>=1.2.7",
+    "SimpleITK>=2.4.1"
+]
+
+[tool.uv]
+python-verion = "3.11"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pydose_rt*"]
+exclude = ["pydose_rt.egg-info*"]
+
+[build-system]
+requires = ["setuptools>=68.2.2"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+
+[tool.ruff]
+line-length = 120
