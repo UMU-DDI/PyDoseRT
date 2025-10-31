@@ -41,3 +41,4 @@ jobs:
       with:
         tag_name: ${{ github.event.release.tag_name }}
         files: dist/pydose_rt*
+        token: ${{ secrets.RELEASE_TOKEN }}
