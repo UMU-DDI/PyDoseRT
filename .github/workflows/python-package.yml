@@ -41,3 +41,4 @@ jobs:
       if: github.ref_type == 'tag'
       with:
         files: dist/pydose_rt*
+        token: ${{ secrets.RELEASE_TOKEN }}
