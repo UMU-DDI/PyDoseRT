@@ -3,7 +3,10 @@ name: Publish Python distributions to Github release
 on:
   release:
     types: [created]
-
+    
+permissions:
+  contents: write
+  
 env:
   UV_SYSTEM_PYTHON: 1
 
