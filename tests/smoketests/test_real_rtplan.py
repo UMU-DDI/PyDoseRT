@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import os
 import torch
-from DoseEngines import ModelConfig
-from DoseEngines import DoseEngine
+from pydose_rt import ModelConfig
+from pydose_rt import DoseEngine
 from engine.utils.data_loading import load_rtp_data
 import SimpleITK as sitk
 

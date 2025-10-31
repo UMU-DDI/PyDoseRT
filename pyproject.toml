@@ -26,6 +26,12 @@ dependencies = [
     "rt-utils>=1.2.7",
     "SimpleITK>=2.4.1"
 ]
+[project.optional-dependencies]
+test=[
+    "pytest>=6.0.0",
+    "pytest-benchmark",
+    "pytest-cov>=6.2.1"
+]
 
 [tool.uv]
 python-version = "3.11"

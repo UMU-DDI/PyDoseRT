@@ -10,8 +10,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-from DoseEngines import ModelConfig
-from DoseEngines import DoseEngine
+from pydose_rt import ModelConfig
+from pydose_rt import DoseEngine
 import time
 
 MIN = -200

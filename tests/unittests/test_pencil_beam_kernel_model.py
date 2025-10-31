@@ -7,7 +7,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 
 import pytest
 
-from DoseEngines.utils.kernel import coeffs as COEFFICIENTS, PencilBeamModel
+from pydose_rt.utils.kernel import coeffs as COEFFICIENTS, PencilBeamModel
 
 @pytest.fixture(scope="function")
 def pencil_beam_kernel_model(default_config) -> PencilBeamModel:

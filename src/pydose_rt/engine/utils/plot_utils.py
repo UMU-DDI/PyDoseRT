@@ -21,7 +21,7 @@ from engine.utils.utils import (
     animate_ct_and_doses,
 )
 from engine.utils.mask_utils import get_body_mask_from_normalized_ct
-from DoseEngines.DoseEngine import DoseEngine
+from pydose_rt.DoseEngine import DoseEngine
 
 
 # Function to rotate a NumPy array

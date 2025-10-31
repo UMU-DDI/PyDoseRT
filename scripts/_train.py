@@ -26,7 +26,7 @@ from engine._data import DataGenerator
 
 # from models.layers import FluenceMapLayer
 from engine.model import build_unet_without_dose_layer, build_full_model
-from DoseEngines import ModelConfig
+from pydose_rt import ModelConfig
 from engine.utils.plot_utils import Plotter
 from engine._loss import (
     dose_loss,

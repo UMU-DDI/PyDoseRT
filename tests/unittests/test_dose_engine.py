@@ -1,6 +1,6 @@
 import sys
 sys.path.append("../../")
 import numpy as np
-from DoseEngines import DoseEngine
-from DoseEngines import ModelConfig
+from pydose_rt import DoseEngine
+from pydose_rt import ModelConfig
 import torch

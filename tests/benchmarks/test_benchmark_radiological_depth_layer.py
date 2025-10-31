@@ -3,8 +3,8 @@ sys.path.append("../../")
 import pytest
 import numpy as np
 import torch
-from DoseEngines import ModelConfig
-from DoseEngines.layers import RadiologicalDepthLayer
+from pydose_rt import ModelConfig
+from pydose_rt.layers import RadiologicalDepthLayer
 
 
 @pytest.fixture

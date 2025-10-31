@@ -9,14 +9,14 @@ import torch
 
 from types import MappingProxyType
 
-from DoseEngines import ModelConfig
+from pydose_rt import ModelConfig
 
 # from engine.data import DataGenerator
 from engine.data_augment import DataGenerator
 import engine.utils.plot_utils as plot_utils
-from DoseEngines.layers.FluenceMapLayer import FluenceMapLayer
-from DoseEngines.layers.FluenceVolumeLayer import FluenceVolumeLayer
-from DoseEngines import DoseEngine
+from pydose_rt.layers.FluenceMapLayer import FluenceMapLayer
+from pydose_rt.layers.FluenceVolumeLayer import FluenceVolumeLayer
+from pydose_rt import DoseEngine
 
 from engine.data_augment import DataGenerator  # Your converted PyTorch DataGenerator
 from torch.utils.data import DataLoader  # PyTorch DataLoader

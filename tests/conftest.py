@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
-from DoseEngines import ModelConfig
+from pydose_rt import ModelConfig
 import os
 from dotenv import load_dotenv
 load_dotenv()  # will look for .env in project root

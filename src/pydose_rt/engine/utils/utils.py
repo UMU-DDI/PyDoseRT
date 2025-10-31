@@ -5,7 +5,7 @@ import matplotlib.animation as animation
 import scipy.ndimage as ndi
 from engine.utils.test_utils import TestSetup
 
-# from DoseEngines import ModelConfig
+# from pydose_rt import ModelConfig
 
 
 def downsample_ct_by_2(ct_array):

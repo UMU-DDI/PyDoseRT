@@ -3,8 +3,8 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from DoseEngines import ModelConfig
-from DoseEngines.layers import FluenceVolumeLayer
+from pydose_rt import ModelConfig
+from pydose_rt.layers import FluenceVolumeLayer
 
 
 # ---- Fixtures -----

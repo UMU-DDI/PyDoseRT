@@ -4,8 +4,8 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import numpy as np
 import torch
-from DoseEngines import ModelConfig
-from DoseEngines.layers import FluenceMapLayer
+from pydose_rt import ModelConfig
+from pydose_rt.layers import FluenceMapLayer
 from engine.utils.grad_monitor import GradMonitor
 
 @pytest.fixture
