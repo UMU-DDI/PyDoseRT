@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [tool.uv]
-python-verion = "3.11"
+python-version = "3.11"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
