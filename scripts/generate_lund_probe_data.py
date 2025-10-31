@@ -8,7 +8,6 @@ import pandas as pd
 import SimpleITK as sitk
 import scipy
 import itertools
-import pydose_rt.utils.path_utils as path_utils
 from typing import Dict, List, Tuple
 
 ### Make 256x256 and 128x128 versions of the same dataset.
@@ -312,7 +311,9 @@ def process_patient(folder_path, prefix):
 
 if __name__ == "__main__":
     save_path = "database/lund-probe-processed/"
-    path_utils.make_dir(save_path)
+    if not os.path.exists(save_path):
+        print("\nmaking dir", dir)
+        os.makedirs(save_path)
 
     base_path = "database/lund-probe/"
     base_part = base_path + "basePart"
