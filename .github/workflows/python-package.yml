@@ -15,10 +15,6 @@ jobs:
     name: Publish Python distributions to Github release
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
     - uses: actions/checkout@v4
 
