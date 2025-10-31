@@ -60,7 +60,7 @@ class TestPencilBeamModel:
         actual = pencil_beam_kernel_model.get_param(parameter, tpr)
 
         # Assert
-        assert actual == expected_value
+        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
 
     @pytest.mark.parametrize(
         "depth, tpr, expected_value",
@@ -85,7 +85,7 @@ class TestPencilBeamModel:
         # Act
         actual = pencil_beam_kernel_model.depth_A(d=depth)
         # Assert
-        assert actual == expected_value
+        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
 
     @pytest.mark.parametrize(
         "depth, tpr, expected_value",
@@ -112,7 +112,7 @@ class TestPencilBeamModel:
         actual = pencil_beam_kernel_model.depth_B(d=depth)
 
         # Assert
-        assert actual == expected_value
+        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
 
     @pytest.mark.parametrize(
         "depth, tpr, expected_value",
@@ -145,7 +145,7 @@ class TestPencilBeamModel:
         actual = pencil_beam_kernel_model.depth_a(depth)
 
         # Assert
-        assert actual == expected_value
+        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
 
     @pytest.mark.parametrize(
         "depth, tpr, expected_value",
@@ -172,7 +172,7 @@ class TestPencilBeamModel:
         actual = pencil_beam_kernel_model.depth_b(depth)
 
         # Assert
-        assert actual == expected_value
+        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
 
     @pytest.mark.xfail
     def test_get_pencil_beam_returns_a_numpy_array_of_length_four(self, pencil_beam_kernel_model):
