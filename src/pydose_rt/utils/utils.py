@@ -3,10 +3,44 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import scipy.ndimage as ndi
-from pydose_rt.utils.test_utils import TestSetup
 
 # from pydose_rt import ModelConfig
 
+
+def convert_HU_to_density(hu_tensor, lut_table):
+    """
+    Interpolates HU values to densities using a lookup table (LUT).
+
+    Args:
+        hu_tensor (torch.Tensor): Tensor of HU values [B, M, N] (can be any shape).
+    Returns:
+        torch.Tensor: Tensor of the same shape as hu_tensor.
+    """
+    if not torch.is_tensor(lut_table):
+        lut_table = torch.tensor(
+            lut_table, dtype=torch.float32, device=hu_tensor.device
+        )
+
+    x = lut_table[:, 0].contiguous()  # HU values
+    y = lut_table[:, 1].contiguous()  # Densities
+
+    # Clamp hu_tensor to bounds of LUT to avoid out-of-range interpolation
+    hu_tensor_clamped = hu_tensor.clamp(min=x.min().item(), max=x.max().item())
+
+    # Perform 1D linear interpolation
+    indices = torch.searchsorted(x, hu_tensor_clamped, right=True)
+    indices = indices.clamp(min=1, max=len(x) - 1)
+
+    x0 = x[indices - 1]
+    x1 = x[indices]
+    y0 = y[indices - 1]
+    y1 = y[indices]
+
+    # Linear interpolation formula
+    slope = (y1 - y0) / (x1 - x0)
+    interpolated = y0 + slope * (hu_tensor_clamped - x0)
+
+    return interpolated
 
 def downsample_ct_by_2(ct_array):
     """
@@ -438,78 +472,37 @@ def compute_leaf_bounds(
     return bounds
 
 
-def prepare_real(is_hu=False):
-    T = TestSetup()
-    T.create_dummy(number_of_leaf_pairs=128, number_of_cps=15)
+def convert_HU_to_density(hu_tensor, lut_table):
+    """
+    Interpolates HU values to densities using a lookup table (LUT).
 
-    ct = T.ct  # numpy array
+    Args:
+        hu_tensor (torch.Tensor): Tensor of HU values [B, M, N] (can be any shape).
+    Returns:
+        torch.Tensor: Tensor of the same shape as hu_tensor.
+    """
+    if not torch.is_tensor(lut_table):
+        lut_table = torch.tensor(
+            lut_table, dtype=torch.float32, device=hu_tensor.device
+        )
 
-    # ct_np = ct[:, :, 100:200]
-    ct_np = ct
-    ptv = T.data["masks"][0, ..., 0]
-    # ptv = ct[:, :, 100:200]
+    x = lut_table[:, 0].contiguous()  # HU values
+    y = lut_table[:, 1].contiguous()  # Densities
 
-    ct_np = downsample_ct_by_2(ct_np)  # Assumes it returns a numpy array
-    ptv = downsample_ct_by_2(ptv)  # Assumes it returns a numpy array
+    # Clamp hu_tensor to bounds of LUT to avoid out-of-range interpolation
+    hu_tensor_clamped = hu_tensor.clamp(min=x.min().item(), max=x.max().item())
 
-    # ct_np = np.transpose(ct_np, (2, 1, 0))  # shape: (Z, Y, X)
-    X, Y, Z = ct_np.shape
+    # Perform 1D linear interpolation
+    indices = torch.searchsorted(x, hu_tensor_clamped, right=True)
+    indices = indices.clamp(min=1, max=len(x) - 1)
 
-    # ct_np = np.expand_dims(ct_np, axis=0)  # (1, Z, Y, X)
-    ct_torch = torch.tensor(ct_np, dtype=torch.float32)
+    x0 = x[indices - 1]
+    x1 = x[indices]
+    y0 = y[indices - 1]
+    y1 = y[indices]
 
-    if is_hu:
-        # Convert normalized CT back to HU
-        HU_MIN = -1000
-        HU_MAX = 3000
-        ct_torch = ((ct_torch + 1) / 2) * (HU_MAX - HU_MIN) + HU_MIN
-    # else:
-    #     ct_torch = (ct_torch - ct_torch.min()) / (
-    #         ct_torch.max() - ct_torch.min() + 1e-8
-    #     )
+    # Linear interpolation formula
+    slope = (y1 - y0) / (x1 - x0)
+    interpolated = y0 + slope * (hu_tensor_clamped - x0)
 
-    return ct_torch, ptv, X, Y, Z
-
-
-# if __name__ == "__main__":
-#     batch_size = 1
-#     number_of_cps = 90
-#     num_leafs = 60
-#     # voxel_sizes = (1.0, 1.0, 1.0)  # mm
-#     voxel_sizes = tuple([0.75 / 60 * num_leafs for i in range(3)])  # mm
-#     # voxel_sizes = tuple([0.1 for i in range(3)])  # mm
-#     dx, dy, dz = voxel_sizes
-#     device = "cuda" if torch.cuda.is_available() else "cpu"
-
-#     ct_data, ptv, W, D, H = prepare_real(is_hu=False)
-
-#     config = ModelConfig(
-#         ct_array_shape=(W, D, H),
-#         number_of_leaf_pairs=num_leafs,
-#         number_of_cps=number_of_cps,
-#         field_size=(num_leafs * 1.0, num_leafs * 1.0),
-#         resolution=voxel_sizes,
-#         tpr_20_10=0.72,
-#     )
-
-#     ct_data = ct_data.unsqueeze(0).expand(batch_size, -1, -1, -1)
-
-#     # iso_x = (W // 2) * dx
-#     # iso_y = (D // 2) * dy
-#     # iso_z = (H // 2) * dz
-
-#     # beam_angles = np.tile(
-#     #     np.linspace(0, 360, number_of_cps, endpoint=False), (batch_size, 1)
-#     # )
-
-#     # masks = compute_leaf_bounds(ptv, beam_angles, num_leafs, leaf_width=1)
-#     # print(masks[0, :, :])
-
-#     # print()
-#     # print()
-#     # print()
-
-#     # masks = compute_leaf_bounds(ptv, beam_angles, num_leafs, leaf_width=3)
-#     # print(masks[0, :, :])
-
-#     # a = 0
+    return interpolated

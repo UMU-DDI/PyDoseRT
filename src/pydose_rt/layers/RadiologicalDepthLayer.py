@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 
 from pydose_rt.ModelConfig import ModelConfig
-from pydose_rt.utils.plotting import convert_HU_to_density
+from pydose_rt.utils.utils import convert_HU_to_density
 
 
 class RadiologicalDepthLayer(nn.Module):
@@ -145,6 +145,22 @@ class RadiologicalDepthLayer(nn.Module):
                 gathered, self.config.lookup_table
             )  # shape: [B, M, N]
 
+            # Calculate the actual step size for each angle
+            step_sizes = []
+            for i, angle in enumerate(self.config.gantry_angles):
+                # Calculate the actual distance between consecutive sample points
+                if i > 0:
+                    diff = self.stacked_indices[i, 1:, :2] - self.stacked_indices[i, :-1, :2]
+                    avg_step = torch.sqrt((diff ** 2).sum(dim=-1)).mean()
+                else:
+                    # For 0 degrees, it should be close to resolution[1]
+                    avg_step = self.config.resolution[1]
+                
+                # Account for the actual physical distance
+                physical_step = avg_step * self.config.resolution[1]  # Assuming isotropic xy resolution
+                step_sizes.append(physical_step)
+            
+            step_sizes = torch.tensor(step_sizes, device=self.device).view(1, G, 1)
             # Integrate density along each line (cumulative sum) and scale by resolution (TODO doesnt the resolution change with gantry angle )
             cumsum = (
                 torch.cumsum(density, dim=-1) * self.config.resolution[1]

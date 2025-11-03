@@ -226,7 +226,7 @@ class PencilBeamModel:
         )  # Calculate the radial distance
 
         d_100mm = 100.0 * np.ones((1, 1, 1, 1)) # 100mm depth
-        self.norm = np.sum(self.get_pencil_beam(tpr=self.tpr, d=d_100mm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
+        self.norm = np.sum(self.get_pencil_beam(d=d_100mm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
 
     def get_param(self, parameter: str, TPR: float) -> float:
         """
@@ -331,7 +331,7 @@ class PencilBeamModel:
             * np.exp((self.params["b3"] * d) + (self.params["b4"] * d**2))
         )
 
-    def get_pencil_beam(self, tpr: float, d: np.ndarray, r: np.ndarray, normalize: bool = True,
+    def get_pencil_beam(self, d: np.ndarray, r: np.ndarray, normalize: bool = True,
                         add_source_blur: bool = False, src_fwhm_mm_iso: float = 2.5,
                         SAD_cm: float = 100.0, SSD_cm: float = 100.0) -> np.ndarray:
         """
@@ -355,7 +355,6 @@ class PencilBeamModel:
 
         # Convert radiological depth to cm from mm
         d /= 10
-        r2 /= 10
 
         BG, N, _, _ = d.shape
         _, _, Hk, Wk = r2.shape
@@ -447,7 +446,7 @@ class PencilBeamModel:
             kernel_size (list or tuple): Size of the kernel [H, W].
 
         Returns:
-            np.ndarray: Radial distance grid.
+            np.ndarray: Radial distance grid in cm.
         """
         
         h = np.arange(0, kernel_size[0], dtype=np.int32)
@@ -461,7 +460,7 @@ class PencilBeamModel:
 
         rs = np.sqrt(dh**2 + dw**2)
         
-        return rs
+        return rs / 10.0 # Convert to cm
 
     def get_nested_kernels(self, radiological_depth: np.ndarray) -> np.ndarray:
         """
@@ -474,7 +473,6 @@ class PencilBeamModel:
             np.ndarray: Nested kernels for all depths.
         """
         return self.get_pencil_beam(
-            tpr=self.tpr,
             d=radiological_depth[..., 0, np.newaxis, np.newaxis],
             r=self.rs[np.newaxis, np.newaxis, :, :],
         )

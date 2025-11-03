@@ -2,14 +2,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pydose_rt.utils.config import config as PARAMS
-from pydose_rt import ModelConfig
-from pydose_rt.utils.test_utils import TestSetup
 
+def scale_loss(loss, weight):
+    return loss * weight
 
-# ======================================================================================
-# Trainable weights for loss terms
-# ======================================================================================
 class TrainableLossWeightsNormalized(nn.Module):
     def __init__(self, num_losses=2, sum_value=100):
         """
@@ -423,120 +419,3 @@ def create_sphere_mask(center, radius, shape=(64, 64, 64)):
     mask = (dist <= radius).astype(np.float32)
     mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0)  # [1, 1, D, H, W]
     return mask
-
-
-if __name__ == "__main__":
-    # # Example test with PyTorch channel-first convention
-    # masks = {
-    #     "PTV": torch.ones(size=(1, 1, 1, 1, 1)),
-    #     # "ROI1": torch.ones(size=(1, 1, 1, 1, 1)),
-    #     # "ROI2": torch.ones(size=(1, 1, 1, 1, 1)),
-    #     # "ROI3": torch.ones(size=(1, 1, 1, 1, 1)),
-    #     # "ROI4": torch.ones(size=(1, 1, 1, 1, 1)),
-    #     # "ROI5": torch.ones(size=(1, 1, 1, 1, 1)),
-    #     # "ROI6": torch.ones(size=(1, 1, 1, 1, 1)),
-    # }
-
-    # y_pred = torch.ones(size=(1, 1, 1, 1, 1)) * 0.6
-    # lower_bound_gy = torch.ones(size=(1, 1, 1, 1, 1)) * 0.74
-    # higher_bound_gy = torch.ones(size=(1, 1, 1, 1, 1)) * 0.83
-    # region_weights = torch.ones(size=(1, 1, 1, 1, 1)) * 1000
-    # y_true = None
-
-    # loss_value = DVHLoss(PARAMS.constraints, k=1000, masks=masks).get(y_true, y_pred)
-
-    # print(
-    #     "Computed DVH Loss:",
-    #     loss_value[0].detach().cpu().numpy(),
-    #     loss_value[1].detach().cpu().numpy(),
-    # )
-
-    # cl = constraint_loss(
-    #     y_pred, lower_bound_gy, higher_bound_gy, region_weights=region_weights
-    # )
-
-    # print(
-    #     "constraint_loss:", cl[0].detach().cpu().numpy(), cl[1].detach().cpu().numpy()
-    # )
-
-    T = TestSetup()
-    T.create_real()
-    data = T.data
-    config = T.config
-    mus = T.mus
-    leafs = T.leafs
-    constraints = PARAMS.constraints
-
-    dose = data["dose"]
-    x = data["x"].transpose(0, 4, 1, 2, 3)
-    masks = data["masks"].transpose(0, 4, 1, 2, 3)
-    region_weights = x[:, -1]
-    dose_bypass = data["dose_bypass"]
-
-    dose = torch.tensor(dose)
-    x = torch.tensor(x, dtype=dose.dtype, device=dose.device)
-    masks = torch.tensor(masks, dtype=dose.dtype, device=dose.device)
-    region_weights = torch.tensor(region_weights, dtype=dose.dtype, device=dose.device)
-    dose_bypass = torch.tensor(dose_bypass, dtype=dose.dtype, device=dose.device)
-    mus = torch.tensor(mus, dtype=dose.dtype, device=dose.device)
-    leafs = torch.tensor(leafs, dtype=dose.dtype, device=dose.device)
-
-    a = 2
-
-    (
-        loss_lower_bound_gy,
-        loss_higher_bound_gy,
-        loss_lower_bound_target,
-        loss_higher_bound_target,
-        l2_loss_oars_and_background,
-    ) = dose_loss(
-        x,
-        dose,
-        constraints,
-        masks,
-        region_weights,
-        None,
-    )
-    aux_loss = auxiliary_loss(dose, dose_bypass)
-
-    print(f"loss_lower_bound_gy: {loss_lower_bound_gy}")
-    print(f"loss_higher_bound_gy: {loss_higher_bound_gy}")
-    print(f"loss_lower_bound_target: {loss_lower_bound_target}")
-    print(f"loss_higher_bound_target: {loss_higher_bound_target}")
-    print(f"l2_loss_oars_and_background: {l2_loss_oars_and_background}")
-    print(f"aux_loss: {aux_loss}")
-
-    mu_rate_loss, mu_complexity_loss = mus_loss(mus, config)
-    leaf_opening_loss, leaf_rate_loss = leafs_loss(leafs, config)
-    print(f"mu_rate_loss: {mu_rate_loss}")
-    print(f"mu_complexity_loss: {mu_complexity_loss}")
-    print(f"leaf_opening_loss: {leaf_opening_loss}")
-    print(f"leaf_rate_loss: {leaf_rate_loss}")
-
-
-"""
-PyTorch:
-    loss_lower_bound_gy: 2.146205588360317e-06
-    loss_higher_bound_gy: 2.0532525013550185e-05
-    loss_lower_bound_target: 0.0082307830452919
-    loss_higher_bound_target: 0.004896602127701044
-    l2_loss_oars_and_background: 0.05023684725165367
-    aux_loss: 0.00012230045103933662
-    mu_rate_loss: 1.0163290653508739e-07
-    mu_complexity_loss: 0.0028868757653981447
-    leaf_opening_loss: 0.0
-    leaf_rate_loss: 0.30721014738082886
-
-
-Tensorflow:
-    loss_lower_bound_gy: 2.1462053609866416e-06
-    loss_higher_bound_gy: 2.0532526832539588e-05
-    loss_lower_bound_target: 0.0082307830452919
-    loss_higher_bound_target: 0.004896602127701044
-    l2_loss_oars_and_background: 0.05023684725165367
-    aux_loss: 0.00012230045103933662
-    mu_rate_loss: 1.0163288521880531e-07
-    mu_complexity_loss: 0.002886875532567501
-    leaf_opening_loss: 0.0
-    leaf_rate_loss: 0.3072100281715393
-"""

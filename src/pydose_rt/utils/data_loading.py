@@ -88,6 +88,7 @@ def fetch_plan_data(ds: pydicom.dataset, scaling: float) -> str:
 
     for beam in ds.BeamSequence:
         beam_data = []
+        jaw_data = []
         for index, cps in enumerate(beam.ControlPointSequence):
             if "BeamLimitingDevicePositionSequence" in cps:
                 for sequence in cps.BeamLimitingDevicePositionSequence:
@@ -102,10 +103,16 @@ def fetch_plan_data(ds: pydicom.dataset, scaling: float) -> str:
                                 "angle": cps.GantryAngle,
                                 "ssd": cps.SourceToSurfaceDistance,
                                 "mu": mu_value,
-                                "higher": sequence.LeafJawPositions[:int(len(sequence.LeafJawPositions) / 2)],
                                 "lower": sequence.LeafJawPositions[int(len(sequence.LeafJawPositions) / 2):],
+                                "higher": sequence.LeafJawPositions[:int(len(sequence.LeafJawPositions) / 2)],
                             }
                         beam_data.append(seq_data)
+                    elif sequence.RTBeamLimitingDeviceType == "ASYMX":
+                        jaw = {
+                            "lower": sequence.LeafJawPositions[0],
+                            "higher": sequence.LeafJawPositions[1],
+                        }
+                        jaw_data.append(jaw)
         if (len(beam_data) > 0):
             data[str(beam.BeamNumber)] = beam_data
     
@@ -132,11 +139,12 @@ def fetch_plan_data(ds: pydicom.dataset, scaling: float) -> str:
         else:
             beam_higher = np.array([beam["higher"] for beam in beams])
             beam_lower = np.array([beam["lower"] for beam in beams])
+
         center = np.array((beam_higher + beam_lower) / 2, dtype=np.float32)
-        width = np.array(beam_lower - center, dtype=np.float32)
+        width = np.array((beam_lower - beam_higher), dtype=np.float32)
         center += (scaling / 2)
         center /= scaling
-        width /= (scaling / 2)
+        width /= scaling
         
         leafs = np.stack([center, width], axis=0)
         leafs = np.expand_dims(leafs, axis=0)

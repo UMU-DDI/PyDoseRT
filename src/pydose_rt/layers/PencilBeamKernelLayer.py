@@ -74,24 +74,4 @@ class PencilBeamKernelLayer(nn.Module):
             kernels = self.pbm.get_nested_kernels(radiological_depth_numpy)
             kernels = np.transpose(kernels, (2, 3, 0, 1))
 
-            """ # Print and visualize kernel for D=64 and BG=30 if in bounds
-            print("Kernels shape:", kernels.shape)
-            kH, kW, BG, D = kernels.shape
-            if BG > 30 and D > 64:
-                kernel_to_show = kernels[:, :, 30, 64]
-                print(f"Kernel shape for BG=30, D=64: {kernel_to_show.shape}")
-                print(f"Sum of kernel (BG=30, D=64): {kernel_to_show.sum()}")
-                try:
-                    import matplotlib.pyplot as plt
-                    plt.figure(figsize=(6, 5))
-                    plt.imshow(kernel_to_show, cmap='jet', origin='lower')
-                    plt.title('Pencil Beam Kernel (BG=30, D=64)')
-                    plt.colorbar()
-                    plt.tight_layout()
-                    plt.show()
-                except ImportError:
-                    print("matplotlib not available for visualization.")
-            else:
-                print(f"Cannot show kernel: BG={BG}, D={D} (need BG>30, D>64)") """
-
         return kernels

@@ -43,15 +43,13 @@ leafs_1, mus_1 = mlc_inputs[0]
 results = []
 config_1 = ModelConfig(preset="umea",
                     ct_array_shape=ct_shape, 
-                    resolution=ct_spacing, 
-                    field_size=(400, 400), 
+                    resolution=ct_spacing,
                     downsampling_factor=(1, 2, 2), 
-                    number_of_cps=178, 
-                    tpr_20_10=0.74,
+                    number_of_cps=178,
                     starting_angle=180.0,
                     clockwise=True,
                     )
-dose_layer_1 = DoseEngine(config_1, 99, permute_ct=False, leafs_centered=True)
+dose_layer_1 = DoseEngine(config_1, 15, permute_ct=False, leafs_centered=True)
 jaws_1 = np.zeros(config_1.shape_jaws)
 jaws_1[:, 0, :] = 0.5
 jaws_1[:, 1, :] = 1.0
@@ -60,6 +58,8 @@ dose_1 = dose_layer_1(torch.tensor(np.array(leafs_1), dtype=torch.float32, devic
 dose_pred = dose_1
 # dose_pred = dose_pred * np.max(dose_volume) / np.max(dose_pred)
 dose_pred = dose_pred * (np.quantile(dose_volume, 0.999) / np.quantile(dose_pred, 0.999))
+print(f"{np.mean(dose_pred[0][sitk.GetArrayFromImage(masks['PTVT_42.7']) > 0])}")
+print(f"{np.mean(dose_volume[sitk.GetArrayFromImage(masks['PTVT_42.7']) > 0])}")
 ext_mask = sitk.GetArrayFromImage(masks["External"]) > 0
 diff = ext_mask * np.abs(dose_volume - dose_pred)**2
 results.append(np.mean(diff))

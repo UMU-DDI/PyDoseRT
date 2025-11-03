@@ -2,79 +2,35 @@ from comet_ml import Experiment
 import sys
 sys.path.append('../')
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import gridspec
-from matplotlib import colormaps
 import os
 import torch
 import time
 import math
-
-from matplotlib import cm
-from matplotlib.colors import ListedColormap
 import torch
-import torch.nn.functional as F
 from pydose_rt import ModelConfig
 from pydose_rt import DoseEngine
 from pydose_rt.layers import ValidParametersLayer
 from pydose_rt.utils.plotting import *
 from pydose_rt.utils.kernel import *
 from pydose_rt.utils.grad_monitor import GradMonitor
-from torch.utils.data import DataLoader  # PyTorch DataLoader
-from pydose_rt.utils.data_augment import DataGenerator
 from pydose_rt.utils.config import config as PARAMS
 import numpy as np
-from skimage import measure
-from pydose_rt.utils.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, result_validation
-import cv2
+from pydose_rt.utils.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, result_validation, scale_loss
+from pydose_rt.utils.data_preparation import load_prepocessed_patient, prune_patients, get_initial_weights
+from pydose_rt.utils.plotting import print_results, make_animation
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def get_initial_weights():
-    min_int_range = -3
-    max_int_range = 2
-    weights = {
-        "loss_lower_bound_gy": 1.0, # 10**np.random.randint(min_int_range, max_int_range),
-        "loss_higher_bound_gy": 1.0, #10**np.random.randint(min_int_range, max_int_range),
-        "loss_lower_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
-        "loss_higher_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
-        "l2_loss_oars_and_background": 10**np.random.randint(-3, 1),
-        "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "leaf_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "leaf_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "jaw_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-    }
-    
-    return weights
-
 def get_example_data(data_path="/media/bolo/Datasets/converted_lund/"):
-    gen = DataGenerator(data_path, 
-                        "training", 
-                        None, 
-                        None, 
-                        shuffle=False, 
-                        batch_size=1, 
-                        downsampling_factor=(1,1,1), 
-                        constraints=PARAMS.constraints_lund_probe,
-                        )
-    
-    val_loader = DataLoader(
-        gen,
-        batch_size=gen.batch_size,  # Use same batch size or 1 for validation
-        shuffle=gen.shuffle,
-        num_workers=0,
-        pin_memory=True,
-    )
-
-    for i, batch_data in enumerate(val_loader):
-        x, y_dose, masks, region_weights, constraints_batch = batch_data
-        break
+    patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
+    x, y_dose, masks, region_weights, constraints_batch = load_prepocessed_patient(patient_list[0], PARAMS.constraints_lund_probe)
+    x = x.expand(1, -1, -1, -1, -1)
+    y_dose = y_dose.expand(1, -1, -1, -1)
+    masks = masks.expand(1, -1, -1, -1, -1)
 
     ct_volume = (1000.0 * x[:, 0, ...]).to(device)  # scale to HU
 
-    config = ModelConfig(preset="lund-probe", number_of_cps=240, downsampling_factor=(1,4,4))
+    config = ModelConfig(preset="lund-probe", number_of_cps=240, downsampling_factor=(1,4,4), starting_angle=180.0)
     valid_parameters_layer = ValidParametersLayer(config, leafs_centered=True)
 
     mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(device) > 0
@@ -120,354 +76,6 @@ def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
         )
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
-def overlay_mask_outline(mask_slice, color="red", linewidth=1):
-    for contour in measure.find_contours(mask_slice, 0.5):
-        plt.plot(contour[:, 1], contour[:, 0], color=color, linewidth=linewidth)
-
-def scale_loss(loss, weight):
-    return loss * weight
-
-def print_results(
-    raw_losses,
-    y_dose,
-    pred_mlc,
-    pred_mus,
-    pred_jaws,
-    pred_mlc_grads,
-    pred_jaws_grads,
-    pred_mus_grads,
-    best_results,
-    dose_pred,
-    true_ct,
-    masks,
-    mae_loss,
-    plot_ct=True
-):
-    def _hide_ticks(ax):
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.tick_params(bottom=False, left=False)
-
-    def _imshow_fullwidth(ax, img, *, cmap='gray', vmin=None, vmax=None, alpha=1.0):
-        """
-        Show any array so it fills the axes horizontally and uses a fixed panel height.
-        Keeping data coordinates unchanged ensures overlays (contours) stay aligned.
-        """
-        ax.imshow(
-            img,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            interpolation='none',
-            aspect='auto',   # <-- critical: fills the axes regardless of array shape
-            alpha=alpha
-        )
-        _hide_ticks(ax)
-
-    # Scales for gradients
-    scale_mlc  = float(np.max(np.abs(pred_mlc_grads)))  if np.any(pred_mlc_grads)  else 1.0
-    scale_jaws = float(np.max(np.abs(pred_jaws_grads))) if np.any(pred_jaws_grads) else 1.0
-    scale_mus  = float(np.max(np.abs(pred_mus_grads)))  if np.any(pred_mus_grads)  else 1.0
-
-    # Visual parameters
-    dose_max = 50.0
-    alpha = 0.30  # overlay transparency for gradients
-
-    # Figure + GridSpec: one column, all rows share the same height
-    # Adjust nrows if you add/remove panels. Here: 5 (machine) + 4 (dose) + 1 (DVH) = 10
-    nrows = 10
-    fig = plt.figure(figsize=(12, 12))
-    gs = gridspec.GridSpec(nrows, 
-                           1, 
-                           figure=fig, 
-                           hspace=0.45,
-                           height_ratios=[1,1,1,1,1,1,1,1,1,4.0])
-    
-    if plot_ct:
-        dose_alpha = 0.8
-    else:
-        dose_alpha = 1.0
-
-    fig.suptitle(
-        f"MAE - {str(mae_loss)} Gy\n"
-        f"Test #{len(best_results)}: {[str(np.round(v, 4)) for v in raw_losses]}",
-        y=0.995
-    )
-
-    # --- 1) Jaws (centers)
-    ax = fig.add_subplot(gs[0])
-    ax.set_title('Jaws (centers)')
-    _imshow_fullwidth(
-        ax,
-        pred_jaws.cpu().detach().numpy()[0, 0:1, :],
-        cmap='gray', vmin=0.0, vmax=1.0
-    )
-    _imshow_fullwidth(
-        ax,
-        pred_jaws_grads[0, 0:1, :],
-        cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
-    )
-
-    # --- 2) Jaws (widths)
-    ax = fig.add_subplot(gs[1])
-    ax.set_title('Jaws (widths)')
-    _imshow_fullwidth(
-        ax,
-        pred_jaws.cpu().detach().numpy()[0, 1:2, :],
-        cmap='gray', vmin=0.0, vmax=1.0
-    )
-    _imshow_fullwidth(
-        ax,
-        pred_jaws_grads[0, 1:2, :],
-        cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
-    )
-
-    # --- 3) MLCs (centers)
-    ax = fig.add_subplot(gs[2])
-    ax.set_title('MLCs (centers)')
-    _imshow_fullwidth(
-        ax,
-        np.transpose(pred_mlc.cpu().detach().numpy()[0, 0, :, :]),
-        cmap='gray', vmin=0.0, vmax=1.0
-    )
-    _imshow_fullwidth(
-        ax,
-        np.transpose(pred_mlc_grads[0, 0, :, :]),
-        cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
-    )
-
-    # --- 4) MLCs (widths)
-    ax = fig.add_subplot(gs[3])
-    ax.set_title('MLCs (widths)')
-    _imshow_fullwidth(
-        ax,
-        np.transpose(pred_mlc.cpu().detach().numpy()[0, 1, :, :]),
-        cmap='gray', vmin=0.0, vmax=1.0
-    )
-    _imshow_fullwidth(
-        ax,
-        np.transpose(pred_mlc_grads[0, 1, :, :]),
-        cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
-    )
-
-    # --- 5) MUs
-    ax = fig.add_subplot(gs[4])
-    ax.set_title('MUs')
-    _imshow_fullwidth(
-        ax,
-        pred_mus.cpu().detach().numpy(),
-        cmap='gray', vmin=0.0, vmax=None
-    )
-    _imshow_fullwidth(
-        ax,
-        pred_mus_grads,
-        cmap='coolwarm', vmin=-scale_mus, vmax=scale_mus, alpha=alpha
-    )
-
-    axial_z = 49
-    axial_xstart = 64
-    axial_xend = 192
-    coronal_x = 128
-    coronal_ystart = 32
-    coronal_yend = 224
-    coronal_zstart = 24
-    coronal_zend = 72
-    # If overlay_mask_outline expects already-sliced 2D arrays (as in your original code),
-    # use these two helpers instead:
-    def _dose_slice_axial(arr, z=44, x_start=0, x_end=256):
-        return arr[0, x_start:x_end, :, z]
-
-    def _dose_slice_coronal(arr, x=128, y_start=0, y_end=256, z_start=0, z_end=256):
-        # coronal view, transpose to show (z, y) or (y, z) consistently
-        # matching your original "np.transpose(...[0, 64:198, 128, :])"
-        return np.transpose(arr[0, x, y_start:y_end, z_start:z_end])
-
-    # --- 6) Dose distribution (pred, axial)
-    ax = fig.add_subplot(gs[5])
-    _imshow_fullwidth(ax, _dose_slice_axial(dose_pred.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max)
-    _hide_ticks(ax)
-    ax.set_title('Dose distribution (pred, axial)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(roi.cpu().numpy()[0, axial_xstart:axial_xend, :, axial_z], color=PARAMS.roi_colors[key])
-
-    # --- 7) Dose distribution (pred, sagittal)
-    ax = fig.add_subplot(gs[6])
-    _imshow_fullwidth(ax, _dose_slice_coronal(dose_pred.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max)
-    _hide_ticks(ax)
-    ax.set_title('Dose distribution (pred, coronal)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_x, coronal_ystart:coronal_yend, coronal_zstart:coronal_zend]), color=PARAMS.roi_colors[key])
-
-    # --- 8) Dose distribution (gt, axial)
-    ax = fig.add_subplot(gs[7])
-    if plot_ct:
-        _imshow_fullwidth(ax, _dose_slice_axial(true_ct.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='gray')
-    _imshow_fullwidth(ax, _dose_slice_axial(y_dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
-    _hide_ticks(ax)
-    ax.set_title('Dose distribution (gt, axial)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(roi.cpu().numpy()[0, axial_xstart:axial_xend, :, axial_z], color=PARAMS.roi_colors[key])
-
-    # --- 9) Dose distribution (gt, sagittal)
-    ax = fig.add_subplot(gs[8])
-    if plot_ct:
-        _imshow_fullwidth(ax, _dose_slice_coronal(y_dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='gray')
-    _imshow_fullwidth(ax, _dose_slice_coronal(y_dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
-    _hide_ticks(ax)
-    ax.set_title('Dose distribution (gt, coronal)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_x, coronal_ystart:coronal_yend, coronal_zstart:coronal_zend]), color=PARAMS.roi_colors[key])
-
-    # --- 10) DVH (line plot; same panel height as others for uniformity)
-    ax = fig.add_subplot(gs[9])
-    for idx, (key, value) in enumerate(PARAMS.structure_names.items()):
-        roi_name = value
-        roi = masks[idx]
-        dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
-        if dose_values.size == 0:
-            continue
-        bins = np.linspace(0, dose_max, 1000)
-        hist, bin_edges = np.histogram(dose_values, bins=bins, density=False)
-        cumulative_hist = np.cumsum(hist[::-1])[::-1]
-        cumulative_hist_normalized = np.divide(cumulative_hist, cumulative_hist.max())
-        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="solid", label=roi_name, color=PARAMS.roi_colors[key])
-
-    for idx, (key, value) in enumerate(PARAMS.structure_names.items()):
-        roi_name = value
-        roi = masks[idx]
-        dose_values = y_dose[roi > 0.0].cpu().detach().numpy()
-        if dose_values.size == 0:
-            continue
-        bins = np.linspace(0, dose_max, 1000)
-        hist, bin_edges = np.histogram(dose_values, bins=bins, density=False)
-        cumulative_hist = np.cumsum(hist[::-1])[::-1]
-        cumulative_hist_normalized = np.divide(cumulative_hist, cumulative_hist.max())
-        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="dashed", color=PARAMS.roi_colors[key])
-
-    ax.set_xlabel("Dose (Gy)")
-    ax.set_ylabel("Volume Fraction")
-    ax.set_title("Dose Volume Histogram (DVH)")
-    ax.grid(True)
-    ax.legend(loc="lower left")
-
-    # Layout & save
-    fig.tight_layout(rect=[0, 0, 1, 0.97])  # keep space for the suptitle
-    save_path = "out/figure.png"
-    plt.savefig(save_path, dpi=150)
-    experiment.log_figure(save_path, overwrite=True)
-    plt.close()
-
-def make_animation(dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, ct_volume, masks):
-    """
-    Modified version with tight square layout - two squares stacked vertically
-    """
-    slice_idx = 49
-    dose_max = 50.0
-    
-
-    # Get the base colormap (jet)
-    alpha_max = 0.6
-    jet = plt.get_cmap('jet', 256)
-    colors = jet(np.linspace(0, 1, 256))
-    values = np.linspace(0, 100, 256)
-    alpha = np.clip(np.interp(values, [0, dose_max], [0.0, alpha_max]), 0, alpha_max)
-    colors[:, -1] = alpha
-    jet_alpha = ListedColormap(colors)
-    dose_layer.eval()
-    num_cps = config.number_of_cps
-    ct_data = ct_volume.cpu().detach().numpy()[0, :, :, slice_idx]
-    dose_data = np.zeros((256, 256))
-    
-    # Create output directory if needed
-    os.makedirs("out", exist_ok=True)
-    
-    # List to store frames
-    frames = []
-    
-    # Loop through all control points
-    for cp_idx in range(num_cps):
-        # Create figure with tight layout
-        # Using equal aspect ratio for both subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), 
-                                        gridspec_kw={'hspace': 0.02})  # Minimal vertical spacing
-        
-        # Get dose and map for current control point
-        with torch.no_grad():
-            pred_dose, pred_map = dose_layer(
-                pred_mlc, 
-                pred_mus, 
-                jaw_positions=pred_jaws, 
-                ct_image=ct_volume, 
-                single_cp=cp_idx
-            )
-        pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))
-        
-        # Plot beam's eye view (fluence map) - make it square
-        fluence_data = np.transpose(pred_map.cpu().detach().numpy()[0, :, :, 0])
-        w, h = fluence_data.shape
-        im1 = ax1.imshow(fluence_data, interpolation='none', cmap='gray', vmin=0.0, vmax=1.0, aspect=h/w)
-        ax1.set_title(f'Control Point {cp_idx + 1}/{num_cps}', pad=5)
-        ax1.axis('off')
-        
-        # Plot CT slice with dose overlay - already square
-        dose_data += pred_dose.cpu().detach().numpy()[0, :, :, slice_idx]
-        
-        ax2.imshow(ct_data, cmap='gray', vmin=-1000, vmax=1000, aspect='equal')
-        ax2.imshow(dose_data, cmap=jet_alpha, vmin=0.0, vmax=dose_max, aspect='equal')
-        
-        # Add ROI contours
-        for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
-            roi = masks[idx]
-            overlay_mask_outline(roi.cpu().numpy()[0, :, :, slice_idx], 
-                               color=PARAMS.roi_colors[key])
-        
-        ax2.axis('off')
-        ax2.set_aspect('equal', 'box')  # Force square aspect
-        
-        # Make the layout very tight
-        plt.subplots_adjust(left=0.01, right=0.99, top=0.98, bottom=0.01, hspace=0.02)
-        
-        # Save frame as image with tight bounding box
-        frame_path = f"out/frame_{cp_idx:03d}.png"
-        plt.savefig(frame_path, dpi=100, bbox_inches='tight', pad_inches=0.02)
-        
-        # Read the saved image and add to frames list
-        frame = cv2.imread(frame_path)
-        if frame is not None:
-            frames.append(frame)
-        
-        plt.close(fig)
-        if os.path.exists(frame_path):
-            os.remove(frame_path)
-
-    
-    if frames:
-        # Get dimensions from first frame
-        height, width, layers = frames[0].shape
-        
-        # Set up video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        fps = 10  # Frames per second (adjust as needed)
-        video_path = "out/animation.mp4"
-        
-        video_writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
-        
-        # Write all frames to video
-        for frame in frames:
-            video_writer.write(frame)
-        
-        # Release the video writer
-        video_writer.release()
-    else:
-        print("Animation failed")
-
-    experiment.log_video(video_path, overwrite=True)
-    return
 
 def compute_claude_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _masks):
     """
@@ -599,7 +207,7 @@ loss_plot = 1.0
 best_results = []
 n_tests = 200
 patience_thr = 500
-max_iter = 2000
+max_iter = 100
 
 oar_dose = 10.0
 
@@ -609,7 +217,7 @@ for test_i in range(n_tests):
         api_key="ro9UfCMFS2O73enclmXbXfJJj", project_name="autoplan_static"
     )
     try:
-        x, y_dose, masks, region_weights, constraints_batch, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()
+        x, y_dose, masks, region_weights, constraints_batch, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()#"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_processed/test/small/")
 
         patience = 0
         epoch = 0
@@ -717,8 +325,8 @@ for test_i in range(n_tests):
             epoch=epoch,
         )
 
-        print_results(raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss)
-        make_animation(dose_layer, pred_mlc, pred_mus, pred_jaws, ct_volume, masks_torch)
+        print_results(experiment, raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss)
+        make_animation(experiment, dose_layer, config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks_torch)
     except Exception as e:
         print("Exception during test:", e)
         
