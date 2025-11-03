@@ -9,5 +9,5 @@
 module --ignore-cache load PyTorch/2.1.2-foss-2023a-CUDA-12.1.1
 source /cephyr/users/attilas/Alvis/data/newenv/newenv/bin/activate
 
-python3 static_optimize_single_patient.py
+python3 scripts/static_optimize_single_patient.py
 wait
