@@ -217,7 +217,7 @@ for test_i in range(n_tests):
         api_key="ro9UfCMFS2O73enclmXbXfJJj", project_name="autoplan_static"
     )
     try:
-        x, y_dose, masks, region_weights, constraints_batch, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()#"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_processed/test/small/")
+        x, y_dose, masks, region_weights, constraints_batch, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data("/mimer/NOBACKUP/groups/naiss2023-6-64/converted_lund/")
 
         patience = 0
         epoch = 0

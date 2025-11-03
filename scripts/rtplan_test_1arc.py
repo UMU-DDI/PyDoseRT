@@ -40,7 +40,7 @@ ct_shape = ct_volume.shape
 #             for starting_angle_2 in [0.0, 180.0]: #np.linspace(178.0, 182.0, 5, endpoint=True):
 ct_slices = np.array(np.expand_dims(ct_volume, 0), dtype=np.float32)
 leafs_1, mus_1 = mlc_inputs[0]
-device = torch.device("cpu")
+device = torch.device("cpu") # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 results = []
 config = ModelConfig(preset="umea",
                     ct_array_shape=ct_shape, 
