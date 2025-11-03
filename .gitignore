@@ -10,6 +10,7 @@ videos/**
 **/__pycache__
 *.idea
 Output/**
+test_data/
 .vscode/
 out/
 dist/
