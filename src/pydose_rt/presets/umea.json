@@ -1,7 +1,7 @@
 {
     "ct_array_shape": [320, 128, 128],
-    "resolution": [0.25, 0.5, 0.5],
-    "field_size": [40, 40],
+    "resolution": [2.5, 5.0, 5.0],
+    "field_size": [400, 400],
     "number_of_leaf_pairs": 60,
     "number_of_cps": 240,
     "mean_photon_energy_MeV": 0.8686360716819763,

@@ -225,8 +225,8 @@ class PencilBeamModel:
             [self.kernel_size_h, self.kernel_size_w]
         )  # Calculate the radial distance
 
-        d_10cm = 10.0 * np.ones((1, 1, 1, 1)) # 10 cm depth
-        self.norm = np.sum(self.get_pencil_beam(tpr=self.tpr, d=d_10cm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
+        d_100mm = 100.0 * np.ones((1, 1, 1, 1)) # 100mm depth
+        self.norm = np.sum(self.get_pencil_beam(tpr=self.tpr, d=d_100mm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
 
     def get_param(self, parameter: str, TPR: float) -> float:
         """
@@ -338,24 +338,29 @@ class PencilBeamModel:
         Generate pencil beam kernel for given depths and radial grid.
 
         Args:
-            d (np.ndarray): Radiological depth [cm], shape (B*G, N, 1).  # TODO: Fix this documentation as it does not correspond with the implementation
-            r (np.ndarray): Radial grid [cm], shape (Hk, Wk).
+            d (np.ndarray): Radiological depth [mm], shape (B*G, N, 1).  # TODO: Fix this documentation as it does not correspond with the implementation
+            r (np.ndarray): Radial grid [mm], shape (Hk, Wk).
             normalize (bool): Normalize to the unit kernel at 10cm radiological depth.
             add_source_blur (bool): Whether to add geometric penumbra (source blur).
             src_fwhm_mm_iso (float): Source FWHM at isocenter [mm].
-            SAD_cm (float): Source-to-axis distance [cm].
-            SSD_cm (float): Source-to-surface distance [cm].
+            SAD_cm (float): Source-to-axis distance [mm].
+            SSD_cm (float): Source-to-surface distance [mm].
 
         Returns:
             np.ndarray: Pencil beam kernel, shape (B*G, N, Hk, Wk).
         """
         # shapes
         d = np.asarray(d, float)
-        BG, N, _, _ = d.shape
         r2 = np.asarray(r, float)                # (Hk, Wk)
+
+        # Convert radiological depth to cm from mm
+        d /= 10
+        r2 /= 10
+
+        BG, N, _, _ = d.shape
         _, _, Hk, Wk = r2.shape
-        r4 = r2
-        mask = (r4 > 0.0)
+        mask = (r2 > 0.0)
+
 
         # depth-dependent pieces (broadcast over BG,N)
         depth_a = self.depth_a(d)              # (BG,N,1,1)
@@ -366,11 +371,11 @@ class PencilBeamModel:
         depth_B = B_over_b * depth_b
 
         # numerator everywhere
-        exact_num = (depth_A * np.exp(-depth_a * r4)) + (depth_B * np.exp(-depth_b * r4))  # (BG,N,Hk,Wk)
+        exact_num = (depth_A * np.exp(-depth_a * r2)) + (depth_B * np.exp(-depth_b * r2))  # (BG,N,Hk,Wk)
 
         # safe divide for r>0
         exact = np.empty_like(exact_num)
-        np.divide(exact_num, r4, out=exact, where=mask)
+        np.divide(exact_num, r2, out=exact, where=mask)
 
         # center pixel: area-average over a disk whose area = one pixel
         dx = float(self.config.resolution[0])

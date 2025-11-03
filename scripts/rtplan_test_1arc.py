@@ -30,11 +30,6 @@ ct_volume = sitk.GetArrayFromImage(ct_image)
 external_mask = sitk.GetArrayFromImage(masks["External"])
 ct_volume = np.where(external_mask, ct_volume, -1000.0)
 
-print(ct_image.GetSize())
-print(dose_volume.shape)
-print(ct_volume.shape)
-print(sitk.GetArrayFromImage(masks["CTV"]).shape)
-
 ct_spacing = [ct_image.GetSpacing()[0], ct_image.GetSpacing()[1], ct_image.GetSpacing()[2]]
 ct_shape = ct_volume.shape
 
@@ -48,10 +43,11 @@ leafs_1, mus_1 = mlc_inputs[0]
 results = []
 config_1 = ModelConfig(preset="umea",
                     ct_array_shape=ct_shape, 
-                    resolution=np.divide(ct_spacing, 10), 
-                    field_size=(40, 40), 
+                    resolution=ct_spacing, 
+                    field_size=(400, 400), 
                     downsampling_factor=(1, 2, 2), 
                     number_of_cps=178, 
+                    tpr_20_10=0.74,
                     starting_angle=180.0,
                     clockwise=True,
                     )
@@ -62,8 +58,8 @@ jaws_1[:, 1, :] = 1.0
 dose_1 = dose_layer_1(torch.tensor(np.array(leafs_1), dtype=torch.float32, device='cuda'), torch.tensor(np.array(mus_1), dtype=torch.float32, device='cuda'), torch.tensor(np.array(jaws_1), dtype=torch.float32, device='cuda'), ct_image=torch.tensor(ct_slices, dtype=torch.float32, device='cuda')).cpu().detach().numpy()
 
 dose_pred = dose_1
-dose_pred = dose_pred * np.max(dose_volume) / np.max(dose_pred)
-# dose_plot = dose_plot * (np.quantile(dose_volume, 0.999) / np.quantile(dose_plot, 0.999))
+# dose_pred = dose_pred * np.max(dose_volume) / np.max(dose_pred)
+dose_pred = dose_pred * (np.quantile(dose_volume, 0.999) / np.quantile(dose_pred, 0.999))
 ext_mask = sitk.GetArrayFromImage(masks["External"]) > 0
 diff = ext_mask * np.abs(dose_volume - dose_pred)**2
 results.append(np.mean(diff))

@@ -5,7 +5,7 @@ from pydantic_settings import SettingsConfigDict, BaseSettings
 import numpy as np
 import torch
 import math
-from typing import Any, Dict, ClassVar, Optional
+from typing import Any, Optional
 _THIS_DIR = Path(__file__).resolve().parent
 _PRESET_DIR_DEFAULT = _THIS_DIR / "presets"   # <--- now relative to this module file
 
@@ -19,11 +19,11 @@ class ModelConfig(BaseSettings):
         description="Shape of the CT array defining the array voxels",
     )
     resolution: tuple[float, float, float] = Field(
-        default=(0.125, 0.3125, 0.3125),
-        description="The resolution in cm of the CT array in the order z,y,x",
+        default=(1.25, 3.125, 3.125),
+        description="The resolution in mm of the CT array in the order z,y,x",
     )
     field_size: tuple[int, int] = Field(
-        default=(40, 40), description="The field size in the plane given in cm (H,W)"
+        default=(400, 400), description="The field size in the plane given in mm (H,W)"
     )
     downsampling_factor: tuple[int, int, int] = Field(
         default=(1, 1, 1),
@@ -35,10 +35,10 @@ class ModelConfig(BaseSettings):
         description="The distance of the isocenter from the center of the CT volume in cm",
     )
     minimum_leaf_overlap: float = Field(
-        default=0.05, description="The minimum opening of the leafs, given in cm."
+        default=0.5, description="The minimum opening of the leafs, given in cm."
     )
     minimum_jaw_overlap: float = Field(
-        default=0.5, description="The minimum opening of the jaws, given in cm."
+        default=5.0, description="The minimum opening of the jaws, given in cm."
     )
     maximum_jaw_speed: float = Field(
         default=2.25, description="The maximum speed of the leafs, given in cm / s."
@@ -65,9 +65,6 @@ class ModelConfig(BaseSettings):
     is_fff: bool = Field(
         default=True,
         description="Boolean to define if the setup is flattening filter free. (Flattening filters not yet implemented)",
-    )
-    mu_scaling: float = Field(
-        default=18.78, description="Beam scaling so that 130MU is 1Gy at the isocenter"
     )
     focal_spot_sigma: float = Field(
         default=0.15,
@@ -177,9 +174,9 @@ class ModelConfig(BaseSettings):
     mean_photon_energy_MeV: float = Field(
         default=10.0, description="Mean photon energy in MeV"
     )
-    SID: float = Field(default=100, description="Source-to-isocenter distance in cm")
+    SID: float = Field(default=1000, description="Source-to-isocenter distance in mm")
     number_of_cps: int = Field(
-        description="The number of beams in the plane given in cm"
+        description="The number of beams for the plan"
     )
     starting_angle: float = Field(
         default=0.0,
@@ -255,66 +252,66 @@ class ModelConfig(BaseSettings):
         if (self.preset == "umea") and (self.number_of_leaf_pairs == 60):
             return np.array(
                 [
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    0.5,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
+                    10,
                 ],
                 dtype=np.float32,
             )
