@@ -40,20 +40,23 @@ ct_shape = ct_volume.shape
 #             for starting_angle_2 in [0.0, 180.0]: #np.linspace(178.0, 182.0, 5, endpoint=True):
 ct_slices = np.array(np.expand_dims(ct_volume, 0), dtype=np.float32)
 leafs_1, mus_1 = mlc_inputs[0]
+device = torch.device("cpu")
 results = []
-config_1 = ModelConfig(preset="umea",
+config = ModelConfig(preset="umea",
                     ct_array_shape=ct_shape, 
                     resolution=ct_spacing,
                     downsampling_factor=(1, 2, 2), 
                     number_of_cps=178,
-                    starting_angle=180.0,
+                    starting_angle=177.0,
                     clockwise=True,
+                    dtype=torch.float32,
+                    device=device
                     )
-dose_layer_1 = DoseEngine(config_1, 15, permute_ct=False, leafs_centered=True)
-jaws_1 = np.zeros(config_1.shape_jaws)
+dose_layer_1 = DoseEngine(config, 99, permute_ct=False, leafs_centered=True)
+jaws_1 = np.zeros(config.shape_jaws)
 jaws_1[:, 0, :] = 0.5
 jaws_1[:, 1, :] = 1.0
-dose_1 = dose_layer_1(torch.tensor(np.array(leafs_1), dtype=torch.float32, device='cuda'), torch.tensor(np.array(mus_1), dtype=torch.float32, device='cuda'), torch.tensor(np.array(jaws_1), dtype=torch.float32, device='cuda'), ct_image=torch.tensor(ct_slices, dtype=torch.float32, device='cuda')).cpu().detach().numpy()
+dose_1 = dose_layer_1(torch.tensor(np.array(leafs_1), dtype=config.dtype, device=device), torch.tensor(np.array(mus_1), dtype=config.dtype, device=device), torch.tensor(np.array(jaws_1), dtype=config.dtype, device=device), ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device)).cpu().detach().numpy()
 
 dose_pred = dose_1
 # dose_pred = dose_pred * np.max(dose_volume) / np.max(dose_pred)

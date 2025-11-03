@@ -85,7 +85,7 @@ class FluenceMapLayer(nn.Module):
 
         # Prepare columns perpendicular to leaf movement for mapping of field (open or blocked by leaf)
         centers = (torch.arange(W, dtype=self.config.dtype) + 0.5) / float(W)  # [W]
-        open_blocked = centers.view(W, 1).repeat(1, N)  # [W, N]
+        open_blocked = centers.view(W, 1).repeat(1, N).to(self.config.dtype)  # [W, N]
         self.register_buffer("open_blocked", open_blocked.unsqueeze(0))  # [1, W, N]
 
         # Precompute depth indices
@@ -93,12 +93,12 @@ class FluenceMapLayer(nn.Module):
         N = config.number_of_leaf_pairs
         centers = (torch.arange(W, dtype=torch.float32) + 0.5) / float(W)  # [H]
         depth_indices = centers.view(W, 1).repeat(1, N)  # [H, N]
-        self.register_buffer("depth_indices", depth_indices.unsqueeze(0))  # [1, H, N]
+        self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.config.dtype))  # [1, H, N]
 
         H = config.field_size_in_pixels[0]
         centers = (torch.arange(H, dtype=self.config.dtype) + 0.5) / float(H)  # [W]
         jaw_indices = centers.view(1, H).repeat(1, 1)
-        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0))  # [1, W, N]
+        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.config.dtype))  # [1, W, N]
 
     def resample_fluence_map(self, values: torch.Tensor) -> torch.Tensor:
         """
