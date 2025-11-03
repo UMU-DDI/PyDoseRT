@@ -246,6 +246,7 @@ def load_rtp_data(folder_path, dose_path=None, plan_path=None, struct_names=["Ex
             iso_center = np.array(get_iso_from_rtplan(plan_path[0]), dtype=np.float64)
         else:
             iso_center = reference_origin + np.array(reference_dose_size) / 2.0 * np.array(reference_spacing)
+        
 
         def resample_to_iso_center(image, iso_center, spacing, size, pixel_value=0, interpolation=sitk.sitkLinear):
             dim = image.GetDimension()
