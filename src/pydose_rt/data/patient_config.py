@@ -48,7 +48,13 @@ class PatientConfig(BaseModel):
     patient_id: Optional[str] = None
     
     @classmethod
-    def from_dicom(cls, ct_folder: str, dose_path: str | None, plan_path: str | None, struct_names: List[str] | None = None, recenter: bool = True) -> 'PatientConfig':
+    def from_dicom(
+        cls, 
+        ct_folder: str, 
+        dose_path: str | None, 
+        plan_path: str | None, 
+        struct_names: List[str] | None = None, 
+        recenter: bool = True) -> 'PatientConfig':
         """
         Create PatientConfig from PatientData.
         

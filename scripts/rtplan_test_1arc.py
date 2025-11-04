@@ -25,13 +25,12 @@ rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 patient = PatientConfig.from_dicom(
+)
+config = DoseConfig.from_dicom(
     ct_folder=ct_folder, 
     dose_path=rtdose_path,
     plan_path=rtplan_path,
-    struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"]
-)
-config = DoseConfig(
-    patient=patient,
+    struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"],
     preset="umea",
     downsampling_factor=(1, 2, 2),
     dtype=torch.float32,

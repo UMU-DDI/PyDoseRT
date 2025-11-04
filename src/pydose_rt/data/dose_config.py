@@ -76,6 +76,41 @@ class DoseConfig(BaseSettings):
     def load_patient(self, ct_folder: str, dose_path: str | None, plan_path: str | None, struct_names: List[str] | None = None, recenter: bool = True) -> dict[str, Any]:
         self.patient = PatientConfig.from_dicom(ct_folder, dose_path, plan_path, struct_names, recenter)
 
+    @classmethod
+    def from_nifti(
+        cls,
+        folder_path,
+        **dose_config_fields
+        ) -> 'PatientConfig':
+        patient = PatientConfig.from_nifti(folder_path)
+
+        return cls(
+            patient=patient,
+            **dose_config_fields
+        )
+    
+    @classmethod
+    def from_dicom(
+        cls,
+        ct_folder: str, 
+        dose_path: str | None, 
+        plan_path: str | None, 
+        struct_names: List[str] | None = None, 
+        recenter: bool = True,
+        **dose_config_fields
+        ) -> 'PatientConfig':
+        patient = PatientConfig.from_dicom(
+            ct_folder=ct_folder, 
+            dose_path=dose_path, 
+            plan_path=plan_path, 
+            struct_names=struct_names, 
+            recenter=recenter)
+
+        return cls(
+            patient=patient,
+            **dose_config_fields
+        )
+    
     model_config = SettingsConfigDict(
         env_prefix="AUTOPLAN_DM_",
         case_sensitive=False,
