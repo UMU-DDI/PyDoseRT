@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
-from pydose_rt import ModelConfig
+from pydose_rt.data import MachineConfig
 import os
 from dotenv import load_dotenv
 load_dotenv()  # will look for .env in project root
@@ -59,7 +59,7 @@ def rtp_data_dir(pytestconfig):
 
 @pytest.fixture
 def default_config():
-    """Fixture for the default ModelConfig"""
-    return ModelConfig(
+    """Fixture for the default MachineConfig"""
+    return MachineConfig(
         preset="test",
     )

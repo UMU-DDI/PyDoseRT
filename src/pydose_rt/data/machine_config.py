@@ -7,9 +7,9 @@ import torch
 import math
 from typing import Any, Optional
 _THIS_DIR = Path(__file__).resolve().parent
-_PRESET_DIR_DEFAULT = _THIS_DIR / "presets"   # <--- now relative to this module file
+_PRESET_DIR_DEFAULT = _THIS_DIR / "machine_presets"   # <--- now relative to this module file
 
-class ModelConfig(BaseSettings):
+class MachineConfig(BaseSettings):
     preset: Optional[str] = Field(
         default=None,
         description="Optional preset name whose values are merged before validation.",
@@ -121,7 +121,7 @@ class ModelConfig(BaseSettings):
         Merge selected preset values from JSON into incoming data before validation.
 
         Precedence (highest → lowest):
-            1) Explicit kwargs (passed to ModelConfig(...))
+            1) Explicit kwargs (passed to MachineConfig(...))
             2) Environment variables (handled by BaseSettings later)
             3) Preset values (from presets/{name}.json)
             4) Field defaults
@@ -186,9 +186,14 @@ class ModelConfig(BaseSettings):
         default=False,
         description="Determines whether the arc moves clockwise or not.",
     )
+    # Private flag to prevent double-validation
+    _shapes_adjusted: bool = False
 
     @model_validator(mode="after")
-    def adjust_shapes(self) -> "ModelConfig":
+    def adjust_shapes(self) -> "MachineConfig":
+        if self._shapes_adjusted:
+            return self
+        
         self.ct_array_shape = (
             self.ct_array_shape[0] // self.downsampling_factor[0],
             self.ct_array_shape[1] // self.downsampling_factor[1],
@@ -201,12 +206,14 @@ class ModelConfig(BaseSettings):
             self.resolution[2] * self.downsampling_factor[2],
         )
 
+        self._shapes_adjusted = True
+
         return self
 
     @computed_field(repr=False)
     @property
     def gantry_angles(self) -> np.ndarray:
-        return (1 if self.clockwise else -1) * np.linspace(
+        return (-1 if self.clockwise else 1) * np.linspace(
             math.radians(self.starting_angle),
             math.radians(self.starting_angle) + math.radians(360),
             self.number_of_cps,

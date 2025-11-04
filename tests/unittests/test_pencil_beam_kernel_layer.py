@@ -3,7 +3,7 @@ sys.path.append("../../")
 import pytest
 import numpy as np
 import torch
-from pydose_rt import ModelConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.layers import PencilBeamKernelLayer
 
 @pytest.fixture
@@ -14,7 +14,7 @@ def pencil_beam_kernel_layer(request, default_config):
         "number_of_cps", default_config.number_of_cps
     )
 
-    config = ModelConfig(
+    config = MachineConfig(
         ct_array_shape=default_config.ct_array_shape,
         resolution=default_config.resolution,
         field_size=default_config.field_size,

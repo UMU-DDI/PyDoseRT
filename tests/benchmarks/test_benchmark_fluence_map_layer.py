@@ -4,7 +4,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import numpy as np
 import torch
-from pydose_rt import ModelConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.layers import FluenceMapLayer
 from pydose_rt.utils.grad_monitor import GradMonitor
 
@@ -16,7 +16,7 @@ def fluence_map_layer(default_config):
 @pytest.fixture
 def fluence_map_layer_beams(request):
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
-    config = ModelConfig(
+    config = MachineConfig(
         preset="test",
         number_of_cps=request.param,
     )

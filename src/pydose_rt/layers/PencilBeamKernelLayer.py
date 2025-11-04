@@ -8,9 +8,9 @@ This module provides the PencilBeamKernelLayer class, which uses a pencil beam m
 dose kernels for each voxel in the CT volume, based on the radiological depth.
 Typical usage example::
 
-    from ..ModelConfig import ModelConfig
+    from ..MachineConfig import MachineConfig
     import torch
-    config = ModelConfig(...)
+    config = MachineConfig(...)
     layer = PencilBeamKernelLayer(config)
     radiological_depth = torch.tensor(...)
     kernels = layer(radiological_depth)
@@ -22,8 +22,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pydose_rt.utils.kernel import PencilBeamModel
-from pydose_rt.ModelConfig import ModelConfig
+from pydose_rt.physics.kernels.pencil_beam_model import PencilBeamModel
+from pydose_rt.data.machine_config import MachineConfig
 
         
 
@@ -36,18 +36,18 @@ class PencilBeamKernelLayer(nn.Module):
     dose calculation in radiotherapy planning.
 
     Attributes:
-        config (ModelConfig): Configuration object.
+        config (MachineConfig): Configuration object.
         kernel_size (int): Size of the dose kernel.
         verbose (bool): Verbosity flag.
         device (torch.device): Device for computation (CPU or CUDA).
         pbm: PencilBeamModel instance for kernel calculation.
     """
-    def __init__(self, config: ModelConfig, kernel_size: int = 25, verbose: bool = False):
+    def __init__(self, config: MachineConfig, kernel_size: int = 25, verbose: bool = False):
         """
         Initializes the PencilBeamKernelLayer and creates the pencil beam model.
 
         Args:
-            config (ModelConfig): Configuration object with CT and beam parameters.
+            config (MachineConfig): Configuration object with CT and beam parameters.
             kernel_size (int, optional): Size of the dose kernel. Defaults to 25.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """

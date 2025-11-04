@@ -10,13 +10,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-from pydose_rt import ModelConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt import DoseEngine
 import time
 
 MIN = -200
 MAX = 200
-config = ModelConfig(
+config = MachineConfig(
     ct_array_shape=(320, 128, 128),
     resolution=(0.125, 0.3125, 0.3125),
     field_size=(40, 40),

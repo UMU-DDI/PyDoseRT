@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import os
 import torch
-from pydose_rt import ModelConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt import DoseEngine
 from pydose_rt.utils.data_loading import load_rtp_data
 import SimpleITK as sitk
@@ -28,7 +28,7 @@ def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path):
     ct_slices = np.array(np.expand_dims(ct_volume, 0), dtype=np.float32)
     leafs_1, mus_1 = mlc_inputs[0]
     leafs_2, mus_2 = mlc_inputs[1]
-    config_1 = ModelConfig(ct_array_shape=ct_shape, 
+    config_1 = MachineConfig(ct_array_shape=ct_shape, 
                         resolution=np.divide(ct_spacing, 10), 
                         downsampling_factor=(2, 2, 2), 
                         field_size=(50, 50), 
@@ -40,7 +40,7 @@ def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path):
     dose_layer_1 = DoseEngine(config_1, 55, permute_ct=False, leafs_centered=True)
     dose_1 = dose_layer_1(torch.tensor(np.array(leafs_1), dtype=torch.float32, device=config_1.device), torch.tensor(np.array(mus_1), dtype=torch.float32, device=config_1.device), ct_image=torch.tensor(ct_slices, dtype=torch.float32, device=config_1.device))
 
-    config_2 = ModelConfig(ct_array_shape=ct_shape, 
+    config_2 = MachineConfig(ct_array_shape=ct_shape, 
                         resolution=np.divide(ct_spacing, 10), 
                         downsampling_factor=(2, 2, 2), 
                         field_size=(50, 50), 

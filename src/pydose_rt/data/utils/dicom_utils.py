@@ -3,7 +3,47 @@ import os
 import numpy as np
 import SimpleITK as sitk
 from rt_utils import RTStructBuilder
+from typing import Any, Optional, List
 
+def resample_based_on_dose(ct_series, structures, dose):
+    
+    reference_dose = dose
+    resample = sitk.ResampleImageFilter()
+    resample.SetReferenceImage(reference_dose)
+    ct_series = resample.Execute(ct_series)
+
+    for k in structures:
+        structures[k] = resample.Execute(ct_series)
+    return ct_series, structures
+
+def resample_based_on_plan(ct_series, structures, dose, recenter, plan_path):
+    reference_dose = dose
+    reference_spacing = reference_dose.GetSpacing()
+    reference_dose_size = reference_dose.GetSize()
+    reference_origin = reference_dose.GetOrigin()
+
+
+    if recenter:
+
+        max_slice_size = np.max(reference_dose_size[0:2])
+        max_slice_size = 2 * (max_slice_size // 2)
+        reference_size = tuple(int(x) for x in [
+                max_slice_size,
+                max_slice_size,
+                2 * (reference_dose_size[2] // 2)
+            ])
+        iso_center = np.array(get_iso_from_rtplan(plan_path), dtype=np.float64)
+        # Resample CT
+        ct_series, _ = resample_to_iso_center(ct_series, iso_center, reference_spacing, reference_size, -1000)
+
+        # Resample all dose volumes
+        dose, _ = resample_to_iso_center(dose, iso_center, reference_spacing, reference_size, 0)
+
+        for k in structures:
+            structures[k], _ = resample_to_iso_center(structures[k], iso_center, reference_spacing, reference_size, 0, sitk.sitkNearestNeighbor)
+    else:
+        iso_center = reference_origin + np.array(reference_dose_size) / 2.0 * np.array(reference_spacing)
+    return ct_series, structures, dose, iso_center
 
 def load_ct_images(folder_path):
     """Loads all CT DICOM files from a specified folder."""
@@ -78,8 +118,9 @@ def get_rtdose_info(rtdose_path):
     shape = (ds.Rows, ds.Columns, len(grid_frame_offset))
     return origin, spacing, shape
 
-def fetch_plan_data(ds: pydicom.dataset, scaling: float) -> str:
+def fetch_plan_data(plan_path: str, scaling: float) -> str:
     """Summarizes the RTPLAN beam information in the dataset."""
+    ds = pydicom.dcmread(plan_path)
     data = dict()
     beam_metersets = dict()
     for ref_seq in ds.FractionGroupSequence[0].ReferencedBeamSequence:
@@ -100,6 +141,7 @@ def fetch_plan_data(ds: pydicom.dataset, scaling: float) -> str:
                             else:
                                 mu_value = beam_meterset * cps.CumulativeMetersetWeight
                         seq_data = {
+                                "clockwise": cps.GantryRotationDirection,
                                 "angle": cps.GantryAngle,
                                 "ssd": cps.SourceToSurfaceDistance,
                                 "mu": mu_value,
@@ -150,36 +192,10 @@ def fetch_plan_data(ds: pydicom.dataset, scaling: float) -> str:
         leafs = np.expand_dims(leafs, axis=0)
 
         mlc_inputs.append((leafs, mus))
-    return mlc_inputs
+    clockwise = beams[0]["clockwise"] != "CC"
+    starting_angle = 0.5 * np.abs(beams[0]["angle"] + beams[1]["angle"])
+    return mlc_inputs, clockwise, starting_angle
 
-def load_dose(dose_path):
-    scaling = float(pydicom.dcmread(dose_path).DoseGridScaling)
-    reader = sitk.ImageFileReader()
-    reader.SetFileName(dose_path)
-    dose = reader.Execute()
-    dose = sitk.Cast(dose, sitk.sitkFloat32)
-    dose = scaling * dose
-    return dose
-
-def resample_to_iso_center(image, iso_center, reference_spacing, reference_size, pixel_value=0):
-    dimension = image.GetDimension()
-
-    # Set direction to identity to avoid flip issues
-    reference_direction = np.eye(dimension).flatten()
-
-    # Calculate the reference image center in physical space
-    reference_center_index = np.array(reference_size) / 2.0
-    reference_origin = iso_center - reference_center_index * np.array(reference_spacing)
-
-    # Build reference image
-    reference_image = sitk.Image(reference_size, image.GetPixelIDValue())
-    reference_image.SetOrigin(reference_origin.tolist())
-    reference_image.SetSpacing(reference_spacing)
-    reference_image.SetDirection(reference_direction.tolist())
-
-    # Perform resampling
-    resampled = sitk.Resample(image, reference_image, sitk.Transform(), sitk.sitkLinear, pixel_value)
-    return resampled, reference_image
 
 def load_rtp_data(folder_path, dose_path=None, plan_path=None, struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"], recenter=True, scaling=500):
     # Load CT
@@ -190,46 +206,15 @@ def load_rtp_data(folder_path, dose_path=None, plan_path=None, struct_names=["Ex
         plan_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTPLAN" in path or "RP" in path)]
     if (dose_path is None):
         dose_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTDOSE" in path or "RD" in path)]
-    struct_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTSTRUCT" in path or "RS" in path)]
-    
-    masks = dict()
-    if (len(struct_path) > 0):
-        rtstruct = RTStructBuilder.create_from(
-        dicom_series_path=folder_path, 
-        rt_struct_path=struct_path[0]
-        )
-
-        masks = dict()
-        for struct_name in struct_names:
-            mask_np = rtstruct.get_roi_mask_by_name(struct_name)
-            mask = sitk.GetImageFromArray(np.transpose(mask_np.astype(np.float32), (2, 0, 1)))
-            mask.SetOrigin(ct_series.GetOrigin())
-            mask.SetDirection(ct_series.GetDirection())
-            mask.SetSpacing(ct_series.GetSpacing())
-            masks[struct_name] = mask
-
-    # Load dose volumes
-    doses = dict()
-    dose_idx = 0
-    for path in dose_path:
-        dose = load_dose(path)
-        dataset = pydicom.dcmread(path)
-        plan_sequence = dataset.ReferencedRTPlanSequence
-
-        if len(plan_sequence) == 0 or not hasattr(plan_sequence[0], "ReferencedFractionGroupSequence"):
-            beam_name = "dose_" + str(dose_idx)
-        else:
-            beam_name = str(plan_sequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence[0].ReferencedBeamNumber)
-
-        doses[beam_name] = dose
-        dose_idx += 1
+    masks = load_structures()
+    dose = load_dose(dose_path)
 
     # If RTPLAN is available, use it to determine isocenter
     if plan_path:
         plan = pydicom.dcmread(plan_path[0])
         mlcs = fetch_plan_data(plan, scaling)
         # Use the first dose as reference
-        reference_dose = list(doses.values())[0]
+        reference_dose = dose
         reference_spacing = reference_dose.GetSpacing()
         reference_dose_size = reference_dose.GetSize()
         reference_origin = reference_dose.GetOrigin()
@@ -247,27 +232,11 @@ def load_rtp_data(folder_path, dose_path=None, plan_path=None, struct_names=["Ex
         else:
             iso_center = reference_origin + np.array(reference_dose_size) / 2.0 * np.array(reference_spacing)
         
-
-        def resample_to_iso_center(image, iso_center, spacing, size, pixel_value=0, interpolation=sitk.sitkLinear):
-            dim = image.GetDimension()
-            direction = np.eye(dim).flatten()
-
-            center_index = np.array(size) / 2.0
-            origin = iso_center - center_index * np.array(spacing)
-
-            ref_img = sitk.Image(size, image.GetPixelIDValue())
-            ref_img.SetSpacing(spacing)
-            ref_img.SetOrigin(origin.tolist())
-            ref_img.SetDirection(direction.tolist())
-
-            return sitk.Resample(image, ref_img, sitk.Transform(), interpolation, pixel_value), ref_img
-
         # Resample CT
         ct_series, reference_image = resample_to_iso_center(ct_series, iso_center, reference_spacing, reference_size, -1000)
 
         # Resample all dose volumes
-        for k in doses:
-            doses[k], _ = resample_to_iso_center(doses[k], iso_center, reference_spacing, reference_size, 0)
+        dose, _ = resample_to_iso_center(dose, iso_center, reference_spacing, reference_size, 0)
 
         for k in masks:
             masks[k], _ = resample_to_iso_center(masks[k], iso_center, reference_spacing, reference_size, 0, sitk.sitkNearestNeighbor)
@@ -275,9 +244,68 @@ def load_rtp_data(folder_path, dose_path=None, plan_path=None, struct_names=["Ex
     else:
         # No plan, just match to first dose
         mlcs = None
-        reference_dose = list(doses.values())[0]
+        reference_dose = dose
         resample = sitk.ResampleImageFilter()
         resample.SetReferenceImage(reference_dose)
         ct_series = resample.Execute(ct_series)
 
-    return ct_series, doses, masks, mlcs
+    return ct_series, dose, masks, mlcs
+
+def load_structures(ct_series, folder_path, struct_names: List[str] | None = None):
+    struct_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTSTRUCT" in path or "RS" in path)]
+    
+    masks = dict()
+    if (len(struct_path) > 0):
+        rtstruct = RTStructBuilder.create_from(
+        dicom_series_path=folder_path, 
+        rt_struct_path=struct_path[0]
+        )
+        if struct_names is None:
+            struct_names = rtstruct.get_roi_names()
+
+        masks = dict()
+        for struct_name in struct_names:
+            mask_np = rtstruct.get_roi_mask_by_name(struct_name)
+            mask = sitk.GetImageFromArray(np.transpose(mask_np.astype(np.float32), (2, 0, 1)))
+            mask.SetOrigin(ct_series.GetOrigin())
+            mask.SetDirection(ct_series.GetDirection())
+            mask.SetSpacing(ct_series.GetSpacing())
+            masks[struct_name] = mask
+    return masks
+
+def load_dose(path):
+    # Load dose volumes
+    doses = dict()
+    dose_idx = 0
+
+    scaling = float(pydicom.dcmread(path).DoseGridScaling)
+    reader = sitk.ImageFileReader()
+    reader.SetFileName(path)
+    dose = reader.Execute()
+    dose = sitk.Cast(dose, sitk.sitkFloat32)
+    dose = scaling * dose
+    
+    dataset = pydicom.dcmread(path)
+    plan_sequence = dataset.ReferencedRTPlanSequence
+
+    if len(plan_sequence) == 0 or not hasattr(plan_sequence[0], "ReferencedFractionGroupSequence"):
+        beam_name = "dose_" + str(dose_idx)
+    else:
+        beam_name = str(plan_sequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence[0].ReferencedBeamNumber)
+
+    return dose
+
+
+def resample_to_iso_center(image, iso_center, spacing, size, pixel_value=0, interpolation=sitk.sitkLinear):
+    dim = image.GetDimension()
+    direction = np.eye(dim).flatten()
+
+    center_index = np.array(size) / 2.0
+    origin = iso_center - center_index * np.array(spacing)
+
+    ref_img = sitk.Image(size, image.GetPixelIDValue())
+    ref_img.SetSpacing(spacing)
+    ref_img.SetOrigin(origin.tolist())
+    ref_img.SetDirection(direction.tolist())
+
+    return sitk.Resample(image, ref_img, sitk.Transform(), interpolation, pixel_value), ref_img

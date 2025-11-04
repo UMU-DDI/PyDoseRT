@@ -3,245 +3,126 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import scipy.ndimage as ndi
+import random
+import copy
+import numpy as np
+from pydose_rt.data import PatientConfig, MachineConfig
+import torch
+import os
+import time
 
-# from pydose_rt import ModelConfig
+def get_model_input(patient: PatientConfig, machine: MachineConfig):
+    structures = patient.structures
+    lower_bound_gys = create_bound_weight_matrix(structures, machine.lower_bound_gys)
+    higher_bound_gys = create_bound_weight_matrix(structures, machine.higher_bound_gys)
+    lower_bound_percents = create_bound_weight_matrix(structures, machine.lower_bound_percents)
+    higher_bound_percents = create_bound_weight_matrix(structures, machine.higher_bound_percents)
+    weights = create_bound_weight_matrix(structures, machine.weights)
+    return np.stack([patient.ct_array / 1000,
+                     lower_bound_gys,
+                     higher_bound_gys,
+                     lower_bound_percents,
+                     higher_bound_percents,
+                     weights])
 
+def create_bound_weight_matrix(structures, bound):
+    first_structure = next(iter(structures.values()))
+    bound_matrix = np.zeros_like(first_structure, dtype=np.float32)
+    for structure_id, array in structures.items():
+        if structure_id in bound:
+            bound_matrix += array * bound[structure_id]
+    return bound_matrix
 
-def convert_HU_to_density(hu_tensor, lut_table):
+def get_initial_weights():
+    min_int_range = -3
+    max_int_range = 2
+    weights = {
+        "loss_lower_bound_gy": 1.0, # 10**np.random.randint(min_int_range, max_int_range),
+        "loss_higher_bound_gy": 1.0, #10**np.random.randint(min_int_range, max_int_range),
+        "loss_lower_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
+        "loss_higher_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
+        "l2_loss_oars_and_background": 10**np.random.randint(-3, 1),
+        "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "leaf_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "leaf_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "jaw_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+    }
+    
+    return weights
+
+def prune_patients(patient_list):
+    pruned_list = []
+    for patient in patient_list:
+        if not os.path.isdir(patient):
+            continue
+
+        if (("CT.npy" in os.listdir(patient)) and ("StructureSet.npy" in os.listdir(patient))):
+            pruned_list.append(patient)
+    return pruned_list
+     
+def randomize_weights(constraints):  #
     """
-    Interpolates HU values to densities using a lookup table (LUT).
+    Creates a new dictionary with the same structure as the input constraints,
+    but with randomized weight values (between 1 and 100).
 
     Args:
-        hu_tensor (torch.Tensor): Tensor of HU values [B, M, N] (can be any shape).
+        constraints (dict): The original constraints dictionary.
+
     Returns:
-        torch.Tensor: Tensor of the same shape as hu_tensor.
+        dict: A new dictionary with randomized weights.
     """
-    if not torch.is_tensor(lut_table):
-        lut_table = torch.tensor(
-            lut_table, dtype=torch.float32, device=hu_tensor.device
-        )
+    new_constraints = copy.deepcopy(constraints)
+    for roi in new_constraints["weight"]:
+        new_constraints["weight"][roi] = random.uniform(0.01, 1.0)
+    return new_constraints
 
-    x = lut_table[:, 0].contiguous()  # HU values
-    y = lut_table[:, 1].contiguous()  # Densities
 
-    # Clamp hu_tensor to bounds of LUT to avoid out-of-range interpolation
-    hu_tensor_clamped = hu_tensor.clamp(min=x.min().item(), max=x.max().item())
-
-    # Perform 1D linear interpolation
-    indices = torch.searchsorted(x, hu_tensor_clamped, right=True)
-    indices = indices.clamp(min=1, max=len(x) - 1)
-
-    x0 = x[indices - 1]
-    x1 = x[indices]
-    y0 = y[indices - 1]
-    y1 = y[indices]
-
-    # Linear interpolation formula
-    slope = (y1 - y0) / (x1 - x0)
-    interpolated = y0 + slope * (hu_tensor_clamped - x0)
-
-    return interpolated
-
-def downsample_ct_by_2(ct_array):
+def normalize_weights(constraints, sum_value=100):  #
     """
-    Downsamples a 3D CT array (NumPy array) by a factor of 2 along all three axes.
+    Normalizes the values in the 'weight' sub-dictionary of the constraints
+    so that their sum is 100.
 
     Args:
-        ct_array: A 3D NumPy array representing the CT volume. The array must
-                  have an even number of elements along each axis
-                  (i.e., ct_array.shape must be (d1, d2, d3) where d1, d2,
-                  and d3 are even).
+        constraints (dict): The constraints dictionary containing the 'weight' key.
 
     Returns:
-        A new 3D NumPy array that is downsampled by a factor of 2.
-        The output array has shape (d1//2, d2//2, d3//2).
+        dict: The modified constraints dictionary with normalized weights.
     """
-    # Check that the input array is 3D
-    if ct_array.ndim != 3:
-        raise ValueError("Input array must be 3-dimensional.")
+    weights = constraints.get("weight")
+    if not weights:
+        return constraints  # Return original if 'weight' key is missing
 
-    # Check that the input array has an even number of elements along each axis.
-    for i, dim_size in enumerate(ct_array.shape):
-        if dim_size % 2 != 0:
-            raise ValueError(
-                f"CT array must have an even number of elements along axis {i} (size was {dim_size})"
-            )
+    total_weight = sum(weights.values())
+    if total_weight == 0:
+        total_weight = 1e-6
 
-    # Use slicing to downsample.  The ::2 syntax selects every other element
-    # along each axis.
-    return ct_array[::2, ::2, ::2]
+    normalized_weights = {}
+    for roi, weight in weights.items():
+        normalized_weights[roi] = (weight / total_weight) * sum_value
 
+    constraints["weight"] = normalized_weights
+    return constraints
 
-def prepare_to_plot(x):
-    try:
-        x = x.cpu().detach()
-    except:
-        pass
-    x_np = x.numpy()
-    x_np = x_np.transpose(0, 3, 2, 1)  # → (B, X, Y, Z)
-    x_np = x_np.squeeze(0)  # now (Z, Y, X)
-    return x_np
-
-
-def plot_ct_and_doses(ct_np, dose_list, slice_idx=None, extent=None):
-    """
-    Plot CT, multiple dose distributions, and overlays in a 3×N grid.
-
-    Args:
-        ct_np:      np.ndarray, shape (Z, Y, X)
-        dose_list:  list of np.ndarray, each shape (Z, Y, X)
-        slice_idx:  int or None → which Z-slice to plot. None→middle slice.
-        extent:     [xmin, xmax, ymin, ymax] passed to imshow.
-    """
-    X, Y, Z = ct_np.shape
-    N = len(dose_list)
-    if slice_idx is None:
-        slice_idx = Z // 2
-
-    ct_slice = ct_np[:, :, slice_idx]
-    ct_slice = np.rot90(ct_slice, k=2)
-
-    # Prepare figure
-    fig, axes = plt.subplots(3, N, figsize=(4 * N, 12))
-    # If N==1, axes will be (3,), so we reshape
-    if N == 1:
-        axes = axes.reshape(3, 1)
-
-    for col in range(N):
-        dose_np = dose_list[col]
-        dose_slice = dose_np[:, :, slice_idx]
-        dose_slice = np.rot90(dose_slice, k=2)
-
-        # Row 1: CT
-        ax0 = axes[0, col]
-        im0 = ax0.imshow(ct_slice, cmap="gray", origin="lower", extent=extent)
-        ax0.set_title("CT")
-        ax0.axis("off")
-
-        # Row 2: Dose
-        ax1 = axes[1, col]
-        im1 = ax1.imshow(dose_slice, cmap="jet", origin="lower", extent=extent)
-        ax1.set_title(f"Dose {col}")
-        ax1.axis("off")
-
-        # Row 3: Overlay
-        ax2 = axes[2, col]
-        ax2.imshow(ct_slice, cmap="gray", origin="lower", extent=extent)
-        ax2.imshow(dose_slice, cmap="jet", alpha=0.5, origin="lower", extent=extent)
-        ax2.set_title(f"Dose {col} over CT")
-        ax2.axis("off")
-
-    plt.tight_layout()
-    plt.show()
-
-
-def animate_ct_and_doses(
-    ct_np,  # np.ndarray, shape (Z, Y, X)
-    dose_list,  # list of np.ndarray, each shape (Z, Y, X)
-    out_path,  # path to save mp4, e.g. "dose_movie.mp4"
-    slice_indices=None,  # list or range of Z indices; None→all
-    extent=None,  # [xmin, xmax, ymin, ymax]
-    fps=5,
-    dpi=100,
-):
-    """
-    Sweep through Z-slices and animate the same 3×N grid as plot_ct_and_doses.
-    Row 0: CT slice
-    Row 1: Dose slice
-    Row 2: Overlay
-    """
-    X, Y, Z = ct_np.shape
-    N = len(dose_list)
-    if slice_indices is None:
-        slice_indices = range(Z)
-
-    # Prepare the figure and axes
-    fig, axes = plt.subplots(3, N, figsize=(4 * N, 12))
-    if N == 1:
-        axes = axes.reshape(3, 1)
-
-    # Initialize each subplot with slice 0
-    ims = []
-    ct_min, ct_max = ct_np.min(), ct_np.max()
-
-    for col in range(N):
-        # Row 0: CT
-        ax0 = axes[0, col]
-        ct0 = np.rot90(ct_np[:, :, slice_indices[0]], k=2)
-        im_ct = ax0.imshow(
-            ct0, cmap="gray", origin="lower", extent=extent, vmin=ct_min, vmax=ct_max
-        )
-        ax0.set_title("CT")
-        ax0.axis("off")
-        ims.append(im_ct)
-
-        # Row 1: Dose
-        ax1 = axes[1, col]
-        dose_min, dose_max = dose_list[col].min(), dose_list[col].max()
-        dose0 = np.rot90(dose_list[col][:, :, slice_indices[0]], k=2)
-
-        im_d = ax1.imshow(
-            dose0,
-            cmap="jet",
-            origin="lower",
-            extent=extent,
-            vmin=dose_min,
-            vmax=dose_max,
-        )
-        ax1.set_title(f"Dose {col}")
-        ax1.axis("off")
-        ims.append(im_d)
-
-        # Row 2: Overlay
-        ax2 = axes[2, col]
-        # First plot CT background
-        ax2.imshow(
-            ct0,
-            cmap="gray",
-            origin="lower",
-            extent=extent,
-            vmin=ct_min,
-            vmax=ct_max,
-        )
-        # Then dose overlay
-        im_ov = ax2.imshow(
-            dose0,
-            cmap="jet",
-            alpha=0.5,
-            origin="lower",
-            extent=extent,
-            vmin=dose_min,
-            vmax=dose_max,
-        )
-        ax2.set_title(f"Dose {col} over CT")
-        ax2.axis("off")
-        ims.append(im_ov)
-
-    plt.tight_layout()
-
-    def update(frame):
-        z = slice_indices[frame]
-        for col in range(N):
-            ct_slice = np.rot90(ct_np[:, :, z], k=2)
-            dose_slice = np.rot90(dose_list[col][:, :, z], k=2)
-
-            # CT image artist at 3*col + 0
-            ims[3 * col + 0].set_array(ct_slice)
-            # Dose-only at 3*col + 1
-            ims[3 * col + 1].set_array(dose_slice)
-            # Overlay at 3*col + 2 (the second artist in ax2)
-            ims[3 * col + 2].set_array(dose_slice)
-
-        return ims
-
-    ani = animation.FuncAnimation(fig, update, frames=len(slice_indices), blit=True)
-    writer = animation.FFMpegWriter(fps=fps)
-    ani.save(out_path, writer=writer, dpi=dpi)
-    plt.close(fig)
-
-
-# Example usage:
-# animate_ct_and_doses(ct_np, [dose0, dose1, dose2], "dose_movie.mp4", extent=[-30,30,-30,30])
+def get_initial_weights():
+    min_int_range = -3
+    max_int_range = 2
+    weights = {
+        "loss_lower_bound_gy": 1.0, # 10**np.random.randint(min_int_range, max_int_range),
+        "loss_higher_bound_gy": 1.0, #10**np.random.randint(min_int_range, max_int_range),
+        "loss_lower_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
+        "loss_higher_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
+        "l2_loss_oars_and_background": 10**np.random.randint(-3, 1),
+        "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "leaf_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "leaf_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "jaw_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+    }
+    
+    return weights
 
 
 def compute_valid_leaf_mask_minh(
@@ -314,18 +195,6 @@ def compute_valid_leaf_mask_minh(
     return all_valid_leaf  # shape: (B, number_of_cps, num_leafs)
 
 
-def _compute_valid_leaf_mask_attila(ptv_mask, config) -> torch.BoolTensor:
-    device = ptv_mask.device
-    B = ptv_mask.shape[0]
-    number_of_cps = config.number_of_cps
-    num_leafs = config.number_of_leaf_pairs
-
-    all_valid_leaf = torch.ones(
-        (B, number_of_cps, num_leafs), dtype=torch.uint8, device=device
-    )
-    # all_valid_leaf[:, :, 20:40] = 1
-    return all_valid_leaf  # shape: (B, number_of_cps, num_leafs)
-
 
 def compute_valid_leaf_mask(
     dose_engine,
@@ -397,112 +266,3 @@ def compute_valid_leaf_mask(
     valid_leaf = ~out_of_range
     return valid_leaf
 
-
-def compute_leaf_bounds(
-    ptv_mask: np.ndarray,
-    beam_angles: np.ndarray,
-    num_leafs: int,
-    leaf_width: float,
-    voxel_sizes: tuple = (1.0, 1.0, 1.0),
-    margin_mm: float = 0.0,
-):
-    """
-    Args:
-        ptv_mask:    (H, W, D) binary PTV volume.
-                     H = rows (z direction), W = columns (x direction), D = depth (y).
-        beam_angles: (B,) array of gantry angles in degrees.
-        num_leafs:   number of leaf rows.
-        leaf_width:  physical height of each leaf (mm).
-        voxel_sizes: tuple(dx, dy, dz) in mm for (x, y, z).
-        margin_mm:   extra margin around PTV (mm).
-    Returns:
-        bounds: np.ndarray of shape (B, num_leafs, 2) with normalized [l,r].
-    """
-    dx, dy, dz = voxel_sizes
-    H, W, D = ptv_mask.shape
-    flat_angles = np.atleast_1d(beam_angles).ravel()
-    B = len(flat_angles)
-    bounds = np.zeros((B, num_leafs, 2), dtype=np.float32)
-
-    # 1) Collapse depth (D) → 2D projection in (H,W)
-    proj = ptv_mask.max(axis=2).astype(np.uint8)  # shape (H, W)
-
-    # 2) Compute physical z‐centers of each leaf (along H axis)
-    #    voxel index h=0..H-1 maps to z = h*dz, with isocenter at H/2*dz
-    iso_z = (H / 2) * dz
-    leaf_centers_z = (np.arange(num_leafs) - (num_leafs / 2 - 0.5)) * leaf_width + iso_z
-
-    for i, angle in enumerate(flat_angles):
-        # 3) Rotate to beam‐eye view so that beam travel (x-axis) is horizontal
-        rot = ndi.rotate(
-            proj, -float(angle), reshape=False, order=0, mode="constant", cval=0
-        )
-        # rot still shape (H, W)
-
-        for leaf_idx, zc in enumerate(leaf_centers_z):
-            # 4) Determine which rows in rot correspond to this leaf's z‐span
-            zmin = zc - leaf_width / 2 - margin_mm
-            zmax = zc + leaf_width / 2 + margin_mm
-            # Convert zmin/zmax back to row indices
-            jmin = int(np.floor(zmin / dz))
-            jmax = int(np.ceil(zmax / dz))
-            jmin = max(jmin, 0)
-            jmax = min(jmax, H - 1)
-
-            # 5) Extract stripe of rows and collapse to 1D along x (W)
-            stripe = rot[jmin : jmax + 1, :]  # shape (~rows_per_leaf, W)
-
-            if stripe.size:
-                occupied = stripe.max(axis=0)  # (W,)
-                xs = np.nonzero(occupied)[0]
-                if xs.size > 0:
-                    l = xs.min() / float(W - 1)
-                    r = xs.max() / float(W - 1)
-                else:
-                    # no PTV under this leaf → close it
-                    l = 0.0
-                    r = 0.0
-            else:
-                l = 0.0
-                r = 0.0
-
-            bounds[i, leaf_idx, 0] = l
-            bounds[i, leaf_idx, 1] = r
-
-    return bounds
-
-
-def convert_HU_to_density(hu_tensor, lut_table):
-    """
-    Interpolates HU values to densities using a lookup table (LUT).
-
-    Args:
-        hu_tensor (torch.Tensor): Tensor of HU values [B, M, N] (can be any shape).
-    Returns:
-        torch.Tensor: Tensor of the same shape as hu_tensor.
-    """
-    if not torch.is_tensor(lut_table):
-        lut_table = torch.tensor(
-            lut_table, dtype=torch.float32, device=hu_tensor.device
-        )
-
-    x = lut_table[:, 0].contiguous()  # HU values
-    y = lut_table[:, 1].contiguous()  # Densities
-
-    # Clamp hu_tensor to bounds of LUT to avoid out-of-range interpolation
-    hu_tensor_clamped = hu_tensor.clamp(min=x.min().item(), max=x.max().item())
-
-    # Perform 1D linear interpolation
-    indices = torch.searchsorted(x, hu_tensor_clamped, right=True)
-    indices = indices.clamp(min=1, max=len(x) - 1)
-
-    x0 = x[indices - 1]
-    x1 = x[indices]
-    y0 = y[indices - 1]
-    y1 = y[indices]
-
-    # Linear interpolation formula
-    slope = (y1 - y0) / (x1 - x0)
-    interpolated = y0 + slope * (hu_tensor_clamped - x0)
-
-    return interpolated

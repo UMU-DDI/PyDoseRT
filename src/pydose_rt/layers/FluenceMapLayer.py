@@ -10,9 +10,9 @@ treatment machine, enabling accurate dose modeling and further processing.
 
 Typical usage example::
 
-    from ..ModelConfig import ModelConfig
+    from ..MachineConfig import MachineConfig
     import torch
-    config = ModelConfig(...)
+    config = MachineConfig(...)
     layer = FluenceMapLayer(config)
     leaf_positions = torch.tensor(...)
     fluence_map = layer(leaf_positions)
@@ -23,9 +23,7 @@ Classes:
 
 import torch
 import torch.nn as nn
-
-from ..ModelConfig import ModelConfig
-
+from pydose_rt.data import MachineConfig
 
 def fractional_box_overlap(d, left, right, voxel_width):
     """
@@ -50,7 +48,7 @@ class FluenceMapLayer(nn.Module):
     and overlap calculations required for accurate dose modeling.
 
     Attributes:
-        config (ModelConfig): Configuration object containing field size, leaf sizes, and number of leafs.
+        config (MachineConfig): Configuration object containing field size, leaf sizes, and number of leafs.
         verbose (bool): Flag to enable verbose logging.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
         epsilon (float): Small value for numerical stability.
@@ -59,7 +57,7 @@ class FluenceMapLayer(nn.Module):
 
     def __init__(
         self,
-        config: ModelConfig,
+        config: MachineConfig,
         verbose: bool = False,
         tau=5e-2,
     ):
@@ -67,7 +65,7 @@ class FluenceMapLayer(nn.Module):
         Initializes the FluenceMapLayer.
 
         Args:
-            config (ModelConfig): Configuration object with field_size_in_pixels, leaf_widths, and number_of_leaf_pairs attributes.
+            config (MachineConfig): Configuration object with field_size_in_pixels, leaf_widths, and number_of_leaf_pairs attributes.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()

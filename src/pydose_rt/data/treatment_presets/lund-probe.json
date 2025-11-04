@@ -1,0 +1,82 @@
+{
+  "prescription_gy": 42.7,
+  "structures": [
+    {
+      "name": "PTV",
+      "color": "black",
+      "constraints": {
+        "lower_bound_gy": 42.7,
+        "higher_bound_gy": 42.7,
+        "lower_bound_target_percent": 95.0,
+        "higher_bound_target_percent": 100.0,
+        "weight": 1000.0
+      }
+    },
+    {
+      "name": "PenileBulb",
+      "color": "red",
+      "constraints": {
+        "lower_bound_gy": 0.0,
+        "higher_bound_gy": 40.4,
+        "lower_bound_target_percent": 0.0,
+        "higher_bound_target_percent": 100.0,
+        "weight": 0.1
+      }
+    },
+    {
+      "name": "FemoralHead_L",
+      "color": "green",
+      "constraints": {
+        "lower_bound_gy": 0.0,
+        "higher_bound_gy": 28.9,
+        "lower_bound_target_percent": 0.0,
+        "higher_bound_target_percent": 100.0,
+        "weight": 0.1
+      }
+    },
+    {
+      "name": "FemoralHead_R",
+      "color": "blue",
+      "constraints": {
+        "lower_bound_gy": 0.0,
+        "higher_bound_gy": 28.9,
+        "lower_bound_target_percent": 0.0,
+        "higher_bound_target_percent": 100.0,
+        "weight": 0.1
+      }
+    },
+    {
+      "name": "Bladder",
+      "color": "purple",
+      "constraints": {
+        "lower_bound_gy": 0.0,
+        "higher_bound_gy": 40.4,
+        "lower_bound_target_percent": 0.0,
+        "higher_bound_target_percent": 75.0,
+        "weight": 0.1
+      }
+    },
+    {
+      "name": "Rectum",
+      "color": "brown",
+      "constraints": {
+        "lower_bound_gy": 0.0,
+        "higher_bound_gy": 40.4,
+        "lower_bound_target_percent": 0.0,
+        "higher_bound_target_percent": 85.0,
+        "weight": 100.0
+      }
+    },
+    {
+      "name": "Background",
+      "color": "orange",
+      "constraints": {
+        "lower_bound_gy": 0.0,
+        "higher_bound_gy": 40.4,
+        "lower_bound_target_percent": 0.0,
+        "higher_bound_target_percent": 96.0,
+        "weight": 1.0
+      }
+    }
+  ]
+}

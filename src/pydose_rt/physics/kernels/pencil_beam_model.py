@@ -10,7 +10,7 @@ based on radiological depth and beam parameters.
 """
 
 import numpy as np
-from ..ModelConfig import ModelConfig
+from pydose_rt.data.machine_config import MachineConfig
 
 coeffs = {
     "A1": [
@@ -191,12 +191,12 @@ class PencilBeamModel:
         params (dict): Precomputed kernel parameters for the given TPR.
         rs (np.ndarray): Radial distance grid for kernel calculation.
     """
-    def __init__(self, config: ModelConfig, kernel_size: int):
+    def __init__(self, config: MachineConfig, kernel_size: int):
         """
         Initialize the PencilBeamModel.
 
         Args:
-            config (ModelConfig): Configuration object with TPR and resolution.
+            config (MachineConfig): Configuration object with TPR and resolution.
             kernel_size (int): Size of the kernel (number of pixels) in the dimension with smaller pixel size.
         """
         self.tpr = config.tpr_20_10

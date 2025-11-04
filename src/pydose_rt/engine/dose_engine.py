@@ -12,14 +12,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .layers.ValidParametersLayer import ValidParametersLayer
-from .layers.FluenceMapLayer import FluenceMapLayer
-from .layers.FluenceVolumeLayer import FluenceVolumeLayer
-from .layers.RadiologicalDepthLayer import RadiologicalDepthLayer
-from .layers.PencilBeamKernelLayer import PencilBeamKernelLayer
-from .layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
-from .layers.CPRotationLayer import CPRotationLayer
-from .ModelConfig import ModelConfig
+from ..layers.ValidParametersLayer import ValidParametersLayer
+from ..layers.FluenceMapLayer import FluenceMapLayer
+from ..layers.FluenceVolumeLayer import FluenceVolumeLayer
+from ..layers.RadiologicalDepthLayer import RadiologicalDepthLayer
+from ..layers.PencilBeamKernelLayer import PencilBeamKernelLayer
+from ..layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
+from ..layers.CPRotationLayer import CPRotationLayer
+from pydose_rt.data.machine_config import MachineConfig
 
 
 class DoseEngine(nn.Module):
@@ -28,7 +28,7 @@ class DoseEngine(nn.Module):
     fluence modeling, kernel generation, convolution, and geometric rotation of dose volumes.
 
     Attributes:
-        config (ModelConfig): Configuration object containing model and beam parameters.
+        config (MachineConfig): Configuration object containing model and beam parameters.
         verbose (bool): If True, enables verbose output for debugging.
         debug (bool): If True, enables debug mode with additional outputs.
         device (torch.device): PyTorch device for computation.
@@ -43,7 +43,7 @@ class DoseEngine(nn.Module):
 
     def __init__(
         self,
-        config: ModelConfig,
+        config: MachineConfig,
         kernel_size: int,
         ct_image: torch.Tensor = None,
         leafs_centered: bool = False,
@@ -57,7 +57,7 @@ class DoseEngine(nn.Module):
 
         Args:
             ct_image (torch.Tensor): CT image tensor of shape [B, D, H, W].
-            config (ModelConfig): Configuration object with model and beam parameters.
+            config (MachineConfig): Configuration object with model and beam parameters.
             kernel_size (int): Size of the pencil beam kernel.
             verbose (bool, optional): Enables verbose output. Defaults to False.
             debug (bool, optional): Enables debug mode. Defaults to False.

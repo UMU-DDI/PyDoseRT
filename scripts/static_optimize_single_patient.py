@@ -7,31 +7,43 @@ import torch
 import time
 import math
 import torch
-from pydose_rt import ModelConfig
+from pydose_rt.data import DoseConfig, PatientConfig, TreatmentConfig
 from pydose_rt import DoseEngine
 from pydose_rt.layers import ValidParametersLayer
 from pydose_rt.utils.plotting import *
-from pydose_rt.utils.kernel import *
+from pydose_rt.physics.kernels.pencil_beam_model import *
 from pydose_rt.utils.grad_monitor import GradMonitor
-from pydose_rt.utils.config import config as PARAMS
 import numpy as np
-from pydose_rt.utils.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, result_validation, scale_loss
-from pydose_rt.utils.data_preparation import load_prepocessed_patient, prune_patients, get_initial_weights
+from pydose_rt.objectives.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, result_validation, scale_loss
+from pydose_rt.utils.utils import create_bound_weight_matrix, prune_patients, get_initial_weights, get_model_input
 from pydose_rt.utils.plotting import print_results, make_animation
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def get_example_data(data_path="/media/bolo/Datasets/converted_lund/"):
     patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
-    x, y_dose, masks, region_weights, constraints_batch = load_prepocessed_patient(patient_list[0], PARAMS.constraints_lund_probe)
+    patient = PatientConfig.from_nifti(
+        folder_path=patient_list[0]
+    )
+    config = DoseConfig(
+        patient=patient,
+        machine_preset="lund-probe", 
+        treatment_preset="lund-probe",
+        downsampling_factor=(1,4,4), 
+    )
+    x = patient.ct_array
+    y_dose = torch.from_numpy(patient.dose)
+    masks = torch.from_numpy(np.stack([v for k,v in patient.structures.items()], 0))
+    region_weights = torch.from_numpy(create_bound_weight_matrix(patient.structures, config.treatment.weights))
+    x = get_model_input(config.patient, config.treatment)
+    x = torch.from_numpy(x)
     x = x.expand(1, -1, -1, -1, -1)
     y_dose = y_dose.expand(1, -1, -1, -1)
     masks = masks.expand(1, -1, -1, -1, -1)
 
     ct_volume = (1000.0 * x[:, 0, ...]).to(device)  # scale to HU
 
-    config = ModelConfig(preset="lund-probe", number_of_cps=240, downsampling_factor=(1,4,4), starting_angle=180.0)
-    valid_parameters_layer = ValidParametersLayer(config, leafs_centered=True)
+    valid_parameters_layer = ValidParametersLayer(config.machine, leafs_centered=True)
 
     mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(device) > 0
     mask_external = masks.sum(1).clone().detach().to(device) > 0
@@ -50,16 +62,16 @@ def get_example_data(data_path="/media/bolo/Datasets/converted_lund/"):
     weights = get_initial_weights()
     latest = {"raw_losses": None, "loss_val": None, "dose_pred": None}
 
-    pred_mlc_init = torch.ones((1, 2, config.number_of_cps, config.number_of_leaf_pairs), dtype=torch.float32, device=device)
+    pred_mlc_init = torch.ones((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs), dtype=torch.float32, device=device)
     pred_mlc_init[:, 0, :, :] = 0.5
     pred_mlc_init[:, 1, :, :] = 0.0
     pred_mlc = pred_mlc_init.clone().detach().requires_grad_(True)
-    pred_jaws_init = torch.zeros((1, 2, config.number_of_cps), dtype=torch.float32, device=device)
+    pred_jaws_init = torch.zeros((1, 2, config.machine.number_of_cps), dtype=torch.float32, device=device)
     pred_jaws_init[:, 0, :] = 0.5
     pred_jaws = pred_jaws_init.clone().detach().requires_grad_(True)
-    pred_mus_init = (100.0 / config.number_of_cps) * torch.ones((1, config.number_of_cps), dtype=torch.float32, device=device)
+    pred_mus_init = (100.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
     pred_mus = pred_mus_init.clone().detach().requires_grad_(True)
-    return x, y_dose, masks, region_weights, constraints_batch, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
+    return x, y_dose, masks, region_weights, config.treatment, ct_volume, config.machine, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
 
 def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
     def lr_lambda(current_step):
@@ -172,7 +184,7 @@ def compute_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _mas
         loss_lower_bound_target,
         loss_higher_bound_target,
         l2_loss_oars_and_background,
-    ) = dose_loss(x, dose_pred, constraints_batch, masks, region_weights, None)
+    ) = dose_loss(x, dose_pred, treatment, masks, region_weights, None)
     mu_rate_loss, mu_complexity_loss = mus_loss(pred_mus, config)
     leaf_reg_loss, leaf_complexity_loss = leafs_loss(leafs, config)
     jaw_opening_loss, jaw_complexity_loss = jaws_loss(pred_jaws, config)
@@ -217,7 +229,7 @@ for test_i in range(n_tests):
         api_key="ro9UfCMFS2O73enclmXbXfJJj", project_name="autoplan_static"
     )
     try:
-        x, y_dose, masks, region_weights, constraints_batch, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data("/mimer/NOBACKUP/groups/naiss2023-6-64/converted_lund/")
+        x, y_dose, masks, region_weights, treatment, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data("/mimer/NOBACKUP/groups/naiss2023-6-64/converted_lund/")
 
         patience = 0
         epoch = 0
@@ -229,7 +241,7 @@ for test_i in range(n_tests):
         
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=20)
 
-        dose_layer = DoseEngine(config, kernel_size, permute_ct=True, leafs_centered=True)
+        dose_layer = DoseEngine(config, kernel_size, permute_ct=False, leafs_centered=True)
         dose_layer.train()
 
         experiment.log_parameters(
@@ -239,7 +251,7 @@ for test_i in range(n_tests):
                 "lr_decay": lr_decay,
                 "weights": weights,
                 "physical_size": config.physical_size_ct,
-                "roi_weights": constraints_batch["weight"]
+                "roi_weights": treatment.weights
             }, nested_support=True
         )
 
@@ -317,7 +329,7 @@ for test_i in range(n_tests):
         pred_mlc_valid, pred_mus_valid, pred_jaws_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
         )
-        results = result_validation(config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid, x, dose_pred, constraints_batch, masks, region_weights)
+        results = result_validation(config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid, x, dose_pred, treatment, masks, region_weights)
         experiment.log_metrics(
             {
                 "results": results,
@@ -325,8 +337,8 @@ for test_i in range(n_tests):
             epoch=epoch,
         )
 
-        print_results(experiment, raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss)
-        make_animation(experiment, dose_layer, config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks_torch)
+        print_results(experiment, treatment, raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss)
+        make_animation(experiment, treatment, dose_layer, config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks_torch)
     except Exception as e:
         print("Exception during test:", e)
         

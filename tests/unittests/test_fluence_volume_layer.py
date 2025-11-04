@@ -3,7 +3,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydose_rt import ModelConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.layers import FluenceVolumeLayer
 
 
@@ -15,9 +15,9 @@ def fluence_volume_layer(default_config):
 
 
 @pytest.fixture
-def fluence_volume_layer_with_configurable_beams(request) -> tuple[FluenceVolumeLayer, ModelConfig]:
+def fluence_volume_layer_with_configurable_beams(request) -> tuple[FluenceVolumeLayer, MachineConfig]:
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
-    config = ModelConfig(
+    config = MachineConfig(
         preset="test",
         number_of_cps=request.param,
     )

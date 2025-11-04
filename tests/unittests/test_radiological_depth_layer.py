@@ -3,7 +3,7 @@ sys.path.append("../../")
 import pytest
 import numpy as np
 import torch
-from pydose_rt import ModelConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.layers import RadiologicalDepthLayer
 
 
@@ -34,7 +34,7 @@ def test_radiological_depth_output_shape(radiological_depth_layer, default_confi
 @pytest.fixture
 def radiological_depth_layer_beams(request):
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
-    config = ModelConfig(
+    config = MachineConfig(
         preset="test",
         number_of_cps=request.param,
     )

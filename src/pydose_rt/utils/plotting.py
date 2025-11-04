@@ -6,9 +6,8 @@ from matplotlib import gridspec
 from skimage import measure
 from matplotlib.colors import ListedColormap
 import os
-from pydose_rt.utils.config import config as PARAMS
 import cv2
-from pydose_rt.DoseEngine import DoseEngine
+from pydose_rt.engine.dose_engine import DoseEngine
 
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1):
@@ -17,6 +16,7 @@ def overlay_mask_outline(mask_slice, color="red", linewidth=1):
 
 def print_results(
     experiment,
+    treatment,
     raw_losses,
     y_dose,
     pred_mlc,
@@ -154,13 +154,20 @@ def print_results(
     )
 
     axial_z = 49
+    # axial_xstart = 64
+    # axial_xend = 192
+    # coronal_x = 128
+    # coronal_zstart = 32
+    # coronal_zend = 224
+    # coronal_ystart = 24
+    # coronal_yend = 72
     axial_xstart = 64
     axial_xend = 192
     coronal_x = 128
+    coronal_zstart = 16
+    coronal_zend = 80
     coronal_ystart = 32
     coronal_yend = 224
-    coronal_zstart = 24
-    coronal_zend = 72
     # axial_z = 160
     # axial_xstart = 32
     # axial_xend = 96
@@ -172,30 +179,30 @@ def print_results(
     # If overlay_mask_outline expects already-sliced 2D arrays (as in your original code),
     # use these two helpers instead:
     def _dose_slice_axial(arr, z=44, x_start=0, x_end=256):
-        return arr[0, x_start:x_end, :, z]
+        return arr[0, z, x_start:x_end, :]
 
     def _dose_slice_coronal(arr, x=128, y_start=0, y_end=256, z_start=0, z_end=256):
         # coronal view, transpose to show (z, y) or (y, z) consistently
         # matching your original "np.transpose(...[0, 64:198, 128, :])"
-        return np.transpose(arr[0, x, y_start:y_end, z_start:z_end])
+        return np.transpose(arr[0, z_start:z_end, y_start:y_end,x])
 
     # --- 6) Dose distribution (pred, axial)
     ax = fig.add_subplot(gs[5])
     _imshow_fullwidth(ax, _dose_slice_axial(dose_pred.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, axial)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
+    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(roi.cpu().numpy()[0, axial_xstart:axial_xend, :, axial_z], color=PARAMS.roi_colors[key])
+        overlay_mask_outline(roi.cpu().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
 
     # --- 7) Dose distribution (pred, sagittal)
     ax = fig.add_subplot(gs[6])
     _imshow_fullwidth(ax, _dose_slice_coronal(dose_pred.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, coronal)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
+    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_x, coronal_ystart:coronal_yend, coronal_zstart:coronal_zend]), color=PARAMS.roi_colors[key])
+        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 8) Dose distribution (gt, axial)
     ax = fig.add_subplot(gs[7])
@@ -204,9 +211,9 @@ def print_results(
     _imshow_fullwidth(ax, _dose_slice_axial(y_dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, axial)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
+    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(roi.cpu().numpy()[0, axial_xstart:axial_xend, :, axial_z], color=PARAMS.roi_colors[key])
+        overlay_mask_outline(roi.cpu().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
 
     # --- 9) Dose distribution (gt, sagittal)
     ax = fig.add_subplot(gs[8])
@@ -215,14 +222,13 @@ def print_results(
     _imshow_fullwidth(ax, _dose_slice_coronal(y_dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, coronal)')
-    for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
+    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_x, coronal_ystart:coronal_yend, coronal_zstart:coronal_zend]), color=PARAMS.roi_colors[key])
+        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 10) DVH (line plot; same panel height as others for uniformity)
     ax = fig.add_subplot(gs[9])
-    for idx, (key, value) in enumerate(PARAMS.structure_names.items()):
-        roi_name = value
+    for idx, (color, roi_name) in enumerate([(structure.color, structure.name) for structure in treatment.structures]):
         roi = masks[idx]
         dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
@@ -231,10 +237,9 @@ def print_results(
         hist, bin_edges = np.histogram(dose_values, bins=bins, density=False)
         cumulative_hist = np.cumsum(hist[::-1])[::-1]
         cumulative_hist_normalized = np.divide(cumulative_hist, cumulative_hist.max())
-        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="solid", label=roi_name, color=PARAMS.roi_colors[key])
+        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="solid", label=roi_name, color=color)
 
-    for idx, (key, value) in enumerate(PARAMS.structure_names.items()):
-        roi_name = value
+    for idx, color in enumerate([structure.color for structure in treatment.structures]):
         roi = masks[idx]
         dose_values = y_dose[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
@@ -243,7 +248,7 @@ def print_results(
         hist, bin_edges = np.histogram(dose_values, bins=bins, density=False)
         cumulative_hist = np.cumsum(hist[::-1])[::-1]
         cumulative_hist_normalized = np.divide(cumulative_hist, cumulative_hist.max())
-        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="dashed", color=PARAMS.roi_colors[key])
+        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="dashed", color=color)
 
     ax.set_xlabel("Dose (Gy)")
     ax.set_ylabel("Volume Fraction")
@@ -258,7 +263,7 @@ def print_results(
     experiment.log_figure(save_path, overwrite=True)
     plt.close()
 
-def make_animation(experiment, dose_layer: DoseEngine, config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks):
+def make_animation(experiment, treatment, dose_layer: DoseEngine, config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks):
     """
     Modified version with tight square layout - two squares stacked vertically
     """
@@ -276,7 +281,7 @@ def make_animation(experiment, dose_layer: DoseEngine, config, mask_external, pr
     jet_alpha = ListedColormap(colors)
     dose_layer.eval()
     num_cps = config.number_of_cps
-    ct_data = ct_volume.cpu().detach().numpy()[0, :, :, slice_idx]
+    ct_data = ct_volume.cpu().detach().numpy()[0, slice_idx, :, :]
     dose_data = np.zeros((256, 256))
     
     # Create output directory if needed
@@ -311,16 +316,16 @@ def make_animation(experiment, dose_layer: DoseEngine, config, mask_external, pr
         ax1.axis('off')
         
         # Plot CT slice with dose overlay - already square
-        dose_data += pred_dose.cpu().detach().numpy()[0, :, :, slice_idx]
+        dose_data += pred_dose.cpu().detach().numpy()[0, slice_idx, :, :]
         
         ax2.imshow(ct_data, cmap='gray', vmin=-1000, vmax=1000, aspect='equal')
         ax2.imshow(dose_data, cmap=jet_alpha, vmin=0.0, vmax=dose_max, aspect='equal')
         
         # Add ROI contours
-        for idx, (key, value) in enumerate(list(PARAMS.structure_names.items())[:-1]):
+        for idx, color in enumerate([structure.color for structure in treatment.structures]):
             roi = masks[idx]
-            overlay_mask_outline(roi.cpu().numpy()[0, :, :, slice_idx], 
-                               color=PARAMS.roi_colors[key])
+            overlay_mask_outline(roi.cpu().numpy()[0, slice_idx, :, :], 
+                               color=color)
         
         ax2.axis('off')
         ax2.set_aspect('equal', 'box')  # Force square aspect

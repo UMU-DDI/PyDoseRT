@@ -1,4 +1,3 @@
-from .DoseEngine import DoseEngine
-from .ModelConfig import ModelConfig
+from .engine.dose_engine import DoseEngine
 
-__all__ = ['DoseEngine', 'ModelConfig', 'engine']
+__all__ = ['DoseEngine', 'engine']

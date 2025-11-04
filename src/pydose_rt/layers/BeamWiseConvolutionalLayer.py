@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..ModelConfig import ModelConfig
+from pydose_rt.data.machine_config import MachineConfig
 
 
 class BeamWiseConvolutionalLayer(nn.Module):
@@ -27,17 +27,17 @@ class BeamWiseConvolutionalLayer(nn.Module):
     where each control point has its own fluence map and kernel.
 
     Attributes:
-        config (ModelConfig): Stores configuration parameters.
+        config (MachineConfig): Stores configuration parameters.
         verbose (bool): Verbosity flag.
         device (torch.device): Device on which computations are performed.
     """
 
-    def __init__(self, config: ModelConfig, verbose: bool = False):
+    def __init__(self, config: MachineConfig, verbose: bool = False):
         """
         Initializes the BeamWiseConvolutionalLayer.
 
         Args:
-            config (ModelConfig): Configuration parameters for the layer.
+            config (MachineConfig): Configuration parameters for the layer.
             verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """
         super().__init__()

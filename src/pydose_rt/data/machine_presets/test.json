@@ -4,5 +4,6 @@
     "field_size": [400, 400],
     "number_of_leaf_pairs": 10,
     "tpr_20_10": 0.72,
-    "number_of_cps": 24
+    "number_of_cps": 24,
+    "starting_angle": 180.0
 }

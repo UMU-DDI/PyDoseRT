@@ -358,12 +358,12 @@ def dose_loss(x, dose_pred, constraints, masks, region_weights=None, loss_weight
         number_regions=len(masks_dict),
     )
 
-    loss_lower_bound_target, loss_higher_bound_target = DVHLoss(
-        constraints,
-        k=50,
-        masks=masks_dict,
-        region_weights=region_weights,
-    ).get(None, dose_pred)
+    # loss_lower_bound_target, loss_higher_bound_target = DVHLoss(
+    #     constraints,
+    #     k=50,
+    #     masks=masks_dict,
+    #     region_weights=region_weights,
+    # ).get(None, dose_pred)
 
     l2_loss_oars_and_background = compute_l2_loss(
         dose_pred, masks_dict, region_weights,number_regions=len(masks_dict)

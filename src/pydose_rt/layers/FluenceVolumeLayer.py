@@ -10,9 +10,9 @@ and profile corrections for efficient forward passes and accurate modeling of th
 
 Typical usage example::
 
-    from ..ModelConfig import ModelConfig
+    from ..MachineConfig import MachineConfig
     import torch
-    config = ModelConfig(...)
+    config = MachineConfig(...)
     layer = FluenceVolumeLayer(config)
     fluence_map = torch.tensor(...)
     fluence_volume = layer(fluence_map)
@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..ModelConfig import ModelConfig
+from pydose_rt.data.machine_config import MachineConfig
 
 
 class FluenceVolumeLayer(nn.Module):
@@ -36,7 +36,7 @@ class FluenceVolumeLayer(nn.Module):
     to generate a 3D volume suitable for dose calculation. It precomputes sampling grids and profile corrections for efficient forward passes.
 
     Attributes:
-        config (ModelConfig): Configuration object containing CT array shape, resolution, SID, fluence profile, and iso center.
+        config (MachineConfig): Configuration object containing CT array shape, resolution, SID, fluence profile, and iso center.
         verbose (bool): Flag to enable verbose logging.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
         SID (float): Source-to-isocenter distance.
@@ -47,12 +47,12 @@ class FluenceVolumeLayer(nn.Module):
         sampling_grids (torch.Tensor): Precomputed ray sampling grids for mapping MLC plane to CT volume.
     """
 
-    def __init__(self, config: ModelConfig, verbose: bool = False):
+    def __init__(self, config: MachineConfig, verbose: bool = False):
         """
         Initializes the FluenceVolumeLayer and precomputes profile corrections and sampling grids.
 
         Args:
-            config (ModelConfig): Configuration object with CT array shape, resolution, SID, fluence profile, and iso center.
+            config (MachineConfig): Configuration object with CT array shape, resolution, SID, fluence profile, and iso center.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()

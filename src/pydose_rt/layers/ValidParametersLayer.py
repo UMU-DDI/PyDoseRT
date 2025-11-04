@@ -10,9 +10,9 @@ and beam delivery in radiotherapy planning models.
 
 Typical usage example::
 
-    from ..ModelConfig import ModelConfig
+    from ..MachineConfig import MachineConfig
     import torch
-    config = ModelConfig(...)
+    config = MachineConfig(...)
     layer = ValidParametersLayer(config)
     leaf_positions = torch.tensor(...)
     mus = torch.tensor(...)
@@ -26,7 +26,7 @@ import torch
 import torch.nn as nn
 from typing import Tuple
 
-from ..ModelConfig import ModelConfig
+from pydose_rt.data.machine_config import MachineConfig
 
 
 class ValidParametersLayer(nn.Module):
@@ -45,12 +45,12 @@ class ValidParametersLayer(nn.Module):
         __init__(config, slope=None, verbose=False): Initializes the ValidParametersLayer with configuration and verbosity.
         forward(leaf_positions, mus): Clamps and scales leaf positions and MUs, returning validated tensors.
     """
-    def __init__(self, config: ModelConfig, leafs_centered: bool = False, verbose: bool = False):
+    def __init__(self, config: MachineConfig, leafs_centered: bool = False, verbose: bool = False):
         """
         Initializes the ValidParametersLayer.
 
         Args:
-            config (ModelConfig): Configuration object with mu_scaling, minimum_leaf_overlap, and field_size attributes.
+            config (MachineConfig): Configuration object with mu_scaling, minimum_leaf_overlap, and field_size attributes.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()
