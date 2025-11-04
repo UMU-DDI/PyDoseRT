@@ -261,7 +261,7 @@ for test_i in range(n_tests):
 
             # Forward
             dose_pred = dose_layer(pred_mlc, pred_mus, jaw_positions=pred_jaws, ct_image=ct_volume)
-            # dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
+            dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
 
             # Compute loss
             raw_losses = compute_loss(dose_pred, y_dose, pred_mus, pred_mlc, pred_jaws, weights, masks_torch)

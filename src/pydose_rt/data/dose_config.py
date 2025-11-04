@@ -66,10 +66,11 @@ class DoseConfig(BaseSettings):
         if "machine" not in data:
             data["machine"] = MachineConfig(**machine_data)
 
-        treatment_data = data.copy()
-        treatment_data["preset"] = treatment_data.get("treatment_preset")
-        if "treatment" not in treatment_data:
-            data["treatment"] = TreatmentConfig(**treatment_data)
+        if (data.get("treatment_preset") is not None):
+            treatment_data = data.copy()
+            treatment_data["preset"] = treatment_data.get("treatment_preset")
+            if "treatment" not in treatment_data:
+                data["treatment"] = TreatmentConfig(**treatment_data)
         
         return data
     

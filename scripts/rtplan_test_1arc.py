@@ -14,7 +14,6 @@ from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
 from scipy.ndimage import zoom, rotate
 from pydose_rt import DoseEngine
-from pydose_rt.utils.data_loading import load_rtp_data
 import SimpleITK as sitk
 import torch
 
@@ -24,14 +23,12 @@ rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e
 rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-patient = PatientConfig.from_dicom(
-)
 config = DoseConfig.from_dicom(
     ct_folder=ct_folder, 
     dose_path=rtdose_path,
     plan_path=rtplan_path,
     struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"],
-    preset="umea",
+    machine_preset="umea",
     downsampling_factor=(1, 2, 2),
     dtype=torch.float32,
     device=device
