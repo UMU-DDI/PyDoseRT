@@ -230,7 +230,7 @@ for test_i in range(n_tests):
         api_key="ro9UfCMFS2O73enclmXbXfJJj", project_name="autoplan_static"
     )
     try:
-        x, y_dose, masks, region_weights, treatment, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()
+        x, y_dose, masks, region_weights, treatment, ct_volume, machine_config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()
 
         patience = 0
         epoch = 0
@@ -242,7 +242,7 @@ for test_i in range(n_tests):
         
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=20)
 
-        dose_layer = DoseEngine(config, kernel_size, permute_ct=False, leafs_centered=True)
+        dose_layer = DoseEngine(machine_config, kernel_size, permute_ct=False, leafs_centered=True)
         dose_layer.train()
 
         experiment.log_parameters(
@@ -251,7 +251,7 @@ for test_i in range(n_tests):
                 "kernel_size": kernel_size,
                 "lr_decay": lr_decay,
                 "weights": weights,
-                "physical_size": config.physical_size_ct,
+                "physical_size": machine_config.physical_size_ct,
                 "roi_weights": treatment.weights
             }, nested_support=True
         )
@@ -330,7 +330,7 @@ for test_i in range(n_tests):
         pred_mlc_valid, pred_mus_valid, pred_jaws_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
         )
-        results = result_validation(config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid, x, dose_pred, treatment, masks, region_weights)
+        results = result_validation(machine_config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid, x, dose_pred, treatment, masks, region_weights)
         experiment.log_metrics(
             {
                 "results": results,
@@ -339,7 +339,7 @@ for test_i in range(n_tests):
         )
 
         print_results(experiment, treatment, raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss)
-        make_animation(experiment, treatment, dose_layer, config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks_torch)
+        make_animation(experiment, treatment, dose_layer, machine_config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks_torch)
     except Exception as e:
         print("Exception during test:", e)
         
