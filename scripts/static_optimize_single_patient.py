@@ -31,6 +31,7 @@ def get_example_data(data_path="/media/bolo/Datasets/converted_lund/"):
         treatment_preset="lund-probe",
         downsampling_factor=(1,2,2), 
     )
+    config.treatment.randomize_weights()
     x = patient.ct_array
     y_dose = torch.from_numpy(patient.dose)
     masks = torch.from_numpy(np.stack([v for k,v in patient.structures.items()], 0))
@@ -229,7 +230,7 @@ for test_i in range(n_tests):
         api_key="ro9UfCMFS2O73enclmXbXfJJj", project_name="autoplan_static"
     )
     try:
-        x, y_dose, masks, region_weights, treatment, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data("/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/")
+        x, y_dose, masks, region_weights, treatment, ct_volume, config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()#"/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/")
 
         patience = 0
         epoch = 0

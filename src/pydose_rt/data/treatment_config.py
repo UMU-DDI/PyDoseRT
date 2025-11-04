@@ -146,3 +146,11 @@ class TreatmentConfig(BaseModel):
         # (Env vars will still override later because BaseSettings.)
         merged = {**preset_values, **data}
         return merged
+
+    def randomize_weights(self):
+        for struct in self.structures:
+            if struct.name == "PTV":
+                struct.constraints.weight = 1000
+            else:
+                struct.constraints.weight = 10**np.random.randint(-3, 3)
+        
