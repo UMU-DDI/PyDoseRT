@@ -29,7 +29,7 @@ def get_example_data(data_path="/media/bolo/Datasets/converted_lund/"):
         patient=patient,
         machine_preset="lund-probe", 
         treatment_preset="lund-probe",
-        downsampling_factor=(1,1,1), 
+        downsampling_factor=(1,2,2), 
     )
     x = patient.ct_array
     y_dose = torch.from_numpy(patient.dose)
