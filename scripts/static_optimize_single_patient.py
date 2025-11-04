@@ -220,7 +220,7 @@ loss_plot = 1.0
 best_results = []
 n_tests = 200
 patience_thr = 500
-max_iter = 100
+max_iter = 5000
 
 oar_dose = 10.0
 
