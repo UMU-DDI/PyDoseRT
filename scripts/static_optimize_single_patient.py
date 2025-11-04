@@ -186,9 +186,9 @@ def compute_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _mas
         loss_higher_bound_target,
         l2_loss_oars_and_background,
     ) = dose_loss(x, dose_pred, treatment, masks, region_weights, None)
-    mu_rate_loss, mu_complexity_loss = mus_loss(pred_mus, config)
-    leaf_reg_loss, leaf_complexity_loss = leafs_loss(leafs, config)
-    jaw_opening_loss, jaw_complexity_loss = jaws_loss(pred_jaws, config)
+    mu_rate_loss, mu_complexity_loss = mus_loss(pred_mus, config.machine)
+    leaf_reg_loss, leaf_complexity_loss = leafs_loss(leafs, config.machine)
+    jaw_opening_loss, jaw_complexity_loss = jaws_loss(pred_jaws, config.machine)
     all_losses = [
         scale_loss(loss_lower_bound_gy, weights["loss_lower_bound_gy"]),
         scale_loss(loss_higher_bound_gy, weights["loss_higher_bound_gy"]),
