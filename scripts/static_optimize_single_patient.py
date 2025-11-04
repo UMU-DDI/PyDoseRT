@@ -20,8 +20,8 @@ from pydose_rt.utils.plotting import print_results, make_animation
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-data_path = "/media/bolo/Datasets/converted_lund/"
-# data_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/"
+# data_path = "/media/bolo/Datasets/converted_lund/"
+data_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/"
 patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
 config = DoseConfig.from_nifti(
     folder_path=patient_list[0],
