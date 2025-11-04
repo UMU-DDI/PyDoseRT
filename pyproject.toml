@@ -9,11 +9,6 @@ authors = [
     { name="Gerd Heilemann", email="gerd.heilemann@meduniwien.ac.at" },
     { name="Josef Lundman", email="josef@lundman.eu" },
 ]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
 dependencies = [
     "torch>=2.6.0",
     "numpy>=1.26.4",

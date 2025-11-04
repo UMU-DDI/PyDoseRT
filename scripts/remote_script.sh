@@ -7,6 +7,7 @@
 #SBATCH --output=/cephyr/users/attilas/Alvis/out/%J_output.out
 
 module load virtualenv/20.32.0-GCCcore-14.3.0
+module load Python/3.13.5-GCCcore-14.3.0
 # module --ignore-cache load PyTorch/2.1.2-foss-2023a-CUDA-12.1.1
 source /cephyr/users/attilas/Alvis/data/attila/autoenv/bin/activate
 
