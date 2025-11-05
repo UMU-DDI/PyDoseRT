@@ -381,34 +381,6 @@ def dose_loss(x, dose_pred, constraints, masks, region_weights=None, loss_weight
         l2_loss_oars_and_background,
     )
 
-def result_validation(config, pred_dose, pred_mlc, pred_jaws, pred_mus, x, dose_pred, constraints, masks, region_weights=None, loss_weights=0):
-    results = {}
-
-    # Start with values in the predictions
-    if (pred_dose.min() < 0):
-        results["check_min_dose_pass"] = 0
-    else:
-        results["check_min_dose_pass"] = 1
-
-    if (pred_mlc.min() < 0) or (pred_mlc.max() > 1):
-        results["check_mlc_bounds_pass"] = 0
-    else:
-        results["check_mlc_bounds_pass"] = 1
-
-    if (pred_jaws.min() < 0) or (pred_jaws.max() > 1):
-        results["check_jaws_bounds_pass"] = 0
-    else:
-        results["check_jaws_bounds_pass"] = 1
-
-    if (pred_mus.min() < 0):
-        results["check_mus_bounds_pass"] = 0
-    else:
-        results["check_mus_bounds_pass"] = 1
-
-    
-
-    return results
-
 def create_sphere_mask(center, radius, shape=(64, 64, 64)):
     """
     Create a spherical binary mask given a center and radius.

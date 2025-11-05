@@ -213,9 +213,11 @@ class MachineConfig(BaseSettings):
     @computed_field(repr=False)
     @property
     def gantry_angles(self) -> np.ndarray:
-        return (-1 if self.clockwise else 1) * np.linspace(
-            math.radians(self.starting_angle),
-            math.radians(self.starting_angle) + math.radians(360),
+        start = math.radians(self.starting_angle)
+        end = math.radians(self.starting_angle) + math.radians(360) if self.clockwise else math.radians(self.starting_angle) - math.radians(360)
+        return np.linspace(
+            start, 
+            end,
             self.number_of_cps,
             endpoint=False,
         )

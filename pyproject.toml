@@ -20,7 +20,8 @@ dependencies = [
     "imageio>=2.37.0",
     "pydicom>=2.4.4",
     "rt-utils>=1.2.7",
-    "SimpleITK>=2.4.1"
+    "SimpleITK>=2.4.1",
+    "pymedphys[tests]>=0.41.0"
 ]
 [project.optional-dependencies]
 test=[

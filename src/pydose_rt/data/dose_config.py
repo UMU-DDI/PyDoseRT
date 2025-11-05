@@ -5,7 +5,7 @@ from pydantic_settings import SettingsConfigDict, BaseSettings
 import numpy as np
 import torch
 import math
-from pydose_rt.data import PatientConfig, MachineConfig, TreatmentConfig
+from pydose_rt.data import PatientData, MachineConfig, TreatmentConfig
 from typing import Any, Optional, List
 _THIS_DIR = Path(__file__).resolve().parent
 _PRESET_DIR_DEFAULT = _THIS_DIR / "machine_presets"   # <--- now relative to this module file
@@ -31,7 +31,7 @@ class DoseConfig(BaseSettings):
         default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         description="The device used for the calculations",
     )
-    patient: Optional[PatientConfig] = Field(
+    patient: Optional[PatientData] = Field(
         default=None,
         description="Patient information"
     )
@@ -75,15 +75,15 @@ class DoseConfig(BaseSettings):
         return data
     
     def load_patient(self, ct_folder: str, dose_path: str | None, plan_path: str | None, struct_names: List[str] | None = None, recenter: bool = True) -> dict[str, Any]:
-        self.patient = PatientConfig.from_dicom(ct_folder, dose_path, plan_path, struct_names, recenter)
+        self.patient = PatientData.from_dicom(ct_folder, dose_path, plan_path, struct_names, recenter)
 
     @classmethod
     def from_nifti(
         cls,
         folder_path,
         **dose_config_fields
-        ) -> 'PatientConfig':
-        patient = PatientConfig.from_nifti(folder_path)
+        ) -> 'PatientData':
+        patient = PatientData.from_nifti(folder_path)
 
         return cls(
             patient=patient,
@@ -99,8 +99,8 @@ class DoseConfig(BaseSettings):
         struct_names: List[str] | None = None, 
         recenter: bool = True,
         **dose_config_fields
-        ) -> 'PatientConfig':
-        patient = PatientConfig.from_dicom(
+        ) -> 'PatientData':
+        patient = PatientData.from_dicom(
             ct_folder=ct_folder, 
             dose_path=dose_path, 
             plan_path=plan_path, 

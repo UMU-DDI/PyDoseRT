@@ -7,8 +7,9 @@ import time
 import math
 
 from pydicom.data import get_testdata_file
-from pydose_rt.data import MachineConfig, PatientConfig, DoseConfig
+from pydose_rt.data import MachineConfig, PatientData, DoseConfig
 # from pydose_rt.data import MachineConfig
+from pydose_rt.objectives.metrics import result_validation
 import numpy as np
 from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
@@ -29,8 +30,8 @@ config = DoseConfig.from_dicom(
     plan_path=rtplan_path,
     struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"],
     machine_preset="umea",
-    downsampling_factor=(1, 2, 2),
-    dtype=torch.float32,
+    downsampling_factor=(1, 1, 1),
+    dtype=torch.float16,
     device=device
 )
 ct_image = config.patient.ct_array
@@ -43,7 +44,7 @@ ct_volume = ct_image
 external_mask = masks["External"]
 ct_volume = np.where(external_mask, ct_volume, -1000.0)
 
-ct_slices = np.array(np.expand_dims(ct_volume, 0), dtype=np.float32)
+ct_slices = np.array(np.expand_dims(ct_volume, 0))
 leafs_1, mus_1 = mlc_inputs[0]
 results = []
 
@@ -57,10 +58,22 @@ dose_pred = dose_layer_1(torch.tensor(np.array(leafs_1), dtype=config.dtype, dev
 
 # dose_pred = dose_pred * np.max(dose_volume) / np.max(dose_pred)
 dose_pred = dose_pred * (np.quantile(dose_volume, 0.999) / np.quantile(dose_pred, 0.999))
-print(f"{np.mean(dose_pred[0][masks['PTVT_42.7'] > 0])}")
-print(f"{np.mean(dose_volume[masks['PTVT_42.7'] > 0])}")
-ext_mask = masks["External"] > 0
-diff = ext_mask * np.abs(dose_volume - dose_pred)**2
-results.append(np.mean(diff))
-print(np.mean(diff))
+
+vmax = 15
+slice_idx = dose_volume.shape[0] // 2
+plt.figure()
+plt.subplot(131)
+# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+plt.imshow(dose_volume[slice_idx, :, :], cmap='jet')
+plt.colorbar()
+plt.subplot(132)
+# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet')
+plt.colorbar()
+plt.subplot(133)
+# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=1.0)
+plt.colorbar()
+plt.show()
+# result_validation(config, dose_pred, leafs_1, jaws_1, mus_1)
 # print(f"{starting_angle_1}/{starting_angle_2}/{cw_1}/{cw_2}:\t{np.mean(diff)}") # Baseline is 0.143663

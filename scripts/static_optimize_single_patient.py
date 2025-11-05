@@ -7,14 +7,15 @@ import torch
 import time
 import math
 import torch
-from pydose_rt.data import DoseConfig, PatientConfig, TreatmentConfig
+from pydose_rt.data import DoseConfig, PatientData, TreatmentConfig
 from pydose_rt import DoseEngine
 from pydose_rt.layers import ValidParametersLayer
 from pydose_rt.utils.plotting import *
 from pydose_rt.physics.kernels.pencil_beam_model import *
 from pydose_rt.utils.grad_monitor import GradMonitor
 import numpy as np
-from pydose_rt.objectives.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, result_validation, scale_loss
+from pydose_rt.objectives.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, scale_loss
+from pydose_rt.objectives.metrics import result_validation
 from pydose_rt.utils.utils import create_bound_weight_matrix, prune_patients, get_initial_weights, get_model_input
 from pydose_rt.utils.plotting import print_results, make_animation
 

@@ -1,7 +1,8 @@
 """
 Patient configuration - CT dimensions and geometric parameters.
 """
-from pydantic import BaseModel, Field, model_validator
+# from pydantic import BaseModel, Field, model_validator
+from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING, List
 import torch
 import numpy as np
@@ -13,8 +14,8 @@ import SimpleITK as sitk
 if TYPE_CHECKING:
     from pydose_rt.data import PatientData
 
-
-class PatientConfig(BaseModel):
+@dataclass
+class PatientData:
     """
     Patient-specific configuration.
     
@@ -22,27 +23,15 @@ class PatientConfig(BaseModel):
     """
     
     # CT dimensions
-    ct_array: np.array = Field(..., description="CT array shape [D, H, W]")
-    structures: dict[str, np.array] = Field(..., description="Dictionary of all the structures")
-    dose: np.array = Field(
-        default=None,
-        description="CT array shape [D, H, W]")
-    voxel_spacing_mm: Optional[tuple[float, float, float]] = Field(
-        default=None,
-        description="Voxel spacing [dz, dy, dx] in mm")
+    ct_array: np.array
+    structures: dict[str, np.array]
+    dose: Optional[np.array] = None
+    voxel_spacing_mm: Optional[tuple[float, float, float]] = None
 
-    plan_iso_center: Optional[tuple[float, float, float]] = Field(
-        default=None,
-        description="isocenter")
-    plan_mlcs: Optional[np.array] = Field(
-        default=None,
-        description="mlc positions")
-    plan_clockwise: Optional[bool] = Field(
-        default=None,
-        description="Whether the plan is clockwise or not")
-    plan_starting_angle: Optional[float] = Field(
-        default=None, 
-        description="starting angle of the plan")
+    plan_iso_center: Optional[tuple[float, float, float]] = None
+    plan_mlcs: Optional[np.array] = None
+    plan_clockwise: Optional[bool] = None
+    plan_starting_angle: Optional[float] = None
     
     # Optional metadata
     patient_id: Optional[str] = None
@@ -54,15 +43,15 @@ class PatientConfig(BaseModel):
         dose_path: str | None, 
         plan_path: str | None, 
         struct_names: List[str] | None = None, 
-        recenter: bool = True) -> 'PatientConfig':
+        recenter: bool = True) -> 'PatientData':
         """
-        Create PatientConfig from PatientData.
+        Create PatientCoPatientDatanfig from PatientData.
         
         Args:
             patient: PatientData instance
             
         Returns:
-            PatientConfig with CT dimensions from patient
+            PatientData with CT dimensions from patient
         """
         ct_series, ref = load_ct_series(ct_folder)
         structures = load_structures(ct_series, ct_folder, struct_names=struct_names)
@@ -99,7 +88,7 @@ class PatientConfig(BaseModel):
     def from_nifti(
         cls,
         folder_path
-        ) -> 'PatientConfig':
+        ) -> 'PatientData':
         ct, structures, dose = load_files(folder_path)
 
         return cls(
@@ -115,7 +104,7 @@ class PatientConfig(BaseModel):
         ct_array: torch.Tensor,
         voxel_spacing_mm: tuple,
         patient_id: Optional[str] = None
-    ) -> 'PatientConfig':
+    ) -> 'PatientData':
         """Create from CT array directly."""
         return cls(
             ct_shape=tuple(ct_array.shape),
@@ -123,5 +112,3 @@ class PatientConfig(BaseModel):
             patient_id=patient_id
         )
     
-    class Config:
-        arbitrary_types_allowed = True

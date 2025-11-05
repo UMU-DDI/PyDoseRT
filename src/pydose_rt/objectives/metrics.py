@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import trapezoid
+from pydose_rt.data import DoseConfig
+import pymedphys
 
 def exponentially_weighted_difference(x, y1, y2, alpha=5.0):
     """
@@ -56,6 +58,77 @@ def weighted_area_difference(x, y1, y2, weight_func=None):
     area = trapezoid(weighted_diff, x)
     
     return area
+
+def result_validation(config: DoseConfig, 
+                      pred_dose: np.array, 
+                      pred_mlc: np.array, 
+                      pred_jaws: np.array, 
+                      pred_mus: np.array):
+    
+    axes = tuple(
+        np.arange(config.patient.dose.shape[i]) * config.patient.voxel_spacing_mm[i]
+        for i in range(3)
+    )
+    
+    # Compute dose cutoff value (10% of max dose)
+    dose_cutoff = 10.0
+    dose_cutoff_value = dose_cutoff / 100 * np.max(config.patient.dose)
+    dose_threshold = 3.0
+    distance_threshold = 3.0
+    max_gamma = 2.0
+    
+    # Create mask for evaluation (only where dose > cutoff)
+    mask = config.patient.dose > dose_cutoff_value
+    
+    # Compute gamma
+    gamma_map = pymedphys.gamma(
+        axes_reference=axes,
+        dose_reference=config.patient.dose,
+        axes_evaluation=axes,
+        dose_evaluation=pred_dose[0, ...],
+        dose_percent_threshold=dose_threshold,
+        distance_mm_threshold=distance_threshold,
+        lower_percent_dose_cutoff=dose_cutoff,
+        interp_fraction=10,  # Interpolation resolution
+        max_gamma=max_gamma,
+        local_gamma=False,  # Global gamma (% of max dose)
+        quiet=True
+    )
+    
+    # Calculate pass rate
+    gamma_valid = gamma_map[mask]
+    gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
+    pass_rate = np.sum(gamma_valid <= 1.0) / len(gamma_valid) * 100
+    mean_gamma = np.mean(gamma_valid)
+
+    print(pass_rate)
+    print(mean_gamma)
+    results = {}
+
+    # Start with values in the predictions
+    if (pred_dose.min() < 0):
+        results["check_min_dose_pass"] = 0
+    else:
+        results["check_min_dose_pass"] = 1
+
+    if (pred_mlc.min() < 0) or (pred_mlc.max() > 1):
+        results["check_mlc_bounds_pass"] = 0
+    else:
+        results["check_mlc_bounds_pass"] = 1
+
+    if (pred_jaws.min() < 0) or (pred_jaws.max() > 1):
+        results["check_jaws_bounds_pass"] = 0
+    else:
+        results["check_jaws_bounds_pass"] = 1
+
+    if (pred_mus.min() < 0):
+        results["check_mus_bounds_pass"] = 0
+    else:
+        results["check_mus_bounds_pass"] = 1
+
+    
+
+    return results
 
 # Example usage
 if __name__ == "__main__":

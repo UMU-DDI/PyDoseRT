@@ -6,12 +6,12 @@ import scipy.ndimage as ndi
 import random
 import copy
 import numpy as np
-from pydose_rt.data import PatientConfig, MachineConfig
+from pydose_rt.data import PatientData, MachineConfig
 import torch
 import os
 import time
 
-def get_model_input(patient: PatientConfig, machine: MachineConfig):
+def get_model_input(patient: PatientData, machine: MachineConfig):
     structures = patient.structures
     lower_bound_gys = create_bound_weight_matrix(structures, machine.lower_bound_gys)
     higher_bound_gys = create_bound_weight_matrix(structures, machine.higher_bound_gys)
@@ -265,4 +265,3 @@ def compute_valid_leaf_mask(
 
     valid_leaf = ~out_of_range
     return valid_leaf
-

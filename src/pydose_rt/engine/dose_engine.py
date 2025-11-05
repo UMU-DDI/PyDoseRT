@@ -222,113 +222,114 @@ class DoseEngine(nn.Module):
         if self.ct_image is not None:
             ct_image = self.ct_image
             batched_kernels = self.batched_kernels
-
-        if self.ct_image is None:
-            with torch.no_grad():
-                if self.config.downsampling_factor != (1, 1, 1):
-                    ct_image = F.avg_pool3d(
-                        ct_image.unsqueeze(1), self.config.downsampling_factor
-                    ).squeeze(1)
-
-                batched_radiological_depths = self.rad_depth_layer(ct_image)
-
-                batched_kernels = torch.tensor(
-                    self.pencil_beam_kernel_layer(batched_radiological_depths),
-                    device=self.device,
-                    dtype=self.config.dtype,
-                ).detach()
-
-
-        leaf_positions, mus, jaw_positions = self.valid_parameters_layer(
-            leaf_positions, mus, jaw_positions
-        )
-
-        batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
-
-        if self.crop_volume:
-            h_min_idx, h_max_idx, w_min_idx, w_max_idx = self._compute_crop_indices(
-                leaf_positions, jaw_positions
-            )
-        else:
-            # Default to full volume if indices not provided
-            H, D, W = self.config.ct_array_shape
-            h_min_idx = 0
-            h_max_idx = H - 1
-            w_min_idx = 0
-            w_max_idx = W - 1
-
-        batched_fluence_volumes = self.fluence_volume_layer(
-            batched_fluence_maps, (h_min_idx, h_max_idx, w_min_idx, w_max_idx)
-        )
-        batched_fluence_volumes.mul_(self.config.mean_photon_energy_MeV)
-
-        batched_accumulated_dose = self.beam_wise_conv_layer(
-            batched_fluence_volumes, batched_kernels
-        )
-        if single_cp is not None:
-            single_fluence_map = batched_fluence_maps[single_cp:single_cp+1, ...] 
-        del batched_fluence_volumes, batched_fluence_maps, batched_kernels
             
+        with torch.amp.autocast(self.device.type):
+            if self.ct_image is None:
+                with torch.no_grad():
+                    if self.config.downsampling_factor != (1, 1, 1):
+                        ct_image = F.avg_pool3d(
+                            ct_image.unsqueeze(1), self.config.downsampling_factor
+                        ).squeeze(1)
 
-        H, D, W = self.config.ct_array_shape
-        # Insert at correct x indices, keep z cropped
-        partial_shape = (
-            batched_accumulated_dose.shape[0],
-            D,
-            batched_accumulated_dose.shape[2],
-            W,
-            1,
-        )
-        partial_dose = torch.zeros(
-            partial_shape,
-            dtype=batched_accumulated_dose.dtype,
-            device=batched_accumulated_dose.device,
-        )
-        partial_dose[:, :, :, w_min_idx : w_max_idx + 1, :] = batched_accumulated_dose
-        batched_accumulated_dose = partial_dose
+                    batched_radiological_depths = self.rad_depth_layer(ct_image)
 
-        # Reshape to [B, G, D, H, W]
-        B = leaf_positions.shape[0]
-        G = len(self.config.gantry_angles)
-        D_, H_, W_, _ = batched_accumulated_dose.shape[1:]
-        batched_accumulated_dose = batched_accumulated_dose.view(B, G, D_, H_, W_)
-        batched_accumulated_dose.mul_(mus[:, :, None, None, None])
+                    batched_kernels = torch.tensor(
+                        self.pencil_beam_kernel_layer(batched_radiological_depths),
+                        device=self.device,
+                        dtype=self.config.dtype,
+                    ).detach()
 
-        batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)
 
-        if single_cp is None:
-            batched_accumulated_dose = batched_accumulated_dose.sum(dim=1)  # [B, H, D, W]
-        else:
-            batched_accumulated_dose = batched_accumulated_dose[:, single_cp, ...]  # [B, H, D, W]
+            leaf_positions, mus, jaw_positions = self.valid_parameters_layer(
+                leaf_positions, mus, jaw_positions
+            )
 
-        full_shape = (batched_accumulated_dose.shape[0], H, D, W, 1)
-        full_dose = torch.zeros(
-            full_shape,
-            dtype=batched_accumulated_dose.dtype,
-            device=batched_accumulated_dose.device,
-        )
-        full_dose[:, h_min_idx : h_max_idx + 1, :, :, 0] = batched_accumulated_dose
-        batched_accumulated_dose = full_dose[..., 0]  # [B, H, D, W]
-        del full_dose
+            batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
 
-        if self.config.downsampling_factor != (1, 1, 1):
-            batched_accumulated_dose = F.interpolate(
-                batched_accumulated_dose.unsqueeze(1),
-                scale_factor=self.config.downsampling_factor,
-                mode="trilinear",
-                align_corners=False,
-            ).squeeze(1)
+            if self.crop_volume:
+                h_min_idx, h_max_idx, w_min_idx, w_max_idx = self._compute_crop_indices(
+                    leaf_positions, jaw_positions
+                )
+            else:
+                # Default to full volume if indices not provided
+                H, D, W = self.config.ct_array_shape
+                h_min_idx = 0
+                h_max_idx = H - 1
+                w_min_idx = 0
+                w_max_idx = W - 1
 
-        if self.permute_ct:
-            # Convert batched_accumulated_dose back to be consistent with other dose engines
-            batched_accumulated_dose = torch.permute(
-                batched_accumulated_dose, (0, 2, 3, 1)
-            )  # [B, H, D, W] -> [B, D, W, H]
+            batched_fluence_volumes = self.fluence_volume_layer(
+                batched_fluence_maps, (h_min_idx, h_max_idx, w_min_idx, w_max_idx)
+            )
+            batched_fluence_volumes.mul_(self.config.mean_photon_energy_MeV)
 
-        if single_cp is None:
-            return batched_accumulated_dose
-        else:
-            return batched_accumulated_dose, single_fluence_map
+            batched_accumulated_dose = self.beam_wise_conv_layer(
+                batched_fluence_volumes, batched_kernels
+            )
+            if single_cp is not None:
+                single_fluence_map = batched_fluence_maps[single_cp:single_cp+1, ...] 
+            del batched_fluence_volumes, batched_fluence_maps, batched_kernels
+                
+
+            H, D, W = self.config.ct_array_shape
+            # Insert at correct x indices, keep z cropped
+            partial_shape = (
+                batched_accumulated_dose.shape[0],
+                D,
+                batched_accumulated_dose.shape[2],
+                W,
+                1,
+            )
+            partial_dose = torch.zeros(
+                partial_shape,
+                dtype=batched_accumulated_dose.dtype,
+                device=batched_accumulated_dose.device,
+            )
+            partial_dose[:, :, :, w_min_idx : w_max_idx + 1, :] = batched_accumulated_dose
+            batched_accumulated_dose = partial_dose
+
+            # Reshape to [B, G, D, H, W]
+            B = leaf_positions.shape[0]
+            G = len(self.config.gantry_angles)
+            D_, H_, W_, _ = batched_accumulated_dose.shape[1:]
+            batched_accumulated_dose = batched_accumulated_dose.view(B, G, D_, H_, W_)
+            batched_accumulated_dose.mul_(mus[:, :, None, None, None])
+
+            batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)
+
+            if single_cp is None:
+                batched_accumulated_dose = batched_accumulated_dose.sum(dim=1)  # [B, H, D, W]
+            else:
+                batched_accumulated_dose = batched_accumulated_dose[:, single_cp, ...]  # [B, H, D, W]
+
+            full_shape = (batched_accumulated_dose.shape[0], H, D, W, 1)
+            full_dose = torch.zeros(
+                full_shape,
+                dtype=batched_accumulated_dose.dtype,
+                device=batched_accumulated_dose.device,
+            )
+            full_dose[:, h_min_idx : h_max_idx + 1, :, :, 0] = batched_accumulated_dose
+            batched_accumulated_dose = full_dose[..., 0]  # [B, H, D, W]
+            del full_dose
+
+            if self.config.downsampling_factor != (1, 1, 1):
+                batched_accumulated_dose = F.interpolate(
+                    batched_accumulated_dose.unsqueeze(1),
+                    scale_factor=self.config.downsampling_factor,
+                    mode="trilinear",
+                    align_corners=False,
+                ).squeeze(1)
+
+            if self.permute_ct:
+                # Convert batched_accumulated_dose back to be consistent with other dose engines
+                batched_accumulated_dose = torch.permute(
+                    batched_accumulated_dose, (0, 2, 3, 1)
+                )  # [B, H, D, W] -> [B, D, W, H]
+
+            if single_cp is None:
+                return batched_accumulated_dose
+            else:
+                return batched_accumulated_dose, single_fluence_map
 
     def plot_rotated_dose_slices_sequential(self, rotated_dose):
         """
