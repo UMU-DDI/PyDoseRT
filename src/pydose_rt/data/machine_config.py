@@ -220,7 +220,7 @@ class MachineConfig(BaseSettings):
             end,
             self.number_of_cps,
             endpoint=False,
-        )
+        ) % math.pi
 
     @computed_field(repr=False)
     @property
