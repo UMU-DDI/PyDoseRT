@@ -214,7 +214,7 @@ class MachineConfig(BaseSettings):
     @property
     def gantry_angles(self) -> np.ndarray:
         start = math.radians(self.starting_angle)
-        end = math.radians(self.starting_angle) - math.radians(360) if self.clockwise else math.radians(self.starting_angle) + math.radians(360)
+        end = math.radians(self.starting_angle) + math.radians(360) if self.clockwise else math.radians(self.starting_angle) - math.radians(360)
         return np.linspace(
             start, 
             end,
@@ -247,7 +247,7 @@ class MachineConfig(BaseSettings):
     def field_size_in_pixels(self) -> tuple[int, int]:
         return (
             int(np.ceil(self.field_size[0] / self.resolution[0])),
-            int(np.ceil(self.field_size[1] / self.resolution[1])),
+            int(np.ceil(self.field_size[1] / self.resolution[2])),
         )
 
     @computed_field(repr=False)
