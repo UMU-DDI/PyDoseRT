@@ -8,6 +8,7 @@ from matplotlib.colors import ListedColormap
 import os
 import cv2
 from pydose_rt.engine.dose_engine import DoseEngine
+from pydose_rt.data import MachineConfig, DoseConfig, TreatmentConfig
 
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1):
@@ -263,26 +264,29 @@ def print_results(
     experiment.log_figure(save_path, overwrite=True)
     plt.close()
 
-def make_animation(experiment, treatment, dose_layer: DoseEngine, config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks):
+def make_animation(experiment, dose_config: DoseConfig, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    slice_idx = 49
-    dose_max = 50.0
-    
+    treatment = dose_config.treatment
+    machine_config = dose_config.machine
+    patient_data = dose_config.patient
+    mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=machine_config.dtype, device=machine_config.device) > 0
+    ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=machine_config.dtype, device=machine_config.device)
 
     # Get the base colormap (jet)
-    alpha_max = 0.6
+    alpha_max = 1.0
     jet = plt.get_cmap('jet', 256)
     colors = jet(np.linspace(0, 1, 256))
-    values = np.linspace(0, 100, 256)
-    alpha = np.clip(np.interp(values, [0, dose_max], [0.0, alpha_max]), 0, alpha_max)
+    values = np.linspace(0, 1, 256)
+    alpha = np.clip(np.interp(values, [0, 1], [0.0, alpha_max]), 0, alpha_max)
     colors[:, -1] = alpha
     jet_alpha = ListedColormap(colors)
     dose_layer.eval()
-    num_cps = config.number_of_cps
+    num_cps = machine_config.number_of_cps
+    slice_idx = patient_data.ct_array.shape[0] // 2
     ct_data = ct_volume.cpu().detach().numpy()[0, slice_idx, :, :]
-    dose_data = np.zeros((256, 256))
+    dose_data = np.zeros(patient_data.ct_array.shape[1:])
     
     # Create output directory if needed
     os.makedirs("out", exist_ok=True)
@@ -303,13 +307,13 @@ def make_animation(experiment, treatment, dose_layer: DoseEngine, config, mask_e
                 pred_mlc, 
                 pred_mus, 
                 jaw_positions=pred_jaws, 
-                ct_image=ct_volume, 
+                ct_image=torch.zeros_like(ct_volume), 
                 single_cp=cp_idx
             )
-        pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))
+        # pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))
         
         # Plot beam's eye view (fluence map) - make it square
-        fluence_data = np.transpose(pred_map.cpu().detach().numpy()[0, :, :, 0])
+        fluence_data = pred_map.cpu().detach().numpy()[0, 0, :, :]
         w, h = fluence_data.shape
         im1 = ax1.imshow(fluence_data, interpolation='none', cmap='gray', vmin=0.0, vmax=1.0, aspect=h/w)
         ax1.set_title(f'Control Point {cp_idx + 1}/{num_cps}', pad=5)
@@ -322,10 +326,12 @@ def make_animation(experiment, treatment, dose_layer: DoseEngine, config, mask_e
         ax2.imshow(dose_data, cmap=jet_alpha, vmin=0.0, vmax=dose_max, aspect='equal')
         
         # Add ROI contours
-        for idx, color in enumerate([structure.color for structure in treatment.structures]):
-            roi = masks[idx]
-            overlay_mask_outline(roi.cpu().numpy()[0, slice_idx, :, :], 
-                               color=color)
+        for idx, struct_name in enumerate(patient_data.structures):
+            if (struct_name == "FemoralHead_R"):
+                continue
+            roi = patient_data.structures[struct_name]
+            overlay_mask_outline(roi[slice_idx, :, :], 
+                               color='white')
         
         ax2.axis('off')
         ax2.set_aspect('equal', 'box')  # Force square aspect
@@ -367,5 +373,6 @@ def make_animation(experiment, treatment, dose_layer: DoseEngine, config, mask_e
     else:
         print("Animation failed")
 
-    experiment.log_video(video_path, overwrite=True)
+    if experiment is not None:
+        experiment.log_video(video_path, overwrite=True)
     return

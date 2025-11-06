@@ -142,7 +142,7 @@ def compute_valid_leaf_mask_minh(
     number_of_cps = config.number_of_cps
     num_leafs = config.number_of_leaf_pairs
 
-    (W, D, H) = config.ct_array_shape
+    (H, D, W) = config.ct_array_shape
     dx, dy, dz = voxel_sizes
 
     iso_x = (W // 2) * dx

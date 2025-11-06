@@ -18,18 +18,33 @@ from pydose_rt.objectives.losses import dose_loss, leafs_loss, mus_loss, jaws_lo
 from pydose_rt.objectives.metrics import result_validation
 from pydose_rt.utils.utils import create_bound_weight_matrix, prune_patients, get_initial_weights, get_model_input
 from pydose_rt.utils.plotting import print_results, make_animation
+from dotenv import load_dotenv
+load_dotenv()  # will look for .env in project root
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# data_path = "/media/bolo/Datasets/converted_lund/"
-data_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/"
-patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
-config = DoseConfig.from_nifti(
-    folder_path=patient_list[0],
-    machine_preset="lund-probe", 
-    treatment_preset="lund-probe",
-    downsampling_factor=(1,2,2), 
-)
+remote = False
+if remote:
+    data_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/"
+    patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
+    config = DoseConfig.from_nifti(
+        folder_path=patient_list[0],
+        machine_preset="lund-probe", 
+        treatment_preset="lund-probe",
+        downsampling_factor=(1,2,2), 
+    )
+    max_iter = 2000
+else:
+    data_path = "/media/bolo/Datasets/converted_lund/"
+    # data_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/"
+    patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
+    config = DoseConfig.from_nifti(
+        folder_path=patient_list[0],
+        machine_preset="lund-probe", 
+        treatment_preset="lund-probe",
+        downsampling_factor=(1,4,4), 
+    )
+    max_iter = 100
 
 def get_example_data():
     config.treatment.randomize_weights()
@@ -73,7 +88,7 @@ def get_example_data():
     pred_jaws = pred_jaws_init.clone().detach().requires_grad_(True)
     pred_mus_init = (100.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
     pred_mus = pred_mus_init.clone().detach().requires_grad_(True)
-    return x, y_dose, masks, region_weights, config.treatment, ct_volume, config.machine, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
+    return x, y_dose, masks, region_weights, config, ct_volume, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
 
 def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
     def lr_lambda(current_step):
@@ -221,17 +236,18 @@ loss_plot = 1.0
 best_results = []
 n_tests = 200
 patience_thr = 500
-max_iter = 2000
 
 oar_dose = 10.0
 
 for test_i in range(n_tests):
 
     experiment = Experiment(
-        api_key="ro9UfCMFS2O73enclmXbXfJJj", project_name="autoplan_static"
+        api_key=os.getenv("COMET_API"), project_name="autoplan_static"
     )
     try:
-        x, y_dose, masks, region_weights, treatment, ct_volume, machine_config, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()
+        x, y_dose, masks, region_weights, config, ct_volume, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()
+        treatment = config.treatment
+        machine_config = config.machine
 
         patience = 0
         epoch = 0
@@ -331,16 +347,16 @@ for test_i in range(n_tests):
         pred_mlc_valid, pred_mus_valid, pred_jaws_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
         )
-        results = result_validation(machine_config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid, x, dose_pred, treatment, masks, region_weights)
-        experiment.log_metrics(
-            {
-                "results": results,
-            },
-            epoch=epoch,
-        )
+        # result_validation(config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid)
+        # experiment.log_metrics(
+        #     {
+        #         "results": results,
+        #     },
+        #     epoch=epoch,
+        # )
 
         print_results(experiment, treatment, raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss)
-        make_animation(experiment, treatment, dose_layer, machine_config, mask_external, pred_mlc, pred_mus, pred_jaws, ct_volume, masks_torch)
+        make_animation(experiment, config, dose_layer, pred_mlc, pred_mus, pred_jaws, dose_max=50.0)
     except Exception as e:
         print("Exception during test:", e)
         
