@@ -169,7 +169,6 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
         if (multi_cp and beams[0]['angle'] == 0):
             continue
 
-        # beams = sorted(beam_data, key=lambda x: x["angle"])
         mus = np.array([beam["mu"] for beam in beams])
         if (multi_cp):
             mus = np.diff(mus)
