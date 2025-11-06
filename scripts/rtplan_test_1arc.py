@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import zoom, rotate
 from pydose_rt import DoseEngine
 import SimpleITK as sitk
+from pydose_rt.utils.plotting import print_results, make_animation
 import torch
 
 # Set paths
@@ -45,35 +46,45 @@ external_mask = masks["External"]
 ct_volume = np.where(external_mask, ct_volume, -1000.0)
 
 ct_slices = np.array(np.expand_dims(ct_volume, 0))
-leafs_1, mus_1 = mlc_inputs[0]
+leafs, mus = mlc_inputs[0]
+# leafs[:, 0, :, :] = 0.3
+# leafs[:, 1, :, :] = 0.1
+# mus = np.ones_like(mus)
 results = []
 
-dose_layer_1 = DoseEngine(config.machine, 55, permute_ct=False, leafs_centered=True)
-jaws_1 = np.zeros(config.machine.shape_jaws)
-jaws_1[:, 0, :] = 0.5
-jaws_1[:, 1, :] = 1.0
+dose_layer = DoseEngine(config.machine, 55, permute_ct=False, leafs_centered=True)
+jaws = np.zeros(config.machine.shape_jaws)
+jaws[:, 0, :] = 0.5
+jaws[:, 1, :] = 1.0
 doses = []
 
-dose_pred = dose_layer_1(torch.tensor(np.array(leafs_1), dtype=config.dtype, device=device), torch.tensor(np.array(mus_1), dtype=config.dtype, device=device), torch.tensor(np.array(jaws_1), dtype=config.dtype, device=device), ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device)).cpu().detach().numpy()
+leafs = torch.tensor(np.array(leafs), dtype=config.dtype, device=device)
+mus = torch.tensor(np.array(mus), dtype=config.dtype, device=device)
+jaws = torch.tensor(np.array(jaws), dtype=config.dtype, device=device)
 
-# dose_pred = dose_pred * np.max(dose_volume) / np.max(dose_pred)
-dose_pred = dose_pred * (np.quantile(dose_volume, 0.999) / np.quantile(dose_pred, 0.999))
+dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device))
+dose_pred = dose_pred.cpu().detach().numpy()
 
-vmax = 15
-slice_idx = dose_volume.shape[0] // 2
-plt.figure()
-plt.subplot(131)
-# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
-plt.imshow(dose_volume[slice_idx, :, :], cmap='jet')
-plt.colorbar()
-plt.subplot(132)
-# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
-plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet')
-plt.colorbar()
-plt.subplot(133)
-# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
-plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=1.0)
-plt.colorbar()
-plt.show()
-# result_validation(config, dose_pred, leafs_1, jaws_1, mus_1)
-# print(f"{starting_angle_1}/{starting_angle_2}/{cw_1}/{cw_2}:\t{np.mean(diff)}") # Baseline is 0.143663
+dose_pred = np.where(external_mask, dose_pred, 0.0)
+dose_pred = dose_pred * (np.quantile(dose_volume, 0.9) / np.quantile(dose_pred, 0.9))
+
+
+# vmax = 15
+# slice_idx = dose_volume.shape[0] // 2
+# plt.figure()
+# plt.subplot(131)
+# # plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+# plt.imshow(dose_volume[slice_idx, :, :], cmap='jet')
+# plt.colorbar()
+# plt.subplot(132)
+# # plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+# plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet')
+# plt.colorbar()
+# plt.subplot(133)
+# # plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+# plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=1.0)
+# plt.colorbar()
+# plt.show()
+
+result_validation(config, dose_pred, leafs, jaws, mus)
+# make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())

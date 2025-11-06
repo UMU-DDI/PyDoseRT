@@ -50,19 +50,35 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype):
     return stacked_indices
 
 def build_rotation_grids(input_shape, angles_rad, device, dtype):
+    """
+    Build rotation grids for rotating D×W images by given angles.
+    
+    Args:
+        input_shape: (B, G, D, H, W) 
+        angles_rad: Tensor of G rotation angles in radians
+        device: torch device
+        dtype: torch dtype
+    
+    Returns:
+        grid2d: [B*G*H, D, W, 2] sampling grid for grid_sample
+    """
     B, G, D, H, W = input_shape
-    cos_a = torch.cos(angles_rad)
-    sin_a = torch.sin(angles_rad)
+    a = angles_rad.to(device=device, dtype=dtype)
+    # a -= math.pi / 2
+
+    cos_a = torch.cos(a)
+    sin_a = torch.sin(a)
     mats = torch.zeros((G, 2, 3), device=device, dtype=dtype)
     mats[:, 0, 0] = cos_a
-    mats[:, 0, 1] = -sin_a
-    mats[:, 1, 0] = sin_a
+    mats[:, 0, 1] = sin_a
+    mats[:, 1, 0] = -sin_a
     mats[:, 1, 1] = cos_a
 
-    # One grid per angle
-    grid2d = F.affine_grid(mats, size=(G, 1, D, W), align_corners=False)  # [G, 1, D, W, 2]
+    # Generate rotation grids for each angle
+    grid2d = F.affine_grid(mats, size=(G, 1, D, W), align_corners=False)  # [G, 1, W, D, 2]
+    # grid2d = grid2d[..., [1, 0]]
     
-    # Repeat each grid H times, and B times
+    # Expand for batch and height dimensions
     grid2d = grid2d.unsqueeze(1).unsqueeze(0)              # [1, G, 1, D, W, 2]
     grid2d = grid2d.repeat(B, 1, H, 1, 1, 1)               # [B, G, H, D, W, 2]
     grid2d = grid2d.reshape(B*G*H, D, W, 2)                # [B*G*H, D, W, 2]

@@ -78,7 +78,6 @@ def result_validation(config: DoseConfig,
     max_gamma = 2.0
     
     # Create mask for evaluation (only where dose > cutoff)
-    mask = config.patient.dose > dose_cutoff_value
     
     # Compute gamma
     gamma_map = pymedphys.gamma(
@@ -96,6 +95,8 @@ def result_validation(config: DoseConfig,
     )
     
     # Calculate pass rate
+    # mask = config.patient.dose > dose_cutoff_value
+    mask = config.patient.structures["External"] > 0
     gamma_valid = gamma_map[mask]
     gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
     pass_rate = np.sum(gamma_valid <= 1.0) / len(gamma_valid) * 100

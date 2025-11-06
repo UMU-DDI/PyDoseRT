@@ -145,7 +145,7 @@ class FluenceVolumeLayer(nn.Module):
             torch.Tensor: 3D volume grid of shape [B*G, D, cropped_W, cropped_H, 1] representing the projected fluence.
         """
         B = fluence_map.shape[0]
-        fluence_map = fluence_map.permute(0, 3, 1, 2)  # -> [B*G,1,H_field,W_field]
+        fluence_map = fluence_map.permute(0, 1, 3, 2)  # -> B*G,1,H_field,W_field]
         H, D, W = self.config.ct_array_shape
         h_min_idx, h_max_idx, w_min_idx, w_max_idx = bbox
         h_min_idx = 0 if h_min_idx is None else h_min_idx

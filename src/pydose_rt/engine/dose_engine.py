@@ -210,6 +210,7 @@ class DoseEngine(nn.Module):
             torch.Tensor: Final accumulated dose tensor of shape [B, H, D, W].
         """
 
+        H, D, W = self.config.ct_array_shape
         if (ct_image is not None) and self.permute_ct:
             # Convert ct image to be consistent with other dose engines with [B, D, W, H]
             ct_image = torch.permute(
@@ -252,7 +253,6 @@ class DoseEngine(nn.Module):
                 )
             else:
                 # Default to full volume if indices not provided
-                H, D, W = self.config.ct_array_shape
                 h_min_idx = 0
                 h_max_idx = H - 1
                 w_min_idx = 0
@@ -262,7 +262,6 @@ class DoseEngine(nn.Module):
                 batched_fluence_maps, (h_min_idx, h_max_idx, w_min_idx, w_max_idx)
             )
             batched_fluence_volumes.mul_(self.config.mean_photon_energy_MeV)
-
             batched_accumulated_dose = self.beam_wise_conv_layer(
                 batched_fluence_volumes, batched_kernels
             )
@@ -271,7 +270,6 @@ class DoseEngine(nn.Module):
             del batched_fluence_volumes, batched_fluence_maps, batched_kernels
                 
 
-            H, D, W = self.config.ct_array_shape
             # Insert at correct x indices, keep z cropped
             partial_shape = (
                 batched_accumulated_dose.shape[0],
@@ -290,7 +288,7 @@ class DoseEngine(nn.Module):
 
             # Reshape to [B, G, D, H, W]
             B = leaf_positions.shape[0]
-            G = len(self.config.gantry_angles)
+            G = self.config.number_of_cps
             D_, H_, W_, _ = batched_accumulated_dose.shape[1:]
             batched_accumulated_dose = batched_accumulated_dose.view(B, G, D_, H_, W_)
             batched_accumulated_dose.mul_(mus[:, :, None, None, None])
@@ -330,32 +328,3 @@ class DoseEngine(nn.Module):
                 return batched_accumulated_dose
             else:
                 return batched_accumulated_dose, single_fluence_map
-
-    def plot_rotated_dose_slices_sequential(self, rotated_dose):
-        """
-        Plots the central H slice of the rotated dose for each gantry angle (first batch), one after the other.
-        Args:
-            rotated_dose (torch.Tensor): [B, G, D, H, W]
-        """
-        import matplotlib.pyplot as plt
-
-        rotated_dose_np = rotated_dose[0].detach().cpu().numpy()  # [G, D, H, W]
-        print("shape:", rotated_dose_np.shape)
-        G = rotated_dose_np.shape[0]
-        H = rotated_dose_np.shape[2]
-        central_h = H // 2
-        angles = range(0, G, G // 30)  # Plot 8 angles
-        cumulative = None
-        for g in range(G):
-            slice_2d = rotated_dose_np[g, :, central_h, :]
-            if cumulative is None:
-                cumulative = slice_2d.copy()
-            else:
-                cumulative += slice_2d
-            if g in angles:
-                plt.figure(figsize=(6, 6))
-                plt.imshow(cumulative, cmap="jet")
-                plt.title(f"Cumulative dose up to angle {g}")
-                plt.axis("off")
-                plt.colorbar(fraction=0.046, pad=0.04)
-                plt.show()

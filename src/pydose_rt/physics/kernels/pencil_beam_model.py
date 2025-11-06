@@ -152,34 +152,6 @@ coeffs = {
 }
 
 
-def get_gaussian_kernel(sigma_x: float, sigma_y: float, sigma_z: float, kernel_width=1) -> np.ndarray:
-    """
-    Create a 3D Gaussian kernel for dose modeling.
-
-    Args:
-        sigma_x (float): Standard deviation in x direction.
-        sigma_y (float): Standard deviation in y direction.
-        sigma_z (float): Standard deviation in z direction.
-        kernel_width (int): Half-width of the kernel in each direction.
-
-    Returns:
-        np.ndarray: 3D Gaussian kernel with shape (2*kernel_width+1, 2*kernel_width+1, 2*kernel_width+1, 1, 1).
-    """
-    x = np.linspace(-kernel_width, kernel_width, kernel_width * 2 + 1)
-    y = np.linspace(-kernel_width, kernel_width, kernel_width * 2 + 1)
-    z = np.linspace(-kernel_width, kernel_width, kernel_width * 2 + 1)
-    x, y, z = np.meshgrid(x, y, z)
-
-    # Gaussian formula
-    kernel = (1 / (2 * np.pi * sigma_x * sigma_y)) * np.exp(
-        -(x**2 / (2 * sigma_x**2) + y**2 / (2 * sigma_y**2) + z**2 / (2 * sigma_z**2))
-    )
-
-    # Normalize the kernel
-    kernel /= np.sum(kernel)
-    return np.expand_dims(np.expand_dims(kernel.astype(np.float32), -1), -1)
-
-
 class PencilBeamModel:
     """
     Model for generating pencil beam dose kernels for radiotherapy dose calculation.

@@ -13,7 +13,7 @@ def resample_based_on_dose(ct_series, structures, dose):
     ct_series = resample.Execute(ct_series)
 
     for k in structures:
-        structures[k] = resample.Execute(ct_series)
+        structures[k] = resample.Execute(structures[k])
     return ct_series, structures
 
 def resample_based_on_plan(ct_series, structures, dose, recenter, plan_path):
@@ -126,7 +126,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
     for ref_seq in ds.FractionGroupSequence[0].ReferencedBeamSequence:
         if hasattr(ref_seq, "BeamMeterset"):
             beam_metersets[str(ref_seq.ReferencedBeamNumber)] = ref_seq.BeamMeterset
-
+            
     for beam in ds.BeamSequence:
         beam_data = []
         jaw_data = []
@@ -148,6 +148,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
                                 "lower": sequence.LeafJawPositions[int(len(sequence.LeafJawPositions) / 2):],
                                 "higher": sequence.LeafJawPositions[:int(len(sequence.LeafJawPositions) / 2)],
                             }
+                        
                         beam_data.append(seq_data)
                     elif sequence.RTBeamLimitingDeviceType == "ASYMX":
                         jaw = {
@@ -192,63 +193,13 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
 
         mlc_inputs.append((leafs, mus))
     clockwise = beams[0]["clockwise"] != "CC"
-    starting_angle = 0.5 * np.abs(beams[0]["angle"] + beams[1]["angle"])
+    angle_diff = 0.5 * np.abs(beams[1]["angle"] - beams[0]["angle"])
+    if clockwise:
+        starting_angle = beams[0]["angle"] + angle_diff 
+    else:
+        starting_angle = beams[0]["angle"] - angle_diff
     return mlc_inputs, clockwise, starting_angle
 
-
-def load_rtp_data(folder_path, dose_path=None, plan_path=None, struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"], recenter=True, scaling=500):
-    # Load CT
-    ct_series, ref = load_ct_series(folder_path)
-
-    # Get RTPLAN and RTDOSE paths
-    if (plan_path is None):
-        plan_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTPLAN" in path or "RP" in path)]
-    if (dose_path is None):
-        dose_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTDOSE" in path or "RD" in path)]
-    masks = load_structures()
-    dose = load_dose(dose_path)
-
-    # If RTPLAN is available, use it to determine isocenter
-    if plan_path:
-        plan = pydicom.dcmread(plan_path[0])
-        mlcs = fetch_plan_data(plan, scaling)
-        # Use the first dose as reference
-        reference_dose = dose
-        reference_spacing = reference_dose.GetSpacing()
-        reference_dose_size = reference_dose.GetSize()
-        reference_origin = reference_dose.GetOrigin()
-
-        max_slice_size = np.max(reference_dose_size[0:2])
-        max_slice_size = 2 * (max_slice_size // 2)
-        reference_size = tuple(int(x) for x in [
-                max_slice_size,
-                max_slice_size,
-                2 * (reference_dose_size[2] // 2)
-            ])
-
-        if recenter:
-            iso_center = np.array(get_iso_from_rtplan(plan_path[0]), dtype=np.float64)
-        else:
-            iso_center = reference_origin + np.array(reference_dose_size) / 2.0 * np.array(reference_spacing)
-        
-        # Resample CT
-        ct_series, reference_image = resample_to_iso_center(ct_series, iso_center, reference_spacing, reference_size, -1000)
-
-        # Resample all dose volumes
-        dose, _ = resample_to_iso_center(dose, iso_center, reference_spacing, reference_size, 0)
-
-        for k in masks:
-            masks[k], _ = resample_to_iso_center(masks[k], iso_center, reference_spacing, reference_size, 0, sitk.sitkNearestNeighbor)
-
-    else:
-        # No plan, just match to first dose
-        mlcs = None
-        reference_dose = dose
-        resample = sitk.ResampleImageFilter()
-        resample.SetReferenceImage(reference_dose)
-        ct_series = resample.Execute(ct_series)
-
-    return ct_series, dose, masks, mlcs
 
 def load_structures(ct_series, folder_path, struct_names: List[str] | None = None):
     struct_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTSTRUCT" in path or "RS" in path)]

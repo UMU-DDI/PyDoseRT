@@ -248,4 +248,4 @@ class FluenceMapLayer(nn.Module):
         plt.tight_layout()
         plt.show() """
 
-        return mask
+        return mask.permute(0, 3, 2, 1)

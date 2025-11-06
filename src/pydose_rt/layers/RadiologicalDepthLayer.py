@@ -112,7 +112,7 @@ class RadiologicalDepthLayer(nn.Module):
 
             # Calculate the actual step size for each angle
             step_sizes = []
-            for i, angle in enumerate(self.config.gantry_angles):
+            for i in range(self.config.number_of_cps):
                 # Calculate the actual distance between consecutive sample points
                 if i > 0:
                     diff = self.stacked_indices[0, i, 1:, :2] - self.stacked_indices[0, i, :-1, :2]

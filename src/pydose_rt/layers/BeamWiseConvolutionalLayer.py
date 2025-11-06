@@ -57,11 +57,9 @@ class BeamWiseConvolutionalLayer(nn.Module):
             torch.Tensor: Output tensor of shape [B*G, D, H, W, 1], representing the convolved volumes.
         """
 
-        BG, D, W, H, _ = fluence_vol.shape
+        BG, D, H, W, _ = fluence_vol.shape
         kH, kW = kernels.shape[0], kernels.shape[1]
 
-        # [BG, D, W, H, 1] → [BG, D, 1, H, W]
-        fluence_vol = fluence_vol.permute(0, 1, 4, 3, 2)  # [BG, D, 1, H, W]
         # [BG, D, 1, H, W] → [1, BG*D, H, W] (combine BG and D into batch)
         fluence_vol = fluence_vol.reshape(1, BG * D, H, W)
 
@@ -74,6 +72,6 @@ class BeamWiseConvolutionalLayer(nn.Module):
         )  # [BG*D, 1, H, W]
 
         # Reshape back: [BG, D, H, W, 1]
-        out = out.view(BG, D, 1, H, W).permute(0, 1, 3, 4, 2)
+        out = out.view(BG, D, H, W, 1)
 
         return out
