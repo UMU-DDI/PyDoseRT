@@ -8,7 +8,7 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype):
     x = torch.linspace(0, W - 1, W)
     # Storing the two seperately enables more efficient torch operations
     grid_x, grid_y = torch.meshgrid(x, y, indexing="ij")  # shape [W, D]
-
+    
     grid = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)  # [1, W, D, 2]
 
     indices_list = []
@@ -20,12 +20,12 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype):
                 [math.cos(theta), -math.sin(theta)],
                 [math.sin(theta), math.cos(theta)],
             ]
-        )
+        ).to(dtype)
 
         # Centered grid for rotation
         center_y = (D - 1) / 2.0
         center_x = (W - 1) / 2.0
-        shifted = grid[0] - torch.tensor([center_x, center_y])
+        shifted = (grid[0] - torch.tensor([center_x, center_y])).to(dtype)
         rotated = torch.matmul(shifted, rot_matrix.T) + torch.tensor(
             [center_x, center_y]
         )

@@ -9,7 +9,7 @@ import math
 from pydicom.data import get_testdata_file
 from pydose_rt.data import MachineConfig, PatientData, DoseConfig
 # from pydose_rt.data import MachineConfig
-from pydose_rt.objectives.metrics import result_validation
+from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
 import numpy as np
 from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
@@ -25,16 +25,22 @@ rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e
 rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+kernel_size = 55
+
 config = DoseConfig.from_dicom(
     ct_folder=ct_folder, 
     dose_path=rtdose_path,
     plan_path=rtplan_path,
     struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"],
     machine_preset="umea",
-    downsampling_factor=(1, 2, 1),
+    downsampling_factor=(1, 1, 1),
     dtype=torch.float16,
     device=device
 )
+ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
+if (np.abs(ref_dose - 1.0) > 0.001):
+    raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
+    
 ct_image = config.patient.ct_array
 dose = config.patient.dose
 masks = config.patient.structures
@@ -52,21 +58,21 @@ leafs, mus = mlc_inputs[0]
 # mus = np.ones_like(mus)
 results = []
 
-dose_layer = DoseEngine(config.machine, 55, permute_ct=False, leafs_centered=True)
+dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=True)
 jaws = np.zeros(config.machine.shape_jaws)
 jaws[:, 0, :] = 0.5
 jaws[:, 1, :] = 1.0
 doses = []
 
 leafs = torch.tensor(np.array(leafs), dtype=config.dtype, device=device)
-mus = torch.tensor(np.array(mus), dtype=config.dtype, device=device)
+mus = torch.tensor(np.array(mus) / 10, dtype=config.dtype, device=device)
 jaws = torch.tensor(np.array(jaws), dtype=config.dtype, device=device)
 
 dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device))
 dose_pred = dose_pred.cpu().detach().numpy()
 
 dose_pred = np.where(external_mask, dose_pred, 0.0)
-dose_pred = dose_pred * (np.quantile(dose_volume, 0.99) / np.quantile(dose_pred, 0.99))
+# dose_pred = dose_pred * (np.quantile(dose_volume, 0.99) / np.quantile(dose_pred, 0.99))
 
 
 # vmax = 15
@@ -77,6 +83,7 @@ dose_pred = dose_pred * (np.quantile(dose_volume, 0.99) / np.quantile(dose_pred,
 # plt.imshow(dose_volume[slice_idx, :, :], cmap='jet')
 # plt.colorbar()
 # plt.subplot(132)
+# plt.title(f"MAE {np.mean(np.abs(dose_pred[0] - dose_volume))}")
 # # plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
 # plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet')
 # plt.colorbar()
@@ -87,4 +94,4 @@ dose_pred = dose_pred * (np.quantile(dose_volume, 0.99) / np.quantile(dose_pred,
 # plt.show()
 
 result_validation(config, dose_pred, leafs, jaws, mus)
-# make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())
+make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())

@@ -2,7 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import trapezoid
 from pydose_rt.data import DoseConfig
+from pydose_rt import DoseEngine
+import copy
 import pymedphys
+import torch
 
 def exponentially_weighted_difference(x, y1, y2, alpha=5.0):
     """
@@ -221,3 +224,50 @@ if __name__ == "__main__":
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
+def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
+    # Create config for 20x20x20 cm phantom with 2mm resolution
+    # 200mm / 2mm = 100 voxels per dimension
+    config = copy.deepcopy(config)
+    device = config.device
+    config.machine.ct_array_shape = tuple(np.divide((200, 200, 200), config.machine.resolution).astype(np.int32))
+    config.machine.number_of_cps = 1
+    config.machine.starting_angle = 0
+ 
+    # Create water phantom (HU = 0 for water)
+    x_ct = 0.0 * np.expand_dims(np.ones((config.machine.ct_array_shape)), 0)
+ 
+    # Set up MLC positions for full 10x10 field
+    # Positions are normalized: 0.5 and 1.0 create a centered field
+    y_mlc = np.zeros((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs))
+    y_mlc[:, 0, :, :] = 0.5  # Left leaf bank
+    y_mlc[:, 1, :, :] = 100 / config.machine.field_size[0]
+ 
+    # Set up jaw positions for 10x10 field
+    y_jaws = np.zeros((1, 2, config.machine.number_of_cps))
+    y_jaws[:, 0, :] = 0.5  # Top jaw
+    y_jaws[:, 1, :] = 100 / config.machine.field_size[1]
+ 
+    # Set monitor units
+    mus = target_mu / 100 * np.ones((1, config.machine.number_of_cps), dtype=np.float32)
+ 
+    # Create dose engine
+    dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=True)
+ 
+    # Calculate dose
+    dose = dose_layer(
+        torch.tensor(y_mlc, dtype=config.dtype, device=device),
+        torch.tensor(mus, dtype=config.dtype, device=device),
+        jaw_positions=torch.tensor(y_jaws, dtype=config.dtype, device=device),
+        ct_image=torch.tensor(x_ct, dtype=config.dtype, device=device)
+    )
+
+    # Get center dose (at 10cm depth - index 50 for 100 voxels)
+    center_idx = 50
+    center_dose = dose[0, center_idx, center_idx, center_idx].detach().cpu().numpy()
+
+    # Calculate calibration factor
+    # This gives the factor to normalize to 1 Gy per MU at reference conditions
+    calibration_factor = config.machine.mean_photon_energy_MeV / center_dose
+
+    return center_dose, calibration_factor

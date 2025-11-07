@@ -23,7 +23,7 @@ load_dotenv()  # will look for .env in project root
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-remote = False
+remote = True
 if remote:
     data_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/"
     patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
