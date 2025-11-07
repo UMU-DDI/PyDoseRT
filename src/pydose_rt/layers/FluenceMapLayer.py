@@ -29,13 +29,16 @@ def fractional_box_overlap(d, left, right, voxel_width):
     """
     Compute fractional overlap using only standard PyTorch operations.
     """
-    
-    bin_start = d - 0.5 * voxel_width
-    bin_end = d + 0.5 * voxel_width
+    w = torch.as_tensor(voxel_width, dtype=torch.float32, device=d.device)
+    d32 = d.to(torch.float32)
+    half_w = 0.5 * w
+
+    bin_start = d32 - half_w
+    bin_end   = d32 + half_w
     
     overlap_start = torch.maximum(left, bin_start)
     overlap_end = torch.minimum(right, bin_end)
-    overlap = torch.clamp(overlap_end - overlap_start, min=0.0, max=voxel_width)
+    overlap = torch.clamp(overlap_end - overlap_start, min=0.0, max=w).to(d.dtype)
     
     return overlap / voxel_width
 
@@ -51,15 +54,12 @@ class FluenceMapLayer(nn.Module):
         config (MachineConfig): Configuration object containing field size, leaf sizes, and number of leafs.
         verbose (bool): Flag to enable verbose logging.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
-        epsilon (float): Small value for numerical stability.
-        open_blocked (torch.Tensor): Precomputed open/blocked indices for fluence calculation.
     """
 
     def __init__(
         self,
         config: MachineConfig,
         verbose: bool = False,
-        tau=5e-2,
     ):
         """
         Initializes the FluenceMapLayer.
@@ -73,10 +73,7 @@ class FluenceMapLayer(nn.Module):
         self.verbose = verbose
         self.device = self.config.device
 
-        self.epsilon = 1 / (4 * config.field_size_in_pixels[1])
 
-        # Parameters for sigmoid-free box function
-        self.tau = float(tau)
 
         W = config.field_size_in_pixels[1]
         N = config.number_of_leaf_pairs
