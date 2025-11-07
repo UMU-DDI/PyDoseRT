@@ -31,7 +31,7 @@ config = DoseConfig.from_dicom(
     plan_path=rtplan_path,
     struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"],
     machine_preset="umea",
-    downsampling_factor=(1, 1, 1),
+    downsampling_factor=(1, 2, 1),
     dtype=torch.float16,
     device=device
 )
@@ -66,7 +66,7 @@ dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=
 dose_pred = dose_pred.cpu().detach().numpy()
 
 dose_pred = np.where(external_mask, dose_pred, 0.0)
-dose_pred = dose_pred * (np.quantile(dose_volume, 0.9) / np.quantile(dose_pred, 0.9))
+dose_pred = dose_pred * (np.quantile(dose_volume, 0.99) / np.quantile(dose_pred, 0.99))
 
 
 # vmax = 15

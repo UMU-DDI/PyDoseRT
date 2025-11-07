@@ -181,19 +181,4 @@ class FluenceVolumeLayer(nn.Module):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        """ print('Volume grid shape:', volume_grid.shape)
-        import matplotlib.pyplot as plt
-        vol = volume_grid[30, ..., 0].detach().cpu().numpy()  # [D, W, H]
-
-        d, w, h = vol.shape
-        fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-        axs[0].imshow(vol[d//2, :, :].T, cmap='viridis')
-        axs[0].set_title('Axial (y=mid)')
-        axs[1].imshow(vol[:, w//2, :].T, cmap='viridis')
-        axs[1].set_title('Coronal (x=mid)')
-        axs[2].imshow(vol[:, :, h//2], cmap='viridis')
-        axs[2].set_title('Sagittal (z=mid)')
-        plt.tight_layout()
-        plt.show() """
-
-        return volume_grid
+        return volume_grid.permute(0, 1, 3, 2, 4)
