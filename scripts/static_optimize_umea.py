@@ -239,13 +239,14 @@ def compute_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _mas
 
 def compute_mae_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks):
     losses = []
-    for index, mask in enumerate(masks):
-        if (index == 0):
-            losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
-        else:
-            losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
+    mask = masks[-1]
+    # for index, mask in enumerate(masks):
+    #     if (index == 0):
+    #         losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
+    #     else:
+    losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
     # jaw_loss = torch.mean(torch.abs(leafs[:, 0, :, :] - 0.5)) + torch.mean(torch.abs(leafs[:, 1, :, :] - 0.5))
-    jaw_loss = torch.mean(torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :])**4)
+    jaw_loss = torch.mean(torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :])**2)
     losses.append(scale_loss(jaw_loss, weights["jaw_complexity_loss"]))
     return losses
 
