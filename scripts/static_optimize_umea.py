@@ -37,11 +37,11 @@ if remote:
         struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
         machine_preset="umea",
         treatment_preset="umea",
-        downsampling_factor=(1, 4, 4),
+        downsampling_factor=(1, 2, 2),
         dtype=torch.float32,
         device=device
     )
-    max_iter = 500
+    max_iter = 1000
 else:
     ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
     rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
@@ -61,7 +61,11 @@ else:
     max_iter = 100
 
 def get_example_data():
+    current_res = [np.inf]
+    weights = get_initial_weights()
+    latest = {"raw_losses": None, "loss_val": None, "dose_pred": None}
     config.treatment.randomize_weights()
+
     x = config.patient.ct_array
     y_dose = torch.from_numpy(config.patient.dose)
     masks = torch.from_numpy(np.stack([v for k,v in config.patient.structures.items()], 0))
@@ -89,16 +93,15 @@ def get_example_data():
     masks = masks.to(config.device)
     region_weights = region_weights.to(config.device)
 
-    current_res = [np.inf]
-    weights = get_initial_weights()
-    latest = {"raw_losses": None, "loss_val": None, "dose_pred": None}
 
     pred_mlc_init = torch.ones((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs), dtype=torch.float32, device=device)
-    pred_mlc_init[:, 0, :, :] = 0.5
-    pred_mlc_init[:, 1, :, :] = 0.0
+    pred_mlc_init[:, 0, :, :] = 0.1
+    pred_mlc_init[:, 1, :, :] = 0.9
     pred_mlc = pred_mlc_init.clone().detach().requires_grad_(True)
-    pred_jaws_init = torch.zeros((1, 2, config.machine.number_of_cps), dtype=torch.float32, device=device)
-    pred_jaws_init[:, 0, :] = 0.5
+    pred_jaws_init = torch.from_numpy(config.patient.plan_jaws).to(device).clone().detach()
+    # pred_jaws_init = torch.zeros((1, 2, config.machine.number_of_cps), dtype=torch.float32, device=device)
+    # pred_jaws_init[:, 0, :] = 0.1
+    # pred_jaws_init[:, 1, :] = 0.9
     pred_jaws = pred_jaws_init.clone().detach().requires_grad_(True)
     pred_mus_init = (100.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
     pred_mus = pred_mus_init.clone().detach().requires_grad_(True)
@@ -241,8 +244,8 @@ def compute_mae_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, 
             losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
         else:
             losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
-
-    losses.append(100.0 * torch.mean(torch.abs(leafs[:, 0, :, :] - 0.5)) + torch.mean(torch.abs(leafs[:, 1, :, :] - 0.0)))
+    jaw_loss = torch.mean(torch.abs(leafs[:, 0, :, :] - 0.5)) + torch.mean(torch.abs(leafs[:, 1, :, :] - 0.5))
+    losses.append(scale_loss(jaw_loss, weights["jaw_complexity_loss"]))
     return losses
 
 print_stuff = 0
@@ -295,14 +298,14 @@ for test_i in range(n_tests):
             dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
 
             # Compute loss
-            raw_losses = compute_loss(dose_pred, y_dose, pred_mus, pred_mlc, pred_jaws, weights, masks_torch)
+            raw_losses = compute_mae_loss(dose_pred, y_dose, pred_mus, pred_mlc, pred_jaws, weights, masks_torch)
             loss = torch.stack(raw_losses).sum()
             
             # Backprop
             loss.backward()
 
             # torch.nn.utils.clip_grad_norm_(pred_mlc, max_norm=1 / 40.0)
-            # torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
+            torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
             # torch.nn.utils.clip_grad_norm_(pred_mus, max_norm=1.0)
 
             # stash anything you want to inspect/plot after step()
