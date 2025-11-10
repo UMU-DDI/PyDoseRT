@@ -245,7 +245,7 @@ def compute_mae_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, 
         else:
             losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
     # jaw_loss = torch.mean(torch.abs(leafs[:, 0, :, :] - 0.5)) + torch.mean(torch.abs(leafs[:, 1, :, :] - 0.5))
-    jaw_loss = torch.mean(torch.abs(leafs[:, 0, :, :] - leafs[:, 0, :, :].mean(1, keepdims=True))**4) + torch.mean(torch.abs(leafs[:, 1, :, :] - leafs[:, 1, :, :].mean(1, keepdims=True))**4)
+    jaw_loss = torch.mean(torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :])**4)
     losses.append(scale_loss(jaw_loss, weights["jaw_complexity_loss"]))
     return losses
 
@@ -375,7 +375,7 @@ for test_i in range(n_tests):
 
         experiment.log_asset_data(pred_mlc_valid.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(pred_mus_valid.cpu().detach().numpy(), "mu_values.npy")
-        
+
         print_results(experiment, treatment, raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss)
         make_animation(experiment, config, dose_layer, pred_mlc, pred_mus, pred_jaws, dose_max=50.0)
     except Exception as e:

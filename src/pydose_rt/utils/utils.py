@@ -119,7 +119,7 @@ def get_initial_weights():
         "leaf_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "leaf_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "jaw_complexity_loss": 10**np.random.randint(-3, 3), # 10**np.random.randint(min_int_range, max_int_range),
+        "jaw_complexity_loss": 10**np.random.randint(-3, 5), # 10**np.random.randint(min_int_range, max_int_range),
     }
     
     return weights
