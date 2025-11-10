@@ -31,7 +31,8 @@ def print_results(
     true_ct,
     masks,
     mae_loss,
-    plot_ct=True
+    plot_ct=True,
+    preset="umea"
 ):
     def _hide_ticks(ax):
         ax.set_xticks([])
@@ -154,29 +155,34 @@ def print_results(
         cmap='coolwarm', vmin=-scale_mus, vmax=scale_mus, alpha=alpha
     )
 
-    axial_z = 49
-    # axial_xstart = 64
-    # axial_xend = 192
-    # coronal_x = 128
-    # coronal_zstart = 32
-    # coronal_zend = 224
-    # coronal_ystart = 24
-    # coronal_yend = 72
-    axial_xstart = 64
-    axial_xend = 192
-    coronal_x = 128
-    coronal_zstart = 16
-    coronal_zend = 80
-    coronal_ystart = 32
-    coronal_yend = 224
-    # axial_z = 160
-    # axial_xstart = 32
-    # axial_xend = 96
-    # coronal_x = 64
-    # coronal_ystart = 16
-    # coronal_yend = 112
-    # coronal_zstart = 80
-    # coronal_zend = 240
+    if (preset == "lund"):
+        axial_z = 49
+        axial_xstart = 64
+        axial_xend = 192
+        coronal_x = 128
+        coronal_zstart = 16
+        coronal_zend = 80
+        coronal_ystart = 32
+        coronal_yend = 224
+    elif (preset == "umea"):
+        axial_z = 84
+        axial_xstart = 0
+        axial_xend = 188
+        coronal_x = 94
+        coronal_zstart = 0
+        coronal_zend = 168
+        coronal_ystart = 0
+        coronal_yend = 188
+    else:
+        axial_z = 44
+        axial_xstart = 0
+        axial_xend = 256
+        coronal_x = 128
+        coronal_zstart = 0
+        coronal_zend = 256
+        coronal_ystart = 0
+        coronal_yend = 256
+
     # If overlay_mask_outline expects already-sliced 2D arrays (as in your original code),
     # use these two helpers instead:
     def _dose_slice_axial(arr, z=44, x_start=0, x_end=256):
