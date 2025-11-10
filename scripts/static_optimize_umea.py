@@ -16,14 +16,14 @@ from pydose_rt.utils.grad_monitor import GradMonitor
 import numpy as np
 from pydose_rt.objectives.losses import dose_loss, leafs_loss, mus_loss, jaws_loss, scale_loss
 from pydose_rt.objectives.metrics import result_validation
-from pydose_rt.utils.utils import create_bound_weight_matrix, prune_patients, get_initial_weights, get_model_input
+from pydose_rt.utils.utils import create_bound_weight_matrix, get_initial_weights, get_model_input
 from pydose_rt.utils.plotting import print_results, make_animation
 from dotenv import load_dotenv
 load_dotenv()  # will look for .env in project root
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-remote = True
+remote = False
 if remote:
     
     ct_folder = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21/"
@@ -240,11 +240,11 @@ def compute_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _mas
 def compute_mae_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks):
     losses = []
     mask = masks[-1]
-    for index, mask in enumerate([masks[0], masks[-1]]):
+    for index, mask in enumerate([masks[0], masks[1], masks[-1]]):
         losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
     # jaw_loss = torch.mean(torch.abs(leafs[:, 0, :, :] - 0.5)) + torch.mean(torch.abs(leafs[:, 1, :, :] - 0.5))
     jaw_loss = torch.mean(torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :])**2)
-    losses.append(scale_loss(jaw_loss, weights["jaw_complexity_loss"]))
+    losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
     return losses
 
 print_stuff = 0
@@ -347,6 +347,7 @@ for test_i in range(n_tests):
                     "loss": loss.item(),
                     "dose_mae": mae_loss,
                     "lr": lr_now,
+                    "leaf_reg": raw_losses[-1] / weights["leaf_complexity_loss"],
                 },
                 epoch=epoch,
             )
