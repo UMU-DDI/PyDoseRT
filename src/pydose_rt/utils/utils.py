@@ -175,11 +175,11 @@ def get_initial_weights():
         "loss_higher_bound_gy": 1.0, #10**np.random.randint(min_int_range, max_int_range),
         "loss_lower_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
         "loss_higher_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
-        "l2_loss_oars_and_background": 10**np.random.randint(0, 3),
+        "l2_loss_oars_and_background": 10**np.random.randint(-3, 0),
         "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "leaf_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "leaf_complexity_loss": 10**np.random.randint(-3, 0), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "leaf_complexity_loss": 10**np.random.randint(-2, 3), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "jaw_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
     }
