@@ -10,6 +10,139 @@ from pydose_rt.data import PatientData, MachineConfig
 import torch
 import os
 import time
+import pydicom
+
+def export_plan(config, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
+
+    """
+    Writes MLC positions and MU values to a new RTPLAN DICOM file.
+ 
+    Args:
+        input_plan_path: Path to the original RTPLAN file to use as template
+        output_plan_path: Path where the new RTPLAN file will be saved
+        leafs: MLC leaf positions, shape (1, 2, num_control_points, num_leaves)
+               where dim 1 is [higher, lower] banks
+        jaws: Jaw positions, shape (1, 2, num_control_points)
+              where dim 1 is [lower, higher]
+        mus: MU values, shape (1, num_control_points)
+        scaling: Scaling factor to convert normalized positions back to mm
+        beam_number: Beam number to modify (default "1")
+    """
+    # Load the original plan
+    ds = pydicom.dcmread(input_plan_path)
+ 
+    # Remove batch dimension
+    leafs = config.patient.plan_mlcs[0]  # (2, num_cp, num_leaves)
+    jaws = config.patient.plan_jaws[0]    # (2, num_cp)
+    mus = config.patient.plan_mus[0]      # (num_cp,)
+ 
+    # Reverse the scaling transformation
+    leafs = leafs * scaling - (scaling / 2)
+    jaws = jaws * scaling - (scaling / 2)
+ 
+    # Split leafs back into higher and lower banks
+    beam_higher = leafs[1]  # (num_cp, num_leaves)
+    beam_lower = leafs[0]   # (num_cp, num_leaves)
+    jaw_lower = jaws[0]     # (num_cp,)
+    jaw_higher = jaws[1]    # (num_cp,)
+ 
+    num_cp = len(mus)
+    multi_cp = num_cp > 1
+ 
+    # Convert differential MUs back to cumulative if multi-control point
+    if multi_cp:
+        cumulative_mus = np.cumsum(mus) / np.sum(mus)
+        total_mu = np.sum(mus)
+        cumulative_weights = cumulative_mus / cumulative_mus.max()
+ 
+        # For multi-CP, we need to convert averaged positions back to actual control point positions        # This reverses the averaging done in fetch_plan_data
+
+        actual_beam_higher = np.zeros((num_cp, beam_higher.shape[1]))
+        actual_beam_lower = np.zeros((num_cp, beam_lower.shape[1]))
+        actual_jaw_lower = np.zeros(num_cp)
+        actual_jaw_higher = np.zeros(num_cp)
+ 
+        # Extrapolate first control point backwards from first two midpoints
+        # If m[0] and m[1] are midpoints, assume linear progression:
+        # p[0] = 2*m[0] - m[1] ensures proper reconstruction
+        actual_beam_higher[0] = beam_higher[0]
+        actual_beam_lower[0] = beam_lower[0]
+        actual_jaw_lower[0] = jaw_lower[0]
+        actual_jaw_higher[0] = jaw_higher[0]
+ 
+        # Reconstruct subsequent control points using midpoint formula: p[i+1] = 2*m[i] - p[i]
+        for i in range(num_cp):
+            actual_beam_higher[i] = beam_higher[i]
+            actual_beam_lower[i] = beam_lower[i]
+            actual_jaw_lower[i] = jaw_lower[i]
+            actual_jaw_higher[i] = jaw_higher[i]
+    else:
+        total_mu = mus[0]
+        cumulative_weights = [1.0]
+        actual_beam_higher = beam_higher
+        actual_beam_lower = beam_lower
+        actual_jaw_lower = jaw_lower
+        actual_jaw_higher = jaw_higher
+ 
+    # Find the beam to modify
+    beam_found = False
+    for beam in ds.BeamSequence:
+        if str(beam.BeamNumber) == beam_number:
+            beam_found = True
+ 
+            # Update beam meterset in FractionGroupSequence
+            for ref_seq in ds.FractionGroupSequence[0].ReferencedBeamSequence:
+                if str(ref_seq.ReferencedBeamNumber) == beam_number:
+                    ref_seq.BeamMeterset = float(total_mu)
+ 
+            # Update control points
+            num_existing_cp = len(beam.ControlPointSequence)
+            expected_cp = num_cp
+ 
+            if num_existing_cp != expected_cp:
+                print(f"Warning: Expected {expected_cp} control points but found {num_existing_cp}")
+ 
+            for index, cps in enumerate(beam.ControlPointSequence):
+                if index >= expected_cp:
+                    break
+ 
+                # Update cumulative meterset weight
+                if multi_cp:
+                    if index == 0:
+                        cps.CumulativeMetersetWeight = 0.0
+                    else:
+                        cps.CumulativeMetersetWeight = float(cumulative_weights[index])
+                else:
+                    if hasattr(cps, "CumulativeMetersetWeight"):
+                        cps.CumulativeMetersetWeight = 1.0
+ 
+                # Update MLC and jaw positions
+                if "BeamLimitingDevicePositionSequence" in cps:
+                    for sequence in cps.BeamLimitingDevicePositionSequence:
+                        if sequence.RTBeamLimitingDeviceType == "MLCX":
+                            # Combine higher and lower banks
+                            mlc_positions = np.concatenate([
+                                actual_beam_lower[index],
+                                actual_beam_higher[index]
+                            ])
+                            mlc_positions = [float(x) for x in mlc_positions]
+                            sequence.LeafJawPositions = mlc_positions
+ 
+                        elif sequence.RTBeamLimitingDeviceType == "ASYMX":
+                            jaw_positions = [
+                                float(actual_jaw_lower[index]),
+                                float(actual_jaw_higher[index])
+                            ]
+                            sequence.LeafJawPositions = jaw_positions
+ 
+            break
+ 
+    if not beam_found:
+        raise ValueError(f"Beam number {beam_number} not found in plan")
+ 
+    # Save the modified plan
+    ds.save_as(output_plan_path)
+    print(f"Plan saved to {output_plan_path}")
 
 def get_model_input(patient: PatientData, machine: MachineConfig):
     structures = patient.structures

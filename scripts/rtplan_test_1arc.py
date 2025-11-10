@@ -21,7 +21,8 @@ import torch
 
 # Set paths
 ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
-rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
+# rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
+rtplan_path = "out/plan.dcm"
 rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -93,5 +94,5 @@ plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='c
 plt.colorbar()
 plt.show()
 
-result_validation(config, dose_pred, leafs, jaws, mus)
+# result_validation(config, dose_pred, leafs, jaws, mus)
 # make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())

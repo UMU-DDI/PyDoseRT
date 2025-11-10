@@ -100,11 +100,11 @@ class FluenceVolumeLayer(nn.Module):
         for d in depths:
             scale = self.config.SID / d
             # SAT: For now, no profile correction is added
-            # r = torch.sqrt(WT**2 + HT**2)
-            # scaled_r = r * scale  # project back to MLC plane
-            # p = self._interpolate_profile(scaled_r)
+            r = torch.sqrt(WT**2 + HT**2)
+            scaled_r = r * scale  # project back to MLC plane
+            p = self._interpolate_profile(scaled_r)
             inv_square = scale**2
-            corrections.append(inv_square)  # * p)
+            corrections.append(inv_square)# * p)
 
             gy = (WT / WT_max) * scale
             gz = (HT / HT_max) * scale

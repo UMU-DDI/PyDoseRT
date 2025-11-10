@@ -173,24 +173,16 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
         if (multi_cp and beams[0]['angle'] == 0):
             continue
 
-        mus = np.array([beam["mu"] for beam in beams])
+        mus =  np.array([beam["mu"] for beam in beams])
         if (multi_cp):
-            mus = np.diff(mus)
+            mus = np.diff(mus, prepend=0)
         mus = np.expand_dims(mus, axis=0)
 
-        if (multi_cp):
-            beam_higher = np.array([beam["higher"] for beam in beams])[:-1, :] + (np.diff([beam["higher"] for beam in beams], axis=0) / 2)
-            beam_lower = np.array([beam["lower"] for beam in beams])[:-1, :] + (np.diff([beam["lower"] for beam in beams], axis=0) / 2)
-            jaw_higher = np.array([beam["jaw_higher"] for beam in beams])[:-1] + (np.diff([beam["jaw_higher"] for beam in beams]) / 2)
-            jaw_lower = np.array([beam["jaw_lower"] for beam in beams])[:-1] + (np.diff([beam["jaw_lower"] for beam in beams]) / 2)
-        else:
-            beam_higher = np.array([beam["higher"] for beam in beams])
-            beam_lower = np.array([beam["lower"] for beam in beams])
-            jaw_higher = np.array([beam["jaw_higher"] for beam in beams])
-            jaw_lower = np.array([beam["jaw_lower"] for beam in beams])
+        beam_higher = np.array([beam["higher"] for beam in beams])
+        beam_lower = np.array([beam["lower"] for beam in beams])
+        jaw_higher = np.array([beam["jaw_higher"] for beam in beams])
+        jaw_lower = np.array([beam["jaw_lower"] for beam in beams])
 
-
-        
         leafs = np.stack([beam_higher, beam_lower], axis=0)
         leafs += (scaling / 2)
         leafs /= scaling
@@ -203,11 +195,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
 
         parameters.append((leafs, jaws, mus))
     clockwise = beams[0]["clockwise"] != "CC"
-    angle_diff = 0.5 * np.abs(beams[1]["angle"] - beams[0]["angle"])
-    if clockwise:
-        starting_angle = beams[0]["angle"] + angle_diff 
-    else:
-        starting_angle = beams[0]["angle"] - angle_diff
+    starting_angle = beams[0]["angle"]
 
     return leafs, jaws, mus, clockwise, starting_angle
 
