@@ -175,13 +175,13 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
 
         mus =  np.array([beam["mu"] for beam in beams])
         if (multi_cp):
-            mus = np.diff(mus, prepend=0)
+            mus = np.diff(mus)
         mus = np.expand_dims(mus, axis=0)
 
-        beam_higher = np.array([beam["higher"] for beam in beams])
-        beam_lower = np.array([beam["lower"] for beam in beams])
-        jaw_higher = np.array([beam["jaw_higher"] for beam in beams])
-        jaw_lower = np.array([beam["jaw_lower"] for beam in beams])
+        beam_higher = np.array([beam["higher"] for beam in beams[1:]])
+        beam_lower = np.array([beam["lower"] for beam in beams[1:]])
+        jaw_higher = np.array([beam["jaw_higher"] for beam in beams[1:]])
+        jaw_lower = np.array([beam["jaw_lower"] for beam in beams[1:]])
 
         leafs = np.stack([beam_higher, beam_lower], axis=0)
         leafs += (scaling / 2)
@@ -195,7 +195,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
 
         parameters.append((leafs, jaws, mus))
     clockwise = beams[0]["clockwise"] != "CC"
-    starting_angle = beams[0]["angle"]
+    starting_angle = beams[1]["angle"]
 
     return leafs, jaws, mus, clockwise, starting_angle
 

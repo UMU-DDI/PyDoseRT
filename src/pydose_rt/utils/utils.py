@@ -40,11 +40,12 @@ def export_plan(config, input_plan_path, output_plan_path, scaling=400, beam_num
     leafs = leafs * scaling - (scaling / 2)
     jaws = jaws * scaling - (scaling / 2)
  
+    mus = np.hstack([0.0, mus])  # (2, num_cp)
     # Split leafs back into higher and lower banks
-    beam_higher = leafs[1]  # (num_cp, num_leaves)
-    beam_lower = leafs[0]   # (num_cp, num_leaves)
-    jaw_lower = jaws[0]     # (num_cp,)
-    jaw_higher = jaws[1]    # (num_cp,)
+    beam_higher = np.vstack([leafs[1][1:2, :], leafs[1]])  # (num_cp, num_leaves)
+    beam_lower = np.vstack([leafs[0][1:2, :], leafs[0]])   # (num_cp, num_leaves)
+    jaw_lower = np.hstack([jaws[0][1:2], jaws[0]])    # (num_cp,)
+    jaw_higher = np.hstack([jaws[1][1:2], jaws[1]])    # (num_cp,)
  
     num_cp = len(mus)
     multi_cp = num_cp > 1
@@ -178,7 +179,7 @@ def get_initial_weights():
         "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "leaf_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "leaf_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "leaf_complexity_loss": 10**np.random.randint(-3, 0), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "jaw_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
     }
