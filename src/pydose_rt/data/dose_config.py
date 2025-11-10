@@ -60,8 +60,8 @@ class DoseConfig(BaseSettings):
             if (patient.plan_mlcs is not None):
                 machine_data["clockwise"] = patient.plan_clockwise
                 machine_data["starting_angle"] = patient.plan_starting_angle
-                machine_data["number_of_cps"] = patient.plan_mlcs[0][0].shape[2]
-                machine_data["number_of_leafs"] = patient.plan_mlcs[0][0].shape[3]
+                machine_data["number_of_cps"] = patient.plan_mlcs.shape[2]
+                machine_data["number_of_leafs"] = patient.plan_mlcs.shape[3]
 
         if "machine" not in data:
             data["machine"] = MachineConfig(**machine_data)

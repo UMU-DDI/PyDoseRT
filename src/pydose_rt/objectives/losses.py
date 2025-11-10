@@ -63,38 +63,6 @@ def auxiliary_loss(dose_pred, dose_bypass):
     return torch.mean((dose_pred - dose_bypass) ** 2)
 
 
-def _constraint_loss(
-    dose_pred,
-    lower_bound_gy,
-    higher_bound_gy,
-    masks,
-    region_weights=None,
-    number_regions=1,
-):
-    """
-    Computes the constraint loss for a predicted dose distribution.
-    Assumes dose_pred and bounds are [B, 1, D, H, W] or [B, D, H, W] (broadcastable).
-    """
-    penalty_lower = F.relu(lower_bound_gy - dose_pred) ** 2
-    penalty_upper = F.relu(dose_pred - higher_bound_gy) ** 2
-
-    if region_weights is not None:
-        penalty_lower = penalty_lower * region_weights
-        penalty_upper = penalty_upper * region_weights
-
-    loss_lower_bound_gy = 0.0
-    loss_higher_bound_gy = 0.0
-    for mask_name in masks:
-        if mask_name != "PTV":
-            continue
-
-        mask = masks[mask_name]
-        loss_lower_bound_gy += (penalty_lower * mask).mean()
-        loss_higher_bound_gy += (penalty_upper * mask).mean()
-
-
-    return loss_lower_bound_gy, loss_higher_bound_gy
-
 
 def constraint_loss(
     dose_pred,
@@ -136,7 +104,7 @@ def compute_l2_loss(dose_pred, masks, region_weights=None, number_regions=1):
     """
     loss_list = []
     for region, mask in masks.items():
-        if region == "PTV":
+        if (region.startswith("PTV") or region.startswith("CTV")):
             continue
         region_loss = torch.mean((dose_pred * mask) ** 2)
         if region_weights is not None:
@@ -266,13 +234,6 @@ def mus_loss(mus, config):
 # leaf loss
 # ======================================================================================
 def leafs_loss(leafs, config):
-    def mlc_opening_reg(leafs, min_opening, huge_penalty=1):
-        # leafs: [B, C, H, W]
-        violation = torch.clamp(leafs[:, 1, :, :] - min_opening, min=0)
-        penalty = torch.mean(huge_penalty * violation**2)
-        loss = penalty
-        return loss
-
     def leaf_speed_reg(leafs, leaf_rate, huge_penalty=1):
         left_positions = leafs[:, 0, :, :] - (leafs[:, 1, :, :] / 2)
         right_positions = leafs[:, 0, :, :] + (leafs[:, 1, :, :] / 2)
@@ -339,15 +300,9 @@ def jaws_loss(jaws, config):
 # ======================================================================================
 def dose_loss(x, dose_pred, constraints, masks, region_weights=None, loss_weights=0):
     # masks: [B, 7, D, H, W]
-    masks_dict = {
-        "PTV": masks[:, 0:1, ...],
-        "ROI1": masks[:, 1:2, ...],
-        "ROI2": masks[:, 2:3, ...],
-        "ROI3": masks[:, 3:4, ...],
-        "ROI4": masks[:, 4:5, ...],
-        "ROI5": masks[:, 5:6, ...],
-        "ROI6": masks[:, 6:7, ...],
-    }
+    masks_dict = dict()
+    for idx, const in enumerate(constraints.structures):
+        masks_dict[const.name] = masks[:, idx : idx + 1, ...]
 
     loss_lower_bound_gy, loss_higher_bound_gy = constraint_loss(
         dose_pred,

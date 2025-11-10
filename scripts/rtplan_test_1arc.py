@@ -33,18 +33,20 @@ config = DoseConfig.from_dicom(
     plan_path=rtplan_path,
     struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"],
     machine_preset="umea",
-    downsampling_factor=(1, 1, 1),
-    dtype=torch.float16,
+    downsampling_factor=(1, 2, 2),
+    dtype=torch.float32,
     device=device
 )
-ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
-if (np.abs(ref_dose - 1.0) > 0.001):
-    raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
+# ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
+# if (np.abs(ref_dose - 1.0) > 0.001):
+#     raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
     
 ct_image = config.patient.ct_array
 dose = config.patient.dose
 masks = config.patient.structures
-mlc_inputs = config.patient.plan_mlcs
+leafs = config.patient.plan_mlcs
+mus = config.patient.plan_mus
+jaws = config.patient.plan_jaws
 
 dose_volume = dose
 ct_volume = ct_image
@@ -52,17 +54,15 @@ external_mask = masks["External"]
 ct_volume = np.where(external_mask, ct_volume, -1000.0)
 
 ct_slices = np.array(np.expand_dims(ct_volume, 0))
-leafs, mus = mlc_inputs[0]
 # leafs[:, 0, :, :] = 0.3
 # leafs[:, 1, :, :] = 0.1
 # mus = np.ones_like(mus)
 results = []
 
-dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=True)
-jaws = np.zeros(config.machine.shape_jaws)
-jaws[:, 0, :] = 0.5
-jaws[:, 1, :] = 1.0
-doses = []
+dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False)
+# jaws = np.zeros(config.machine.shape_jaws)
+# jaws[:, 0, :] = 0.5
+# jaws[:, 1, :] = 1.0
 
 leafs = torch.tensor(np.array(leafs), dtype=config.dtype, device=device)
 mus = torch.tensor(np.array(mus) / 10, dtype=config.dtype, device=device)
@@ -75,23 +75,23 @@ dose_pred = np.where(external_mask, dose_pred, 0.0)
 # dose_pred = dose_pred * (np.quantile(dose_volume, 0.99) / np.quantile(dose_pred, 0.99))
 
 
-# vmax = 15
-# slice_idx = dose_volume.shape[0] // 2
-# plt.figure()
-# plt.subplot(131)
-# # plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
-# plt.imshow(dose_volume[slice_idx, :, :], cmap='jet')
-# plt.colorbar()
-# plt.subplot(132)
-# plt.title(f"MAE {np.mean(np.abs(dose_pred[0] - dose_volume))}")
-# # plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
-# plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet')
-# plt.colorbar()
-# plt.subplot(133)
-# # plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
-# plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=1.0)
-# plt.colorbar()
-# plt.show()
+vmax = 15
+slice_idx = dose_volume.shape[0] // 2
+plt.figure()
+plt.subplot(131)
+# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+plt.imshow(dose_volume[slice_idx, :, :], cmap='jet')
+plt.colorbar()
+plt.subplot(132)
+plt.title(f"MAE {np.mean(np.abs(dose_pred[0] - dose_volume))}")
+# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet')
+plt.colorbar()
+plt.subplot(133)
+# plt.imshow(ct_volume[ct_shape[0] // 2, :, :], cmap='gray')
+plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=1.0)
+plt.colorbar()
+plt.show()
 
 result_validation(config, dose_pred, leafs, jaws, mus)
-make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())
+# make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())

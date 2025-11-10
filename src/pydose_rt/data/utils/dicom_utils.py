@@ -157,9 +157,12 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
                         }
                         jaw_data.append(jaw)
         if (len(beam_data) > 0):
+            for _beam in beam_data:
+                _beam["jaw_lower"] = jaw_data[0]["lower"]
+                _beam["jaw_higher"] = jaw_data[0]["higher"]
             data[str(beam.BeamNumber)] = beam_data
     
-    mlc_inputs = []
+    parameters = []
     for index, beam_data in enumerate(data):
         beams = data[beam_data]
 
@@ -178,27 +181,35 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
         if (multi_cp):
             beam_higher = np.array([beam["higher"] for beam in beams])[:-1, :] + (np.diff([beam["higher"] for beam in beams], axis=0) / 2)
             beam_lower = np.array([beam["lower"] for beam in beams])[:-1, :] + (np.diff([beam["lower"] for beam in beams], axis=0) / 2)
+            jaw_higher = np.array([beam["jaw_higher"] for beam in beams])[:-1] + (np.diff([beam["jaw_higher"] for beam in beams]) / 2)
+            jaw_lower = np.array([beam["jaw_lower"] for beam in beams])[:-1] + (np.diff([beam["jaw_lower"] for beam in beams]) / 2)
         else:
             beam_higher = np.array([beam["higher"] for beam in beams])
             beam_lower = np.array([beam["lower"] for beam in beams])
+            jaw_higher = np.array([beam["jaw_higher"] for beam in beams])
+            jaw_lower = np.array([beam["jaw_lower"] for beam in beams])
 
-        center = np.array((beam_higher + beam_lower) / 2, dtype=np.float32)
-        width = np.array((beam_lower - beam_higher), dtype=np.float32)
-        center += (scaling / 2)
-        center /= scaling
-        width /= scaling
+
         
-        leafs = np.stack([center, width], axis=0)
+        leafs = np.stack([beam_higher, beam_lower], axis=0)
+        leafs += (scaling / 2)
+        leafs /= scaling
         leafs = np.expand_dims(leafs, axis=0)
 
-        mlc_inputs.append((leafs, mus))
+        jaws = np.stack([jaw_lower, jaw_higher], axis=0)
+        jaws += (scaling / 2)
+        jaws /= scaling
+        jaws = np.expand_dims(jaws, axis=0)
+
+        parameters.append((leafs, jaws, mus))
     clockwise = beams[0]["clockwise"] != "CC"
     angle_diff = 0.5 * np.abs(beams[1]["angle"] - beams[0]["angle"])
     if clockwise:
         starting_angle = beams[0]["angle"] + angle_diff 
     else:
         starting_angle = beams[0]["angle"] - angle_diff
-    return mlc_inputs, clockwise, starting_angle
+
+    return leafs, jaws, mus, clockwise, starting_angle
 
 
 def load_structures(ct_series, folder_path, struct_names: List[str] | None = None):

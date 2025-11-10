@@ -13,5 +13,5 @@ source /cephyr/users/attilas/Alvis/data/attila/autoenv/bin/activate
 unset PYTHONPATH
 export PYTHONNOUSERSITE=1
 
-python3 scripts/static_optimize_single_patient.py
+python3 scripts/static_optimize_umea.py
 wait

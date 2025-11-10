@@ -3,6 +3,7 @@ Patient configuration - CT dimensions and geometric parameters.
 """
 # from pydantic import BaseModel, Field, model_validator
 from dataclasses import dataclass
+from token import OP
 from typing import Optional, TYPE_CHECKING, List
 import torch
 import numpy as np
@@ -18,10 +19,10 @@ if TYPE_CHECKING:
 class PatientData:
     """
     Patient-specific configuration.
-    
+
     Defines CT dimensions and geometric parameters for dose calculation.
     """
-    
+
     # CT dimensions
     ct_array: np.array
     structures: dict[str, np.array]
@@ -30,6 +31,8 @@ class PatientData:
 
     plan_iso_center: Optional[tuple[float, float, float]] = None
     plan_mlcs: Optional[np.array] = None
+    plan_mus: Optional[np.array] = None
+    plan_jaws: Optional[np.array] = None
     plan_clockwise: Optional[bool] = None
     plan_starting_angle: Optional[float] = None
     
@@ -62,7 +65,7 @@ class PatientData:
         clockwise = True
         starting_angle = 0.0
         if plan_path is not None:
-            mlcs, clockwise, starting_angle = fetch_plan_data(plan_path, scaling)
+            mlcs, jaws, mus, clockwise, starting_angle = fetch_plan_data(plan_path, scaling)
             # Use the first dose as reference
             ct_series, structures, dose, iso_center = resample_based_on_plan(ct_series, structures, dose, recenter, plan_path)
             
@@ -79,6 +82,8 @@ class PatientData:
             structures={k: sitk.GetArrayFromImage(v) for k, v in structures.items()},            voxel_spacing_mm=ct_series.GetSpacing(),
             dose=sitk.GetArrayFromImage(dose),
             plan_mlcs=mlcs,
+            plan_jaws=jaws,
+            plan_mus=mus,
             plan_iso_center=iso_center,
             plan_clockwise=clockwise,
             plan_starting_angle=starting_angle,

@@ -149,7 +149,7 @@ class TreatmentConfig(BaseModel):
 
     def randomize_weights(self):
         for struct in self.structures:
-            if struct.name == "PTV":
+            if "PTV" in struct.name or "CTV" in struct.name:
                 struct.constraints.weight = 1000
             else:
                 struct.constraints.weight = 10**np.random.randint(-3, 3)
