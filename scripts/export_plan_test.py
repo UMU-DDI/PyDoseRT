@@ -42,16 +42,18 @@ config = DoseConfig.from_dicom(
     device=device
 )
 
+
 mu_path = '/home/bolo/Documents/PyDose/out/mu_values-3000.npy'
 mlc_path = '/home/bolo/Documents/PyDose/out/mlc_positions-3000.npy'
 
-# with open(mu_path, "r") as f:
-#     mus = np.array(ast.literal_eval(f.read()))
+with open(mu_path, "r") as f:
+    mus = np.array(ast.literal_eval(f.read()))
 
-# with open(mlc_path, "r") as f:
-#     mlcs = np.array(ast.literal_eval(f.read()))
+with open(mlc_path, "r") as f:
+    mlcs = np.array(ast.literal_eval(f.read()))
 
 
-# config.patient.plan_mus = 10 * mus
-# config.patient.plan_mlcs = mlcs
+config.patient.plan_mus = 10 * mus
+config.patient.plan_mlcs = mlcs
+
 export_plan(config, rtplan_path, "out/plan.dcm")

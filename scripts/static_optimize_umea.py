@@ -78,7 +78,7 @@ def get_example_data():
 
     ct_volume = (1000.0 * x[:, 0, ...]).to(device)  # scale to HU
 
-    valid_parameters_layer = ValidParametersLayer(config.machine, leafs_centered=True)
+    valid_parameters_layer = ValidParametersLayer(config.machine, leafs_centered=False)
 
     mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(device) > 0
     mask_external = masks.sum(1).clone().detach().to(device) > 0

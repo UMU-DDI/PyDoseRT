@@ -21,8 +21,8 @@ import torch
 
 # Set paths
 ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
-rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
-# rtplan_path = "out/plan.dcm"
+# rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
+rtplan_path = "out/plan.dcm"
 rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -66,7 +66,7 @@ dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_cen
 # jaws[:, 1, :] = 1.0
 
 leafs = torch.tensor(np.array(leafs), dtype=config.dtype, device=device)
-mus = torch.tensor(np.array(mus) / 10, dtype=config.dtype, device=device)
+mus = torch.tensor(np.array(mus) / 1000, dtype=config.dtype, device=device)
 jaws = torch.tensor(np.array(jaws), dtype=config.dtype, device=device)
 
 dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device))
