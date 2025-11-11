@@ -61,7 +61,7 @@ ct_slices = np.array(np.expand_dims(ct_volume, 0))
 # mus = np.ones_like(mus)
 results = []
 
-dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False, adjust_values=False)
+dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False, adjust_values=True)
 # jaws = np.zeros(config.machine.shape_jaws)
 # jaws[:, 0, :] = 0.5
 # jaws[:, 1, :] = 1.0
@@ -78,7 +78,7 @@ dose_pred = np.where(external_mask, dose_pred, 0.0)
 
 
 
-vmax = 15
+vmax = 10
 slice_idx = dose_volume.shape[0] // 2
 mae_loss = np.mean(np.abs(dose_pred[0] - dose_volume))
 plt.figure()

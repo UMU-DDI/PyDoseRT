@@ -192,13 +192,9 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
         # beam_lower = (beam_lower_start + beam_lower_end) / 2.0
 
         leafs = np.stack([beam_higher, beam_lower], axis=0)
-        leafs += (scaling / 2)
-        leafs /= scaling
         leafs = np.expand_dims(leafs, axis=0)
 
         jaws = np.stack([jaw_lower, jaw_higher], axis=0)
-        jaws += (scaling / 2)
-        jaws /= scaling
         jaws = np.expand_dims(jaws, axis=0)
 
         parameters.append((leafs, jaws, mus))

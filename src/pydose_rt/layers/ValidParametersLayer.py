@@ -84,12 +84,9 @@ class ValidParametersLayer(nn.Module):
         self.device = self.config.device
         self.leafs_centered = leafs_centered
         self.adjust_values = adjust_values
-        self.min_leaf_opening = (
-            config.minimum_leaf_overlap / config.resolution[1]
-        ) / config.field_size_in_pixels[1]
-        self.min_jaw_opening = (
-            config.minimum_jaw_overlap / config.resolution[0]
-        ) / config.field_size_in_pixels[0]
+        self.min_leaf_opening = config.minimum_leaf_overlap
+        self.min_jaw_opening = config.minimum_jaw_overlap
+        self.half_field_width = config.field_size[1] / 2.0
 
     @staticmethod
     def _proj_ste(x, lo=None, hi=None):
@@ -131,15 +128,15 @@ class ValidParametersLayer(nn.Module):
         if self.adjust_values:
             # 1) MU: keep non-negative & scaled
             mus = self._proj_ste(mus, lo=0.1)
-            
+
             # 3) Leafs: Keep widths open
             mlc_centers = (left_positions + right_positions) / 2
             mlc_widths  = (right_positions - left_positions)
             min_w = self.min_leaf_opening
-            mlc_centers = self._proj_ste(mlc_centers, 0.0, 1.0)
             mlc_widths = self._proj_ste(mlc_widths, lo=min_w)
+            mlc_centers = self._proj_ste(mlc_centers, -self.half_field_width, self.half_field_width)
             mlc_positions = torch.stack([mlc_centers - (mlc_widths / 2), mlc_centers + (mlc_widths / 2)], dim=1)
-            mlc_positions = self._proj_ste(mlc_positions, 0.0, 1.0)
+            mlc_positions = self._proj_ste(mlc_positions, -self.half_field_width, self.half_field_width)
 
             # 4) Jaws: Keep widths open
             if jaw_positions is not None:
@@ -147,9 +144,9 @@ class ValidParametersLayer(nn.Module):
                 jaw_widths  = (jaw_positions[:, 1, :] - jaw_positions[:, 0, :])
                 min_jaw_w = self.min_jaw_opening
                 jaw_widths = self._proj_ste(jaw_widths, lo=min_jaw_w)
-                jaw_centers = self._proj_ste(jaw_centers, 0.0, 1.0)
+                jaw_centers = self._proj_ste(jaw_centers, -self.half_field_width, self.half_field_width)
                 jaw_positions = torch.stack([jaw_centers - (jaw_widths / 2), (jaw_centers + jaw_widths / 2)], dim=1)
-                jaw_positions = self._proj_ste(jaw_positions, 0.0, 1.0)
+                jaw_positions = self._proj_ste(jaw_positions, -self.half_field_width, self.half_field_width)
         else:
             mlc_positions = torch.stack([left_positions, right_positions], dim=1)
             if jaw_positions is not None:

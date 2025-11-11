@@ -25,22 +25,21 @@ import torch
 import torch.nn as nn
 from pydose_rt.data import MachineConfig
 
-def fractional_box_overlap(d, left, right, voxel_width):
+def fractional_box_overlap(d, left, right):
     """
     Compute fractional overlap using only standard PyTorch operations.
     """
-    w = torch.as_tensor(voxel_width, dtype=torch.float32, device=d.device)
     d32 = d.to(torch.float32)
-    half_w = 0.5 * w
+    half_w = 0.5
 
-    bin_start = d32 - half_w
-    bin_end   = d32 + half_w
+    bin_start = d - half_w
+    bin_end   = d + half_w
     
     overlap_start = torch.maximum(left, bin_start)
     overlap_end = torch.minimum(right, bin_end)
-    overlap = torch.clamp(overlap_end - overlap_start, min=0.0, max=w).to(d.dtype)
+    overlap = torch.clamp(overlap_end - overlap_start, min=0.0, max=1.0).to(d.dtype)
     
-    return overlap / voxel_width
+    return overlap
 
 class FluenceMapLayer(nn.Module):
     """
@@ -72,28 +71,19 @@ class FluenceMapLayer(nn.Module):
         self.config = config
         self.verbose = verbose
         self.device = self.config.device
-
-
-
-        W = config.field_size_in_pixels[1]
-        N = config.number_of_leaf_pairs
-
-        # Prepare columns perpendicular to leaf movement for mapping of field (open or blocked by leaf)
-        centers = (torch.arange(W, dtype=self.config.dtype) + 0.5) / float(W)  # [W]
-        open_blocked = centers.view(W, 1).repeat(1, N).to(self.config.dtype)  # [W, N]
-        self.register_buffer("open_blocked", open_blocked.unsqueeze(0))  # [1, W, N]
+        self.dtype = self.config.dtype
 
         # Precompute depth indices
-        W = config.field_size_in_pixels[1]
+        W = config.field_size[1]
         N = config.number_of_leaf_pairs
-        centers = (torch.arange(W, dtype=torch.float32) + 0.5) / float(W)  # [H]
+        centers = (torch.arange(W, dtype=self.dtype) + 0.5) - (W / 2)  # [H]
         depth_indices = centers.view(W, 1).repeat(1, N)  # [H, N]
-        self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.config.dtype))  # [1, H, N]
+        self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.dtype))  # [1, H, N]
 
-        H = config.field_size_in_pixels[0]
-        centers = (torch.arange(H, dtype=self.config.dtype) + 0.5) / float(H)  # [W]
+        H = config.field_size[0]
+        centers = (torch.arange(H, dtype=self.dtype) + 0.5) - (H / 2)  # [W]
         jaw_indices = centers.view(1, H).repeat(1, 1)
-        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.config.dtype))  # [1, W, N]
+        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
 
     def resample_fluence_map(self, values: torch.Tensor) -> torch.Tensor:
         """
@@ -108,7 +98,7 @@ class FluenceMapLayer(nn.Module):
             torch.Tensor: Resampled fluence map of shape [B*G, W, H, 1].
         """
         B, W, N, _ = values.shape
-        H = self.config.field_size_in_pixels[0]
+        H = self.config.field_size[0]
         total_length = sum(self.config.leaf_widths)
 
         # leaf_widths
@@ -192,7 +182,7 @@ class FluenceMapLayer(nn.Module):
         left_positions = leaf_positions[:, 0, :]  # [B*G, N]
         right_positions = leaf_positions[:, 1, :]  # [B*G, N]
 
-        W = self.config.field_size_in_pixels[1]
+        W = self.config.field_size[1]
 
         left_positions = left_positions.unsqueeze(1).repeat(1, W, 1)  # [B*G, H, N]
         right_positions = right_positions.unsqueeze(1).repeat(1, W, 1)  # [B*G, H, N]
@@ -202,7 +192,7 @@ class FluenceMapLayer(nn.Module):
             d = d.to(leaf_positions.device)  # [1, H, N]
 
         # ---------- new box (no sigmoids) ----------
-        mask = fractional_box_overlap(d, left_positions, right_positions, 1.0 / float(W))
+        mask = fractional_box_overlap(d, left_positions, right_positions)
         # -------------------------------------------
 
         # Reshape
@@ -215,14 +205,14 @@ class FluenceMapLayer(nn.Module):
             jaw_positions = jaw_positions.permute(0, 2, 1).reshape(B * G, 2)  # [B*G, 2]
             bottom_positions = jaw_positions[:, 0].unsqueeze(1)  # [B*G]
             top_positions = jaw_positions[:, 1].unsqueeze(1)  # [B*G]
-            H = self.config.field_size_in_pixels[0]
+            H = self.config.field_size[0]
             bottom_positions = bottom_positions.unsqueeze(2).repeat(1, 1, H)  # [B*G, H]
             top_positions = top_positions.unsqueeze(2).repeat(1, 1, H)
 
             j = self.jaw_indices
             if j.device != leaf_positions.device:
                 j = j.to(leaf_positions.device)  # [1, H, N]
-            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions, 1.0 / float(H))
+            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions)
 
             jaw_mask = jaw_mask.view(B, G, H, 1)
             jaw_mask = jaw_mask.view(B * G, 1, H, 1)

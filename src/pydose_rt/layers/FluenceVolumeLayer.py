@@ -80,7 +80,7 @@ class FluenceVolumeLayer(nn.Module):
         )  # mm
 
         # Compute the physical coordinates for each pixel in the depth slice (center is (0,0))
-        H_field, W_field = config.field_size_in_pixels
+        H_field, W_field = config.field_size
         hs = (
         torch.arange(H, dtype=self.config.dtype) - (H - 1) / 2
         ) * config.resolution[0]
@@ -90,21 +90,16 @@ class FluenceVolumeLayer(nn.Module):
         WT, HT = torch.meshgrid(ws, hs, indexing="ij")  # Both [W, H]
 
         # Normalization factors use the field size (fluence map coordinates)
-        H_field, W_field = config.field_size_in_pixels
-        WT_max = ((W_field - 1) / 2) * config.resolution[2]
-        HT_max = ((H_field - 1) / 2) * config.resolution[0]
+        WT_max = ((W_field - 1) / 2)# * config.resolution[2]
+        HT_max = ((H_field - 1) / 2)# * config.resolution[0]
 
         # Calculate the inverse relative square distance for each depth
         corrections = []
         sample_grids = []
         for d in depths:
             scale = self.config.SID / d
-            # SAT: For now, no profile correction is added
-            r = torch.sqrt(WT**2 + HT**2)
-            scaled_r = r * scale  # project back to MLC plane
-            p = self._interpolate_profile(scaled_r)
             inv_square = scale**2
-            corrections.append(inv_square)# * p)
+            corrections.append(inv_square)
 
             gy = (WT / WT_max) * scale
             gz = (HT / HT_max) * scale
