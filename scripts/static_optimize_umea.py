@@ -273,8 +273,8 @@ def leaf_range_loss(leafs, config, threshold_mm=150.0):
     
     # Penalize when range exceeds threshold
     # Using ReLU so we only penalize violations, and squaring for smooth gradients
-    bank0_violation = torch.relu(bank0_range - threshold_normalized) ** 2
-    bank1_violation = torch.relu(bank1_range - threshold_normalized) ** 2
+    bank0_violation = torch.nn.LeakyReLU(negative_slope=0.01)(bank0_range - threshold_normalized) ** 2
+    bank1_violation = torch.nn.LeakyReLU(negative_slope=0.01)(bank1_range - threshold_normalized) ** 2
     
     return bank0_violation + bank1_violation
 
