@@ -57,7 +57,7 @@ class RadiologicalDepthLayer(nn.Module):
         self.config = config
         self.verbose = verbose
         self.device = self.config.device
-        stacked_indices = get_radiological_depth_indices(self.config.ct_array_shape, self.config.gantry_angles, self.config.dtype)
+        stacked_indices = get_radiological_depth_indices(self.config.ct_array_shape, self.config.gantry_angles, self.config.dtype).to(self.device)
 
         # Final shape: [M, N, 3]
         self.register_buffer(
@@ -113,22 +113,25 @@ class RadiologicalDepthLayer(nn.Module):
             # Calculate the actual step size for each angle
             step_sizes = []
             for i in range(self.config.number_of_cps):
+                if P > 1:
+                    diff = self.stacked_indices[0, i, 1:, :] - self.stacked_indices[0, i, :-1, :]
+                    # Calculate physical step size accounting for resolution in all dimensions
+                    # diff is in pixel units, so multiply by resolution to get physical distance
+                    res_tensor = torch.tensor([self.config.resolution[0], self.config.resolution[1], self.config.resolution[2]],
+                                             device=self.device, dtype=self.config.dtype)
+                    physical_diff = diff * res_tensor
+                    avg_step = torch.sqrt((physical_diff ** 2).sum(dim=-1)).mean()
                 # Calculate the actual distance between consecutive sample points
-                if i > 0:
-                    diff = self.stacked_indices[0, i, 1:, :2] - self.stacked_indices[0, i, :-1, :2]
-                    avg_step = torch.sqrt((diff ** 2).sum(dim=-1)).mean()
                 else:
                     # For 0 degrees, it should be close to resolution[1]
                     avg_step = self.config.resolution[1]
                 
-                # Account for the actual physical distance
-                physical_step = avg_step * self.config.resolution[1]  # Assuming isotropic xy resolution
-                step_sizes.append(physical_step)
-            
-            step_sizes = torch.tensor(step_sizes, device=self.device).view(1, G, 1)
-            # Integrate density along each line (cumulative sum) and scale by resolution (TODO doesnt the resolution change with gantry angle )
+                step_sizes.append(avg_step)
+
+            step_sizes = torch.tensor(step_sizes, device=self.device, dtype=self.config.dtype).view(1, G, 1)
+            # Integrate density along each line (cumulative sum) and scale by resolution
             cumsum = (
-                torch.cumsum(density, dim=-1) * self.config.resolution[1]
+                torch.cumsum(density, dim=-1) * step_sizes
             )  # shape: [B, G, P]
             cumsum = cumsum.view(B * G, P, 1)
 

@@ -263,7 +263,7 @@ def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
     y_jaws[:, 1, :] = 100 / config.machine.field_size[1]
  
     # Set monitor units
-    mus = target_mu / 100 * np.ones((1, config.machine.number_of_cps), dtype=np.float32)
+    mus = target_mu * np.ones((1, config.machine.number_of_cps), dtype=np.float32)
  
     # Create dose engine
     dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=True)

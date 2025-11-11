@@ -173,7 +173,7 @@ class PencilBeamModel:
         """
         self.tpr = config.tpr_20_10
         self.config = config
-        self.res_h, self.res_w = self.config.resolution[0], self.config.resolution[2]
+        self.res_h, self.res_w = self.config.resolution[0] / 10, self.config.resolution[2] / 10
 
         # Determine which dimension has smaller pixel size
 
@@ -196,8 +196,8 @@ class PencilBeamModel:
         self.rs = self.get_rs(
             [self.kernel_size_h, self.kernel_size_w]
         )  # Calculate the radial distance
-        d_100mm = 100.0 * np.ones((1, 1, 1, 1)) # 100mm depth
-        self.norm = np.sum(self.get_pencil_beam(d=d_100mm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
+        d_10cm = 10.0 * np.ones((1, 1, 1, 1)) # 100mm depth
+        self.norm = np.sum(self.get_pencil_beam(d=d_10cm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
 
     def get_param(self, parameter: str, TPR: float) -> float:
         """
@@ -432,7 +432,7 @@ class PencilBeamModel:
 
         rs = np.sqrt(dh**2 + dw**2)
         
-        return rs / 10.0 # Convert to cm
+        return rs
 
     def get_nested_kernels(self, radiological_depth: np.ndarray) -> np.ndarray:
         """

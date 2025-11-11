@@ -35,7 +35,7 @@ config = DoseConfig.from_dicom(
     struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
     machine_preset="umea",
         treatment_preset="umea",
-    downsampling_factor=(1, 1, 1),
+    downsampling_factor=(1, 2, 2),
     dtype=torch.float32,
     device=device
 )
@@ -67,7 +67,7 @@ dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_cen
 # jaws[:, 1, :] = 1.0
 
 leafs = torch.tensor(np.array(leafs), dtype=config.dtype, device=device)
-mus = torch.tensor(np.array(mus) / 10, dtype=config.dtype, device=device)
+mus = torch.tensor(np.array(mus), dtype=config.dtype, device=device)
 jaws = torch.tensor(np.array(jaws), dtype=config.dtype, device=device)
 
 dose_pred_tensor = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device))
