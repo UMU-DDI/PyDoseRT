@@ -246,6 +246,7 @@ def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
     config.machine.number_of_cps = 1
     config.machine.starting_angle = 0
     config.machine.downsampling_factor = (1,1,1)
+    center_x, center_y, center_z = np.divide(config.machine.ct_array_shape, 2).astype(np.int32)
  
     # Create water phantom (HU = 0 for water)
     x_ct = 0.0 * np.expand_dims(np.ones((config.machine.ct_array_shape)), 0)
@@ -276,8 +277,7 @@ def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
     )
 
     # Get center dose (at 10cm depth - index 50 for 100 voxels)
-    center_idx = 50
-    center_dose = dose[0, center_idx, center_idx, center_idx].detach().cpu().numpy()
+    center_dose = dose[0, center_x, center_y, center_z].detach().cpu().numpy()
 
     # Calculate calibration factor
     # This gives the factor to normalize to 1 Gy per MU at reference conditions

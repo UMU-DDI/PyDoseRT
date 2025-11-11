@@ -93,11 +93,12 @@ def print_results(
         pred_jaws.cpu().detach().numpy()[0, 0:1, :],
         cmap='gray', vmin=0.0, vmax=1.0
     )
-    _imshow_fullwidth(
-        ax,
-        pred_jaws_grads[0, 0:1, :],
-        cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
-    )
+    if (pred_jaws_grads is not None):
+        _imshow_fullwidth(
+            ax,
+            pred_jaws_grads[0, 0:1, :],
+            cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
+        )
 
     # --- 2) Jaws (widths)
     ax = fig.add_subplot(gs[1])
@@ -107,11 +108,12 @@ def print_results(
         pred_jaws.cpu().detach().numpy()[0, 1:2, :],
         cmap='gray', vmin=0.0, vmax=1.0
     )
-    _imshow_fullwidth(
-        ax,
-        pred_jaws_grads[0, 1:2, :],
-        cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
-    )
+    if (pred_jaws_grads is not None):
+        _imshow_fullwidth(
+            ax,
+            pred_jaws_grads[0, 1:2, :],
+            cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
+        )
 
     # --- 3) MLCs (centers)
     ax = fig.add_subplot(gs[2])
@@ -121,11 +123,12 @@ def print_results(
         np.transpose(pred_mlc.cpu().detach().numpy()[0, 0, :, :]),
         cmap='gray', vmin=0.0, vmax=1.0
     )
-    _imshow_fullwidth(
-        ax,
-        np.transpose(pred_mlc_grads[0, 0, :, :]),
-        cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
-    )
+    if (pred_mlc_grads is not None):
+        _imshow_fullwidth(
+            ax,
+            np.transpose(pred_mlc_grads[0, 0, :, :]),
+            cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
+        )
 
     # --- 4) MLCs (widths)
     ax = fig.add_subplot(gs[3])
@@ -135,11 +138,12 @@ def print_results(
         np.transpose(pred_mlc.cpu().detach().numpy()[0, 1, :, :]),
         cmap='gray', vmin=0.0, vmax=1.0
     )
-    _imshow_fullwidth(
-        ax,
-        np.transpose(pred_mlc_grads[0, 1, :, :]),
-        cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
-    )
+    if (pred_mlc_grads is not None):
+        _imshow_fullwidth(
+            ax,
+            np.transpose(pred_mlc_grads[0, 1, :, :]),
+            cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
+        )
 
     # --- 5) MUs
     ax = fig.add_subplot(gs[4])
@@ -149,11 +153,12 @@ def print_results(
         pred_mus.cpu().detach().numpy(),
         cmap='gray', vmin=0.0, vmax=None
     )
-    _imshow_fullwidth(
-        ax,
-        pred_mus_grads,
-        cmap='coolwarm', vmin=-scale_mus, vmax=scale_mus, alpha=alpha
-    )
+    if (pred_mus_grads is not None):
+        _imshow_fullwidth(
+            ax,
+            pred_mus_grads,
+            cmap='coolwarm', vmin=-scale_mus, vmax=scale_mus, alpha=alpha
+        )
 
     if (preset == "lund"):
         axial_z = 49
@@ -267,7 +272,8 @@ def print_results(
     fig.tight_layout(rect=[0, 0, 1, 0.97])  # keep space for the suptitle
     save_path = "out/figure.png"
     plt.savefig(save_path, dpi=150)
-    experiment.log_figure(save_path, overwrite=True)
+    if (experiment is not None):
+        experiment.log_figure(save_path, overwrite=True)
     plt.close()
 
 def make_animation(experiment, dose_config: DoseConfig, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):

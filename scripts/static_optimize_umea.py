@@ -249,12 +249,34 @@ def compute_mae_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, 
         losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
 
     jaw_loss = torch.mean((torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :]))**2)
-    bank0_loss = torch.mean(torch.abs(leafs[:, 0, :, :] - leafs[:, 0, :, :].mean(1))**2)
-    bank1_loss = torch.mean(torch.abs(leafs[:, 1, :, :] - leafs[:, 1, :, :].mean(1))**2)
+    bank_loss = leaf_range_loss(leafs, config.machine)
     losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
-    losses.append(scale_loss(bank0_loss + bank1_loss, weights["leaf_reg_loss"]))
+    losses.append(scale_loss(bank_loss, weights["leaf_reg_loss"]))
 
     return losses
+
+def leaf_range_loss(leafs, config, threshold_mm=150.0):
+    """
+    Penalize leaf tip differences (max - min) that exceed threshold.
+    
+    Args:
+        leafs: [B, 2, CP, num_leafs] - leaf positions (normalized 0-1)
+        config: machine config with field_size
+        threshold_mm: maximum allowed range in mm (default 150.0)
+    """
+    # Convert threshold from mm to normalized units
+    threshold_normalized = threshold_mm / config.field_size[0]
+    
+    # Compute range (max - min) for each leaf bank
+    bank0_range = leafs[:, 0, :, :].max() - leafs[:, 0, :, :].min()
+    bank1_range = leafs[:, 1, :, :].max() - leafs[:, 1, :, :].min()
+    
+    # Penalize when range exceeds threshold
+    # Using ReLU so we only penalize violations, and squaring for smooth gradients
+    bank0_violation = torch.relu(bank0_range - threshold_normalized) ** 2
+    bank1_violation = torch.relu(bank1_range - threshold_normalized) ** 2
+    
+    return bank0_violation + bank1_violation
 
 print_stuff = 0
 loss_plot = 1.0
