@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 RadiologicalDepthLayer module for computing radiological depth profiles through CT volumes for radiotherapy.
 
@@ -23,6 +20,7 @@ Classes:
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from pydose_rt.data.machine_config import MachineConfig
 from pydose_rt.physics.attenuation.hu_density_conversion import convert_HU_to_density
@@ -57,23 +55,38 @@ class RadiologicalDepthLayer(nn.Module):
         self.config = config
         self.verbose = verbose
         self.device = self.config.device
-        stacked_indices = get_radiological_depth_indices(self.config.ct_array_shape, self.config.gantry_angles, self.config.dtype).to(self.device)
 
-        # Final shape: [M, N, 3]
-        self.register_buffer(
-            "stacked_indices", stacked_indices
-        )  # shape: [M, N, 3]
+        # Determine if we should use full-sized CT for depth extraction
+        self.downsample_depths = self.config.downsampling_factor != (1, 1, 1)
+
+        # Store the target (downsampled) CT shape
+        self.target_ct_shape = self.config.ct_array_shape
+
+        # If using full CT, compute indices for full-sized CT
+        self.full_ct_shape = (
+            self.config.ct_array_shape[0] * self.config.downsampling_factor[0],
+            self.config.ct_array_shape[1] * self.config.downsampling_factor[1],
+            self.config.ct_array_shape[2] * self.config.downsampling_factor[2],
+        )
+        stacked_indices = get_radiological_depth_indices(
+            self.full_ct_shape, self.config.gantry_angles, self.config.dtype
+        ).to(self.device)
+
+        # Final shape: [1, G, P, 3]
+        self.register_buffer("stacked_indices", stacked_indices)
+
 
     def forward(self, ct_stack: torch.Tensor) -> torch.Tensor:
         """
         Computes radiological depth profiles through the CT volume for each gantry angle.
 
         Args:
-            ct_stack (torch.Tensor): CT volume tensor of shape [B, H, W, D].
+            ct_stack (torch.Tensor): CT volume tensor of shape [B, H, D, W].
+                                    Can be full-sized or downsampled based on initialization.
 
         Returns:
-            torch.Tensor: Radiological depth profiles of shape [B*G, P, 1], where
-            P is the number of sampled points along each line.
+            torch.Tensor: Radiological depth profiles of shape [B*G, P_target, 1], where
+            P_target is the number of points in the downsampled depth profile.
         """
         with torch.no_grad():
             B, H, D, W = ct_stack.shape
@@ -108,7 +121,7 @@ class RadiologicalDepthLayer(nn.Module):
             # Convert HU to density using lookup table
             density = convert_HU_to_density(
                 gathered, self.config.lookup_table
-            )  # shape: [B, M, N]
+            )  # shape: [B, G, P]
 
             # Calculate the actual step size for each angle
             step_sizes = []
@@ -121,18 +134,36 @@ class RadiologicalDepthLayer(nn.Module):
                                              device=self.device, dtype=self.config.dtype)
                     physical_diff = diff * res_tensor
                     avg_step = torch.sqrt((physical_diff ** 2).sum(dim=-1)).mean()
-                # Calculate the actual distance between consecutive sample points
                 else:
-                    # For 0 degrees, it should be close to resolution[1]
+                    # For single point, use resolution[1]
                     avg_step = self.config.resolution[1]
-                
+
                 step_sizes.append(avg_step)
 
             step_sizes = torch.tensor(step_sizes, device=self.device, dtype=self.config.dtype).view(1, G, 1)
-            # Integrate density along each line (cumulative sum) and scale by resolution
-            cumsum = (
-                torch.cumsum(density, dim=-1) * step_sizes
-            )  # shape: [B, G, P]
-            cumsum = cumsum.view(B * G, P, 1)
+
+            # Integrate density along each line (cumulative sum) and scale by step size
+            # This accumulates radiological depth from source (entrance) toward patient interior
+            cumsum = torch.cumsum(density, dim=-1) * step_sizes  # shape: [B, G, P]
+
+            # If we extracted from full-sized CT, downsample the radiological depths
+            if self.downsample_depths:
+                # Reshape for interpolation: [B, G, P] -> [B*G, 1, P]
+                cumsum = cumsum.view(B * G, 1, P)
+
+                # Calculate target size based on downsampling factor
+                downsample_factor = max(self.config.downsampling_factor)
+                P_target = P // downsample_factor
+
+                # Downsample using linear interpolation
+                cumsum = F.interpolate(
+                    cumsum, size=P_target, mode='linear', align_corners=False
+                )
+
+                # Reshape to [B*G, P_target, 1]
+                cumsum = cumsum.view(B * G, P_target, 1)
+            else:
+                # No downsampling needed, just reshape to [B*G, P, 1]
+                cumsum = cumsum.view(B * G, P, 1)
 
             return cumsum

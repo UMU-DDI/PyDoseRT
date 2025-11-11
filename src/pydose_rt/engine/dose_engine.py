@@ -228,11 +228,6 @@ class DoseEngine(nn.Module):
         with torch.amp.autocast(self.device.type):
             if self.ct_image is None:
                 with torch.no_grad():
-                    if self.config.downsampling_factor != (1, 1, 1):
-                        ct_image = F.avg_pool3d(
-                            ct_image.unsqueeze(1), self.config.downsampling_factor
-                        ).squeeze(1)
-
                     batched_radiological_depths = self.rad_depth_layer(ct_image)
 
                     batched_kernels = torch.tensor(
