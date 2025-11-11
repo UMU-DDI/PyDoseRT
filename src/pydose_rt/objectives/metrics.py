@@ -66,48 +66,50 @@ def result_validation(config: DoseConfig,
                       pred_dose: np.array, 
                       pred_mlc: np.array, 
                       pred_jaws: np.array, 
-                      pred_mus: np.array):
+                      pred_mus: np.array,
+                      compute_gamma: bool = False):
     
-    axes = tuple(
-        np.arange(config.patient.dose.shape[i]) * config.patient.voxel_spacing_mm[i]
-        for i in range(3)
-    )
-    
-    # Compute dose cutoff value (10% of max dose)
-    dose_cutoff = 10.0
-    dose_cutoff_value = dose_cutoff / 100 * np.max(config.patient.dose)
-    dose_threshold = 3.0
-    distance_threshold = 3.0
-    max_gamma = 2.0
-    
-    # Create mask for evaluation (only where dose > cutoff)
-    
-    # Compute gamma
-    gamma_map = pymedphys.gamma(
-        axes_reference=axes,
-        dose_reference=config.patient.dose,
-        axes_evaluation=axes,
-        dose_evaluation=pred_dose[0, ...],
-        dose_percent_threshold=dose_threshold,
-        distance_mm_threshold=distance_threshold,
-        lower_percent_dose_cutoff=dose_cutoff,
-        interp_fraction=10,  # Interpolation resolution
-        max_gamma=max_gamma,
-        local_gamma=False,  # Global gamma (% of max dose)
-        quiet=True
-    )
-    
-    # Calculate pass rate
-    mask = config.patient.dose > dose_cutoff_value
-    # mask = config.patient.structures["External"] > 0
-    gamma_valid = gamma_map[mask]
-    gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
-    pass_rate = np.sum(gamma_valid <= 1.0) / len(gamma_valid) * 100
-    mean_gamma = np.mean(gamma_valid)
-
-    print(pass_rate)
-    print(mean_gamma)
     results = {}
+    if compute_gamma:
+        axes = tuple(
+            np.arange(config.patient.dose.shape[i]) * config.patient.voxel_spacing_mm[i]
+            for i in range(3)
+        )
+        
+        # Compute dose cutoff value (10% of max dose)
+        dose_cutoff = 10.0
+        dose_cutoff_value = dose_cutoff / 100 * np.max(config.patient.dose)
+        dose_threshold = 3.0
+        distance_threshold = 3.0
+        max_gamma = 2.0
+        
+        # Create mask for evaluation (only where dose > cutoff)
+        
+        # Compute gamma
+        gamma_map = pymedphys.gamma(
+            axes_reference=axes,
+            dose_reference=config.patient.dose,
+            axes_evaluation=axes,
+            dose_evaluation=pred_dose[0, ...],
+            dose_percent_threshold=dose_threshold,
+            distance_mm_threshold=distance_threshold,
+            lower_percent_dose_cutoff=dose_cutoff,
+            interp_fraction=10,  # Interpolation resolution
+            max_gamma=max_gamma,
+            local_gamma=False,  # Global gamma (% of max dose)
+            quiet=True
+        )
+        
+        # Calculate pass rate
+        mask = config.patient.dose > dose_cutoff_value
+        # mask = config.patient.structures["External"] > 0
+        gamma_valid = gamma_map[mask]
+        gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
+        pass_rate = np.sum(gamma_valid <= 1.0) / len(gamma_valid) * 100
+        mean_gamma = np.mean(gamma_valid)
+
+        results["gamma_pass_rate"] = pass_rate
+        results["mean_gamma"] = mean_gamma
 
     # Start with values in the predictions
     if (pred_dose.min() < 0):
@@ -130,6 +132,15 @@ def result_validation(config: DoseConfig,
     else:
         results["check_mus_bounds_pass"] = 1
 
+    if (((pred_mlc[0, 1, :, :] - pred_mlc[0, 0, :, :]).min() * config.machine.field_size[0]).item() < config.machine.minimum_leaf_overlap):
+        results["check_mlc_collision_pass"] = 0
+    else:
+        results["check_mlc_collision_pass"] = 1
+
+    if (((pred_mlc[0, 0, :, :].max(0).values - pred_mlc[0, 0, :, :].min(0).values) * config.machine.field_size[0]).max().item() > 150.0):
+        results["maximum_leaf_tip_difference"] = 0
+    else:
+        results["maximum_leaf_tip_difference"] = 1
     
 
     return results

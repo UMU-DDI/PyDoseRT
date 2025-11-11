@@ -23,7 +23,7 @@ load_dotenv()  # will look for .env in project root
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-remote = True
+remote = False
 if remote:
     
     ct_folder = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21/"
@@ -366,7 +366,7 @@ for test_i in range(n_tests):
         pred_mlc_valid, pred_mus_valid, pred_jaws_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
         )
-        # result_validation(config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid)
+        result_validation(config, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid)
         # experiment.log_metrics(
         #     {
         #         "results": results,
