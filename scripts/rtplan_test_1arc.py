@@ -35,7 +35,7 @@ config = DoseConfig.from_dicom(
     struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
     machine_preset="umea",
         treatment_preset="umea",
-    downsampling_factor=(1, 2, 2),
+    downsampling_factor=(1, 1, 1),
     dtype=torch.float32,
     device=device
 )
