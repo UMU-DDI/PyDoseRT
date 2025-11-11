@@ -302,9 +302,16 @@ class PencilBeamModel:
             * np.exp((self.params["b3"] * d) + (self.params["b4"] * d**2))
         )
 
-    def get_pencil_beam(self, d: np.ndarray, r: np.ndarray, normalize: bool = True,
-                        add_source_blur: bool = False, src_fwhm_mm_iso: float = 2.5,
-                        SAD_cm: float = 100.0, SSD_cm: float = 100.0) -> np.ndarray:
+    def get_pencil_beam(self, 
+                        d: np.ndarray, 
+                        r: np.ndarray, 
+                        normalize: bool = True,
+                        add_source_blur: bool = False, 
+                        src_fwhm_mm_iso: float = 2.5,
+                        SAD_cm: float = 100.0, 
+                        SSD_cm: float = 100.0,
+                        apply_circular_mask: bool = True, 
+                        mask_radius_cm: float = None) -> np.ndarray:
         """
         Generate pencil beam kernel for given depths and radial grid.
 
@@ -387,6 +394,16 @@ class PencilBeamModel:
         # Normalize to 10cm depth kernel integral
         if normalize:
             K /= self.norm
+
+
+        if apply_circular_mask:
+            if mask_radius_cm is None:
+                # Auto-calculate mask radius: use kernel extent where contribution is ~1% of center
+                mask_radius_cm = min(Hk, Wk) * max(self.res_h, self.res_w) / 2.0
+
+            # Apply mask: zero out values beyond mask_radius_cm
+            circular_mask = r2 <= mask_radius_cm  # (1, 1, Hk, Wk)
+            K = K * circular_mask  # (BG, N, Hk, Wk)
 
         return np.array(K, dtype=np.float32)  # (BG, N, Hk, Wk)
 

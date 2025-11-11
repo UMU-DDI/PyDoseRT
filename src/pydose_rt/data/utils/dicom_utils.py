@@ -150,7 +150,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
                             }
                         
                         beam_data.append(seq_data)
-                    elif sequence.RTBeamLimitingDeviceType == "ASYMX":
+                    elif sequence.RTBeamLimitingDeviceType == "ASYMY":
                         jaw = {
                             "lower": sequence.LeafJawPositions[0],
                             "higher": sequence.LeafJawPositions[1],

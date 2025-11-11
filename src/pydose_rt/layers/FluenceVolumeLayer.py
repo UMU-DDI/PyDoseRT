@@ -167,7 +167,7 @@ class FluenceVolumeLayer(nn.Module):
             sampled = F.grid_sample(
                 fluence_map,
                 grid,
-                mode="bilinear",
+                mode="bicubic",
                 padding_mode="zeros",
                 align_corners=False,
             )
