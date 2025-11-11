@@ -254,19 +254,19 @@ def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
     # Set up MLC positions for full 10x10 field
     # Positions are normalized: 0.5 and 1.0 create a centered field
     y_mlc = np.zeros((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs))
-    y_mlc[:, 0, :, :] = 0.5  # Left leaf bank
-    y_mlc[:, 1, :, :] = 100 / config.machine.field_size[0]
+    y_mlc[:, 0, :, :] = - config.machine.field_size[0] / 2
+    y_mlc[:, 1, :, :] = config.machine.field_size[0] / 2
  
     # Set up jaw positions for 10x10 field
     y_jaws = np.zeros((1, 2, config.machine.number_of_cps))
-    y_jaws[:, 0, :] = 0.5  # Top jaw
-    y_jaws[:, 1, :] = 100 / config.machine.field_size[1]
+    y_jaws[:, 0, :] = - config.machine.field_size[1] / 2  # Top jaw
+    y_jaws[:, 1, :] = config.machine.field_size[1] / 2
  
     # Set monitor units
     mus = target_mu * np.ones((1, config.machine.number_of_cps), dtype=np.float32)
  
     # Create dose engine
-    dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=True)
+    dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False)
  
     # Calculate dose
     dose = dose_layer(

@@ -257,10 +257,10 @@ class DoseEngine(nn.Module):
             batched_fluence_volumes = self.fluence_volume_layer(
                 batched_fluence_maps, (h_min_idx, h_max_idx, w_min_idx, w_max_idx)
             )
-            batched_fluence_volumes.mul_(self.config.mean_photon_energy_MeV)
             batched_accumulated_dose = self.beam_wise_conv_layer(
                 batched_fluence_volumes, batched_kernels
             )
+            batched_accumulated_dose.mul_(self.config.mean_photon_energy_MeV)
             if single_cp is not None:
                 single_fluence_map = batched_fluence_maps[single_cp:single_cp+1, ...] 
             del batched_fluence_volumes, batched_fluence_maps, batched_kernels
