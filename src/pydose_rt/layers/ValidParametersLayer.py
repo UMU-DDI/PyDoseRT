@@ -131,15 +131,6 @@ class ValidParametersLayer(nn.Module):
         if self.adjust_values:
             # 1) MU: keep non-negative & scaled
             mus = self._proj_ste(mus, lo=0.1)
-
-
-            # 2) Adjust leaf positons to respect maximum leaf movement
-            max_leaf_movement = self.config.maximum_leaf_tip_overlap / (self.config.field_size[0] * 2)
-            left_bank_position = left_positions[:, 0].mean(1)
-            right_bank_position = right_positions[:, 1].mean(1)
-
-            left_positions = MaximumLeafTipProjector(value=max_leaf_movement, k=2.0, center=left_bank_position)(left_positions)
-            right_positions = MaximumLeafTipProjector(value=max_leaf_movement, k=2.0, center=right_bank_position)(right_positions)
             
             # 3) Leafs: Keep widths open
             mlc_centers = (left_positions + right_positions) / 2

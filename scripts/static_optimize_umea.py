@@ -247,10 +247,12 @@ def compute_mae_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, 
     mask = masks[-1]
     for index, mask in enumerate([masks[0], masks[1], masks[-1]]):
         losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
-    jaw_loss = torch.mean(torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :])**2)
-    bank_loss = torch.mean(torch.abs(leafs[:, :, :, 1:] - leafs[:, :, :, :-1])**2)
+
+    jaw_loss = torch.mean((torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :]))**2)
+    bank0_loss = torch.mean(torch.abs(leafs[:, 0, :, :] - leafs[:, 0, :, :].mean(1))**2)
+    bank1_loss = torch.mean(torch.abs(leafs[:, 1, :, :] - leafs[:, 1, :, :].mean(1))**2)
     losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
-    losses.append(scale_loss(bank_loss, weights["leaf_reg_loss"]))
+    losses.append(scale_loss(bank0_loss + bank1_loss, weights["leaf_reg_loss"]))
 
     return losses
 
