@@ -196,7 +196,6 @@ class PencilBeamModel:
         self.rs = self.get_rs(
             [self.kernel_size_h, self.kernel_size_w]
         )  # Calculate the radial distance
-
         d_100mm = 100.0 * np.ones((1, 1, 1, 1)) # 100mm depth
         self.norm = np.sum(self.get_pencil_beam(d=d_100mm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
 
@@ -344,13 +343,14 @@ class PencilBeamModel:
         # numerator everywhere
         exact_num = (depth_A * np.exp(-depth_a * r2)) + (depth_B * np.exp(-depth_b * r2))  # (BG,N,Hk,Wk)
 
+
         # safe divide for r>0
         exact = np.empty_like(exact_num)
         np.divide(exact_num, r2, out=exact, where=mask)
 
         # center pixel: area-average over a disk whose area = one pixel
-        dx = float(self.config.resolution[0])
-        dy = float(self.config.resolution[2])
+        dx = float(self.config.resolution[0] / 10.0)
+        dy = float(self.config.resolution[2] / 10.0)
         r_h = np.sqrt(dx * dy / np.pi)
         center_val = (2.0 / (r_h * r_h)) * (
             A_over_a * (1.0 - np.exp(-depth_a * r_h)) +
