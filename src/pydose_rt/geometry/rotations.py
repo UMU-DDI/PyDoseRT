@@ -64,7 +64,7 @@ def build_rotation_grids(input_shape, angles_rad, device, dtype):
     """
     B, G, D, H, W = input_shape
     a = angles_rad.to(device=device, dtype=dtype)
-    # a -= math.pi / 2
+    # a -= math.pi
 
     cos_a = torch.cos(a)
     sin_a = torch.sin(a)

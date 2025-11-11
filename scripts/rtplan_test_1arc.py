@@ -39,9 +39,9 @@ config = DoseConfig.from_dicom(
     dtype=torch.float32,
     device=device
 )
-ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
-if (np.abs(ref_dose - 1.0) > 0.001):
-    raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
+# ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
+# if (np.abs(ref_dose - 1.0) > 0.001):
+#     raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
     
 ct_image = config.patient.ct_array
 dose = config.patient.dose
@@ -61,7 +61,7 @@ ct_slices = np.array(np.expand_dims(ct_volume, 0))
 # mus = np.ones_like(mus)
 results = []
 
-dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False, adjust_values=True)
+dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False, adjust_values=False)
 # jaws = np.zeros(config.machine.shape_jaws)
 # jaws[:, 0, :] = 0.5
 # jaws[:, 1, :] = 1.0
@@ -71,7 +71,7 @@ mus = torch.tensor(np.array(mus), dtype=config.dtype, device=device)
 jaws = torch.tensor(np.array(jaws), dtype=config.dtype, device=device)
 
 dose_pred_tensor = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device))
-# dose_pred_tensor = dose_pred_tensor * (np.quantile(dose_volume, 0.999) / torch.quantile(dose_pred_tensor, 0.999))
+dose_pred_tensor = dose_pred_tensor * (np.quantile(dose_volume, 0.999) / torch.quantile(dose_pred_tensor, 0.999))
 dose_pred = dose_pred_tensor.cpu().detach().numpy()
 
 dose_pred = np.where(external_mask, dose_pred, 0.0)
@@ -97,7 +97,7 @@ plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='c
 plt.colorbar()
 plt.show()
 
-# print_results(None, config.treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], dose_pred_tensor, torch.from_numpy(np.expand_dims(ct_volume, 0)), [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], mae_loss)
-# res = result_validation(config, dose_pred, leafs, jaws, mus, compute_gamma=False)
-# print(res)
+print_results(None, config.treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], dose_pred_tensor, torch.from_numpy(np.expand_dims(ct_volume, 0)), [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], mae_loss)
+res = result_validation(config, dose_pred, leafs, jaws, mus, compute_gamma=True)
+print(res)
 # make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())

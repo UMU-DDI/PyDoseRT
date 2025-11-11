@@ -225,9 +225,9 @@ class MachineConfig(BaseSettings):
         return np.linspace(
             start, 
             end,
-            self.number_of_cps,
+            self.number_of_cps + 2,
             endpoint=False,
-        ) % (2 * math.pi)
+        )[:-2] % (2 * math.pi)
 
     @computed_field(repr=False)
     @property
