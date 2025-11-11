@@ -215,8 +215,8 @@ class FluenceMapLayer(nn.Module):
             jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions)
 
             jaw_mask = jaw_mask.view(B, G, H, 1)
-            jaw_mask = jaw_mask.view(B * G, 1, H, 1)
-            jaw_mask = jaw_mask.repeat(1, W, 1, 1)
+            jaw_mask = jaw_mask.view(B * G, H, 1, 1)
+            jaw_mask = jaw_mask.repeat(1, 1, W, 1)
 
             mask *= jaw_mask
 
@@ -235,4 +235,4 @@ class FluenceMapLayer(nn.Module):
         plt.tight_layout()
         plt.show() """
 
-        return mask.permute(0, 3, 2, 1)
+        return mask.permute(0, 3, 1, 2)
