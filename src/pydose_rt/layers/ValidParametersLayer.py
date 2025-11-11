@@ -25,10 +25,35 @@ Classes:
 import torch
 import torch.nn as nn
 from typing import Tuple
-
 from pydose_rt.data.machine_config import MachineConfig
 
-
+class MaximumLeafTipProjector(nn.Module):
+    def __init__(self, value=1.0, k=2.0, center=0.5):
+        """
+        Projects input ∈ [0,1] to output ∈ [center-value, center+value]
+        
+        Works with arbitrary batch dimensions.
+        
+        Args:
+            value: Half-range of the output
+            k: Steepness of tanh
+            center: Center point of the projection
+        """
+        super().__init__()
+        self.value = value
+        self.k = k
+        self.center = center
+    
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor of any shape [..., features]
+        
+        Returns:
+            Projected tensor of same shape as x
+        """
+        return self.value * torch.tanh(self.k * (x - self.center)) + self.center
+    
 class ValidParametersLayer(nn.Module):
     """
     ValidParametersLayer for validating and scaling leaf positions, monitor units (MUs) and jaw positions.
@@ -45,7 +70,7 @@ class ValidParametersLayer(nn.Module):
         __init__(config, slope=None, verbose=False): Initializes the ValidParametersLayer with configuration and verbosity.
         forward(leaf_positions, mus): Clamps and scales leaf positions and MUs, returning validated tensors.
     """
-    def __init__(self, config: MachineConfig, leafs_centered: bool = False, verbose: bool = False):
+    def __init__(self, config: MachineConfig, leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False):
         """
         Initializes the ValidParametersLayer.
 
@@ -58,6 +83,7 @@ class ValidParametersLayer(nn.Module):
         self.verbose = verbose
         self.device = self.config.device
         self.leafs_centered = leafs_centered
+        self.adjust_values = adjust_values
         self.min_leaf_opening = (
             config.minimum_leaf_overlap / config.resolution[1]
         ) / config.field_size_in_pixels[1]
@@ -100,26 +126,42 @@ class ValidParametersLayer(nn.Module):
                 top_positions = jaw_positions[:, 0, :] + (jaw_positions[:, 1, :] / 2)
                 jaw_positions = torch.stack([bottom_positions, top_positions], dim=1)
 
-        # 1) MU: keep non-negative & scaled
-        mus = self._proj_ste(mus, lo=0.1)
+        left_positions = leaf_positions[:, 0, :, :]
+        right_positions = leaf_positions[:, 1, :, :]
+        if self.adjust_values:
+            # 1) MU: keep non-negative & scaled
+            mus = self._proj_ste(mus, lo=0.1)
 
-        # 2) Leafs: Keep widths open
-        mlc_centers = (leaf_positions[:, 0, :, :] + leaf_positions[:, 1, :, :]) / 2
-        mlc_widths  = (leaf_positions[:, 1, :, :] - leaf_positions[:, 0, :, :])
-        min_w = self.min_leaf_opening
-        mlc_centers = self._proj_ste(mlc_centers, 0.0, 1.0)
-        mlc_widths = self._proj_ste(mlc_widths, lo=min_w)
-        mlc_positions = torch.stack([mlc_centers - (mlc_widths / 2), mlc_centers + (mlc_widths / 2)], dim=1)
-        mlc_positions = self._proj_ste(mlc_positions, 0.0, 1.0)
 
-        # 3) Jaws: Keep widths open
-        if jaw_positions is not None:
-            jaw_centers = (jaw_positions[:, 0, :] + jaw_positions[:, 1, :]) / 2
-            jaw_widths  = (jaw_positions[:, 1, :] - jaw_positions[:, 0, :])
-            min_jaw_w = self.min_jaw_opening
-            jaw_widths = self._proj_ste(jaw_widths, lo=min_jaw_w)
-            jaw_centers = self._proj_ste(jaw_centers, 0.0, 1.0)
-            jaw_positions = torch.stack([jaw_centers - (jaw_widths / 2), (jaw_centers + jaw_widths / 2)], dim=1)
-            jaw_positions = self._proj_ste(jaw_positions, 0.0, 1.0)
+            # 2) Adjust leaf positons to respect maximum leaf movement
+            max_leaf_movement = self.config.maximum_leaf_tip_overlap / (self.config.field_size[0] * 2)
+            left_bank_position = left_positions[:, 0].mean(1)
+            right_bank_position = right_positions[:, 1].mean(1)
+
+            left_positions = MaximumLeafTipProjector(value=max_leaf_movement, k=2.0, center=left_bank_position)(left_positions)
+            right_positions = MaximumLeafTipProjector(value=max_leaf_movement, k=2.0, center=right_bank_position)(right_positions)
+            
+            # 3) Leafs: Keep widths open
+            mlc_centers = (left_positions + right_positions) / 2
+            mlc_widths  = (right_positions - left_positions)
+            min_w = self.min_leaf_opening
+            mlc_centers = self._proj_ste(mlc_centers, 0.0, 1.0)
+            mlc_widths = self._proj_ste(mlc_widths, lo=min_w)
+            mlc_positions = torch.stack([mlc_centers - (mlc_widths / 2), mlc_centers + (mlc_widths / 2)], dim=1)
+            mlc_positions = self._proj_ste(mlc_positions, 0.0, 1.0)
+
+            # 4) Jaws: Keep widths open
+            if jaw_positions is not None:
+                jaw_centers = (jaw_positions[:, 0, :] + jaw_positions[:, 1, :]) / 2
+                jaw_widths  = (jaw_positions[:, 1, :] - jaw_positions[:, 0, :])
+                min_jaw_w = self.min_jaw_opening
+                jaw_widths = self._proj_ste(jaw_widths, lo=min_jaw_w)
+                jaw_centers = self._proj_ste(jaw_centers, 0.0, 1.0)
+                jaw_positions = torch.stack([jaw_centers - (jaw_widths / 2), (jaw_centers + jaw_widths / 2)], dim=1)
+                jaw_positions = self._proj_ste(jaw_positions, 0.0, 1.0)
+        else:
+            mlc_positions = torch.stack([left_positions, right_positions], dim=1)
+            if jaw_positions is not None:
+                jaw_positions = jaw_positions
 
         return mlc_positions, mus, jaw_positions

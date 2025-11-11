@@ -60,13 +60,13 @@ ct_slices = np.array(np.expand_dims(ct_volume, 0))
 # mus = np.ones_like(mus)
 results = []
 
-dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False)
+dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False, adjust_values=True)
 # jaws = np.zeros(config.machine.shape_jaws)
 # jaws[:, 0, :] = 0.5
 # jaws[:, 1, :] = 1.0
 
 leafs = torch.tensor(np.array(leafs), dtype=config.dtype, device=device)
-mus = torch.tensor(np.array(mus) / 1000, dtype=config.dtype, device=device)
+mus = torch.tensor(np.array(mus) / 10, dtype=config.dtype, device=device)
 jaws = torch.tensor(np.array(jaws), dtype=config.dtype, device=device)
 
 dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=config.dtype, device=device))
@@ -94,5 +94,6 @@ plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='c
 plt.colorbar()
 plt.show()
 
-# result_validation(config, dose_pred, leafs, jaws, mus)
+res = result_validation(config, dose_pred, leafs, jaws, mus, compute_gamma=True)
+print(res)
 # make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())

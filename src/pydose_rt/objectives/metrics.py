@@ -137,7 +137,8 @@ def result_validation(config: DoseConfig,
     else:
         results["check_mlc_collision_pass"] = 1
 
-    if (((pred_mlc[0, 0, :, :].max(0).values - pred_mlc[0, 0, :, :].min(0).values) * config.machine.field_size[0]).max().item() > 150.0):
+    if (((pred_mlc[0, 0, :, :].max() - pred_mlc[0, 0, :, :].min()) * config.machine.field_size[0]).item() > 150.0 or \
+        ((pred_mlc[0, 1, :, :].max() - pred_mlc[0, 1, :, :].min()) * config.machine.field_size[0]).item() > 150.0):
         results["maximum_leaf_tip_difference"] = 0
     else:
         results["maximum_leaf_tip_difference"] = 1

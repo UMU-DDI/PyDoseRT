@@ -35,19 +35,19 @@ class MachineConfig(BaseSettings):
         description="The distance of the isocenter from the center of the CT volume in cm",
     )
     minimum_leaf_overlap: float = Field(
-        default=0.5, description="The minimum opening of the leafs, given in cm."
+        default=5.0, description="The minimum opening of the leafs, given in mm."
     )
     minimum_jaw_overlap: float = Field(
-        default=5.0, description="The minimum opening of the jaws, given in cm."
+        default=5.0, description="The minimum opening of the jaws, given in mm."
     )
     maximum_leaf_tip_overlap: float = Field(
-        default=0.5, description="The minimum opening of the leafs, given in cm."
+        default=150.0, description="The minimum opening of the leafs, given in mm."
     )
     maximum_jaw_speed: float = Field(
-        default=2.25, description="The maximum speed of the leafs, given in cm / s."
+        default=22.5, description="The maximum speed of the leafs, given in mm / s."
     )
     maximum_leaf_speed: float = Field(
-        default=2.25, description="The maximum speed of the leafs, given in cm / s."
+        default=22.5, description="The maximum speed of the leafs, given in mm / s."
     )
     minimum_gantry_angle_speed: float = Field(
         default=0.1, description="The minimum gantry angle speed defined in deg/s."

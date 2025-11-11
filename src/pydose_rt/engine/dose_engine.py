@@ -49,6 +49,7 @@ class DoseEngine(nn.Module):
         leafs_centered: bool = False,
         crop_volume: bool = False,
         permute_ct: bool = False,
+        adjust_values: bool = False,
         verbose: bool = False,
         debug: bool = False,
     ):
@@ -71,7 +72,7 @@ class DoseEngine(nn.Module):
         self.crop_volume = crop_volume
         self.permute_ct = permute_ct
 
-        self.valid_parameters_layer = ValidParametersLayer(config, leafs_centered)
+        self.valid_parameters_layer = ValidParametersLayer(config, leafs_centered, adjust_values=adjust_values)
         self.fluence_map_layer = FluenceMapLayer(config, verbose)
         self.fluence_volume_layer = FluenceVolumeLayer(config, verbose)
         self.rad_depth_layer = RadiologicalDepthLayer(config, verbose)

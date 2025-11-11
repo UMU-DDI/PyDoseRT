@@ -83,7 +83,7 @@ def get_example_data():
 
     ct_volume = (1000.0 * x[:, 0, ...]).to(device)  # scale to HU
 
-    valid_parameters_layer = ValidParametersLayer(config.machine, leafs_centered=False)
+    valid_parameters_layer = ValidParametersLayer(config.machine, leafs_centered=False, adjust_values=True)
 
     mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(device) > 0
     mask_external = masks.sum(1).clone().detach().to(device) > 0
@@ -282,7 +282,7 @@ for test_i in range(n_tests):
         
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=20)
 
-        dose_layer = DoseEngine(machine_config, kernel_size, permute_ct=False, leafs_centered=False)
+        dose_layer = DoseEngine(machine_config, kernel_size, permute_ct=False, leafs_centered=False, adjust_values=True)
         dose_layer.train()
 
         experiment.log_parameters(
