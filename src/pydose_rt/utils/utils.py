@@ -167,25 +167,6 @@ def create_bound_weight_matrix(structures, bound):
             bound_matrix += array * bound[structure_id]
     return bound_matrix
 
-def get_initial_weights():
-    min_int_range = -3
-    max_int_range = 2
-    weights = {
-        "loss_lower_bound_gy": 1.0, # 10**np.random.randint(min_int_range, max_int_range),
-        "loss_higher_bound_gy": 1.0, #10**np.random.randint(min_int_range, max_int_range),
-        "loss_lower_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
-        "loss_higher_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
-        "l2_loss_oars_and_background": 10**np.random.randint(-3, 0),
-        "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "leaf_reg_loss": 10**np.random.randint(-2, 3), # 10**np.random.randint(min_int_range, max_int_range),
-        "leaf_complexity_loss": 10**np.random.randint(-2, 3), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "jaw_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-    }
-    
-    return weights
-
 def prune_patients(patient_list):
     pruned_list = []
     for patient in patient_list:
@@ -250,7 +231,7 @@ def get_initial_weights():
         "l2_loss_oars_and_background": 0.01,
         "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        "leaf_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "leaf_reg_loss": 10**np.random.randint(-3, 5), # 10**np.random.randint(min_int_range, max_int_range),
         "leaf_complexity_loss": 10**np.random.randint(-3, 5), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "jaw_complexity_loss": 0.0, # 10**np.random.randint(-3, 5), # 10**np.random.randint(min_int_range, max_int_range),
