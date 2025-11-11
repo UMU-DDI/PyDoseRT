@@ -104,7 +104,7 @@ class FluenceVolumeLayer(nn.Module):
             gy = (WT / WT_max) * scale
             gz = (HT / HT_max) * scale
 
-            gs = torch.stack((gz, gy), dim=-1)
+            gs = torch.stack((gy, gz), dim=-1)
             sample_grids.append(gs)
 
         self.register_buffer(
@@ -114,23 +114,6 @@ class FluenceVolumeLayer(nn.Module):
             "sampling_grids", torch.stack(sample_grids).to(self.device)
         )  # [D,W,H,2]
 
-    def _interpolate_profile(self, scaled_r):
-        """
-        1D linear interpolation of the beam profile.
-        """
-        x = self.profile_radius
-        y = self.profile_factors
-        flat_r = scaled_r.flatten()
-        indices = torch.searchsorted(x, flat_r, right=False)
-        indices = torch.clamp(indices, 1, len(x) - 1)
-        x0 = x[indices - 1]
-        x1 = x[indices]
-        y0 = y[indices - 1]
-        y1 = y[indices]
-        dydx = (y1 - y0) / (x1 - x0 + 1e-8)
-        res = y0 + (flat_r - x0) * dydx
-        return res.view_as(scaled_r)
-
     def forward(
         self, fluence_map: torch.Tensor, bbox: tuple[int, int, int, int] = (None, None, None, None)
     ) -> torch.Tensor:
@@ -138,14 +121,13 @@ class FluenceVolumeLayer(nn.Module):
         Projects the 2D fluence map into the 3D CT volume, applying geometric and profile corrections.
 
         Args:
-            fluence_map (torch.Tensor): Input fluence map of shape [B*G, W_field, H_field, 1].
+            fluence_map (torch.Tensor): Input fluence map of shape [B*G,1,H_field,W_field].
             bbox (h_min_idx, h_max_idx, w_min_idx, w_max_idx) (int): Crop indices for output volume.
 
         Returns:
             torch.Tensor: 3D volume grid of shape [B*G, D, cropped_W, cropped_H, 1] representing the projected fluence.
         """
         B = fluence_map.shape[0]
-        fluence_map = fluence_map.permute(0, 1, 3, 2)  # -> B*G,1,H_field,W_field]
         H, D, W = self.config.ct_array_shape
         h_min_idx, h_max_idx, w_min_idx, w_max_idx = bbox
         h_min_idx = 0 if h_min_idx is None else h_min_idx
@@ -167,7 +149,7 @@ class FluenceVolumeLayer(nn.Module):
             sampled = F.grid_sample(
                 fluence_map,
                 grid,
-                mode="bicubic",
+                mode="bilinear",
                 padding_mode="zeros",
                 align_corners=False,
             )
