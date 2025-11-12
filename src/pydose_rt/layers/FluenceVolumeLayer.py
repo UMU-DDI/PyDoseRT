@@ -90,8 +90,8 @@ class FluenceVolumeLayer(nn.Module):
         WT, HT = torch.meshgrid(ws, hs, indexing="ij")  # Both [W, H]
 
         # Normalization factors use the field size (fluence map coordinates)
-        WT_max = ((W_field - 1) / 2)# * config.resolution[2]
-        HT_max = ((H_field - 1) / 2)# * config.resolution[0]
+        WT_max = ((W_field - 1) / 2)
+        HT_max = ((H_field - 1) / 2)
 
         # Calculate the inverse relative square distance for each depth
         corrections = []
@@ -163,4 +163,5 @@ class FluenceVolumeLayer(nn.Module):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        return volume_grid.permute(0, 1, 3, 2, 4)
+        volume_grid = volume_grid.permute(0, 1, 3, 2, 4)
+        return volume_grid
