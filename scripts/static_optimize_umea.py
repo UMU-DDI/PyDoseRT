@@ -209,7 +209,7 @@ for test_i in range(n_tests):
 
         patience = 0
         epoch = 0
-        lr = 1e-1 # 4e-3
+        lr = 10**(np.random.uniform(-4, 2)) # 1e-1 # 4e-3
         kernel_size = 3
         lr_decay = 1e-4
         optimizer = torch.optim.AdamW([pred_mlc, pred_mus, pred_jaws], lr=lr, weight_decay=lr_decay)
