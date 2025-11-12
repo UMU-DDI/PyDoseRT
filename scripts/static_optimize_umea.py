@@ -107,7 +107,7 @@ def get_example_data():
     # pred_jaws_init[:, 0, :] = 0.1
     # pred_jaws_init[:, 1, :] = 0.9
     pred_jaws = pred_jaws_init.clone().detach().requires_grad_(True)
-    pred_mus_init = (1700.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
+    pred_mus_init = (17000.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
     pred_mus = pred_mus_init.clone().detach().requires_grad_(True)
     return x, y_dose, masks, region_weights, config, ct_volume, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
 
