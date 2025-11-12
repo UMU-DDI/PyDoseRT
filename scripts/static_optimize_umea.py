@@ -290,7 +290,7 @@ for test_i in range(n_tests):
                     "loss": loss.item(),
                     "dose_mae": mae_loss,
                     "lr": lr_now,
-                    "leaf_reg": raw_losses[-1] / weights["leaf_complexity_loss"],
+                    # "leaf_reg": raw_losses[-1] / weights["leaf_complexity_loss"],
                 },
                 epoch=epoch,
             )
