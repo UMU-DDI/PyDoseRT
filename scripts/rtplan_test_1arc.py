@@ -71,9 +71,9 @@ config = DoseConfig.from_dicom(
     dtype=torch.float16,
     device=device
 )
-# ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
-# if (np.abs(ref_dose - 1.0) > 0.001):
-#     raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
+ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
+if (np.abs(ref_dose - 1.0) > 0.001):
+    raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
     
 ct_image = config.patient.ct_array
 dose = config.patient.dose
