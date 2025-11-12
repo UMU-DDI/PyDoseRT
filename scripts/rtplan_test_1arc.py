@@ -19,6 +19,38 @@ import SimpleITK as sitk
 from pydose_rt.utils.plotting import print_results, make_animation
 import torch
 
+
+def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
+    """
+    Finds scalar c that minimizes MAE(||c*A - P||_1).
+    A, P : numpy arrays of same shape (3D or any shape)
+    mask : optional boolean array (same shape) to include only specific voxels
+    """
+    if mask is not None:
+        A = A[mask]
+        P = P[mask]
+
+    valid = A > 0  # ignore zero or negative A if intensities are positive
+    A = A[valid]
+    P = P[valid]
+
+    ratios = P / A
+    weights = np.abs(A)
+
+    # Sort ratios by value
+    idx = np.argsort(ratios)
+    sorted_ratios = ratios[idx]
+    sorted_weights = weights[idx]
+
+    # Cumulative weight
+    cumulative = np.cumsum(sorted_weights)
+    cutoff = cumulative[-1] / 2.0
+
+    # Weighted median = first ratio where cumulative weight >= half total
+    median_idx = np.searchsorted(cumulative, cutoff)
+    c = sorted_ratios[median_idx]
+    return c
+
 # Set paths
 ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
 rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
@@ -35,7 +67,7 @@ config = DoseConfig.from_dicom(
     struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
     machine_preset="umea",
         treatment_preset="umea",
-    downsampling_factor=(1, 1, 1),
+    downsampling_factor=(1, 2, 2),
     dtype=torch.float16,
     device=device
 )
@@ -76,26 +108,29 @@ dose_pred = dose_pred.cpu().detach().numpy()
 
 
 dose_pred = np.where(external_mask, dose_pred, 0.0)
-dose_pred = dose_pred * np.quantile(dose_volume, 0.999) / np.quantile(dose_pred, 0.999)
+dose_pred = dose_pred * mae_optimal_scale(dose_pred[0, ...], dose_volume)
 # dose_pred = dose_pred * dose_volume[masks["CTV"] > 0].mean() / dose_pred[0, ...][masks["CTV"] > 0].mean()
 
 
 vmax = 10
-slice_idx = dose_volume.shape[1] // 2 - 5
+slice_idx = dose_volume.shape[0] // 2 - 5
 mae_loss = np.mean(np.abs(dose_pred[0] - dose_volume))
 plt.figure()
 plt.subplot(131)
 # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-plt.imshow(dose_volume[:, :, slice_idx], cmap='jet')
+plt.imshow(dose_volume[slice_idx, 64:119, 64:128], cmap='jet')
+plt.axis('off')
 plt.colorbar()
 plt.subplot(132)
-plt.title(f"MAE {mae_loss}")
-plt.imshow(ct_volume[:, :, slice_idx], cmap='gray')
-plt.imshow(dose_pred[0, :, :, slice_idx], cmap='jet', alpha=0.5)
+# plt.title(f"MAE {mae_loss}")
+# plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_pred[0, slice_idx, 64:119, 64:128], cmap='jet')
+plt.axis('off')
 plt.colorbar()
 plt.subplot(133)
-# plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-plt.imshow(dose_volume[:, :, slice_idx] - dose_pred[0, :, :, slice_idx], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=1.0)
+plt.imshow(ct_volume[slice_idx, 64:119, 64:128], cmap='gray')
+plt.imshow(dose_volume[slice_idx, 64:119, 64:128] - dose_pred[0, slice_idx, 64:119, 64:128], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+plt.axis('off')
 plt.colorbar()
 plt.show()
 

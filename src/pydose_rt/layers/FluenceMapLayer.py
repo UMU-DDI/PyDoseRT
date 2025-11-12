@@ -24,12 +24,12 @@ Classes:
 import torch
 import torch.nn as nn
 from pydose_rt.data import MachineConfig
+from pydose_rt.physics.fluence.fluence_modeling import apply_source_penumbra
 
 def fractional_box_overlap(d, left, right):
     """
     Compute fractional overlap using only standard PyTorch operations.
     """
-    d32 = d.to(torch.float32)
     half_w = 0.5
 
     bin_start = d - half_w
@@ -40,6 +40,7 @@ def fractional_box_overlap(d, left, right):
     overlap = torch.clamp(overlap_end - overlap_start, min=0.0, max=1.0).to(d.dtype)
     
     return overlap
+
 
 class FluenceMapLayer(nn.Module):
     """
@@ -179,8 +180,8 @@ class FluenceMapLayer(nn.Module):
             B * G, 2, N
         )  # [B*G, 2, N]
 
-        left_positions = leaf_positions[:, 0, :] - 2.0  # [B*G, N]
-        right_positions = leaf_positions[:, 1, :] + 2.0  # [B*G, N]
+        left_positions = leaf_positions[:, 0, :]   # [B*G, N]
+        right_positions = leaf_positions[:, 1, :]   # [B*G, N]
 
         W = self.config.field_size[1]
 
@@ -220,19 +221,7 @@ class FluenceMapLayer(nn.Module):
 
             mask *= jaw_mask
 
-        """ print('Fluence map shape:', mask.shape)
-        
-        # Visualize the first mask in the batch (as example)
-        import matplotlib.pyplot as plt
-        mask_np = mask[30, ..., 0].detach().cpu().numpy()  # shape: [W, H]
-        plt.figure(figsize=(8, 6))
-        plt.imshow(mask_np.T, cmap="viridis", aspect="auto")
-        plt.title("Fluence Mask at 60° without Jaws")
-        plt.xlabel("Pixel (W, leaf movement)")
-        plt.ylabel("Pixel (H, perpendicular)")
-        # Use matplotlib's default pixel ticks
-        plt.colorbar(label="Fluence")
-        plt.tight_layout()
-        plt.show() """
+        fluence_map = mask.permute(0, 3, 2, 1)
+        fluence_map = apply_source_penumbra(fluence_map, source_size_mm=3.0, pixel_size_mm=self.config.resolution[2])
 
-        return mask.permute(0, 3, 2, 1)
+        return fluence_map
