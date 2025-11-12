@@ -242,25 +242,29 @@ def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
     # 200mm / 2mm = 100 voxels per dimension
     config = copy.deepcopy(config)
     device = config.device
-    config.machine.ct_array_shape = tuple(np.divide((200, 200, 200), config.machine.resolution).astype(np.int32))
+    # config.machine.ct_array_shape = tuple(np.divide((200, 200, 200), config.machine.resolution).astype(np.int32))
     config.machine.number_of_cps = 1
     config.machine.starting_angle = 0
+    
     # config.machine.downsampling_factor = (1,1,1)
     center_x, center_y, center_z = np.divide(config.machine.ct_array_shape, 2).astype(np.int32)
+    iso_y = - (100 - center_y * config.machine.resolution[1])
+    center_y_iso = center_y - int(iso_y / config.machine.resolution[1])
+    config.machine.iso_center = (0.0, iso_y, 0.0)
  
     # Create water phantom (HU = 0 for water)
-    x_ct = 0.0 * np.ones((1, 100, 100, 100))
+    x_ct = 0.0 * np.expand_dims(np.ones(config.machine.ct_array_shape), 0)
  
     # Set up MLC positions for full 10x10 field
     # Positions are normalized: 0.5 and 1.0 create a centered field
     y_mlc = np.zeros((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs))
-    y_mlc[:, 0, :, :] = - config.machine.field_size[0] / 2
-    y_mlc[:, 1, :, :] = config.machine.field_size[0] / 2
+    y_mlc[:, 0, :, :] = - 100.0
+    y_mlc[:, 1, :, :] = 100.0
  
     # Set up jaw positions for 10x10 field
     y_jaws = np.zeros((1, 2, config.machine.number_of_cps))
-    y_jaws[:, 0, :] = - config.machine.field_size[1] / 2  # Top jaw
-    y_jaws[:, 1, :] = config.machine.field_size[1] / 2
+    y_jaws[:, 0, :] = - 100.0
+    y_jaws[:, 1, :] = 100.0
  
     # Set monitor units
     mus = target_mu * np.ones((1, config.machine.number_of_cps), dtype=np.float32)
@@ -277,7 +281,7 @@ def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
     )
 
     # Get center dose (at 10cm depth - index 50 for 100 voxels)
-    center_dose = dose[0, center_x, center_y, center_z].detach().cpu().numpy()
+    center_dose = dose[0, center_x, center_y_iso, center_z].detach().cpu().numpy()
 
     # Calculate calibration factor
     # This gives the factor to normalize to 1 Gy per MU at reference conditions

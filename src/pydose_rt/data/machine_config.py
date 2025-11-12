@@ -32,7 +32,7 @@ class MachineConfig(BaseSettings):
     # For now, only the first value of the isocenter is used.
     iso_center: tuple[float, float, float] = Field(
         default=(0.0, 0.0, 0.0),
-        description="The distance of the isocenter from the center of the CT volume in cm",
+        description="The distance of the isocenter from the center of the CT volume in mm",
     )
     minimum_leaf_overlap: float = Field(
         default=5.0, description="The minimum opening of the leafs, given in mm."
