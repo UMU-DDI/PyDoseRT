@@ -83,7 +83,6 @@ def get_example_data():
 
     ct_volume = (1000.0 * x[:, 0, ...]).to(device)  # scale to HU
 
-    valid_parameters_layer = ValidParametersLayer(config.machine, leafs_centered=False, adjust_values=True)
 
     mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(device) > 0
     mask_external = masks.sum(1).clone().detach().to(device) > 0
@@ -100,8 +99,8 @@ def get_example_data():
 
 
     pred_mlc_init = torch.ones((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs), dtype=torch.float32, device=device)
-    pred_mlc_init[:, 0, :, :] = 0.1
-    pred_mlc_init[:, 1, :, :] = 0.9
+    pred_mlc_init[:, 0, :, :] = -100.0
+    pred_mlc_init[:, 1, :, :] = 100.0
     pred_mlc = pred_mlc_init.clone().detach().requires_grad_(True)
     pred_jaws_init = torch.from_numpy(config.patient.plan_jaws).to(device).clone().detach()
     # pred_jaws_init = torch.zeros((1, 2, config.machine.number_of_cps), dtype=torch.float32, device=device)
@@ -110,7 +109,7 @@ def get_example_data():
     pred_jaws = pred_jaws_init.clone().detach().requires_grad_(True)
     pred_mus_init = (100.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
     pred_mus = pred_mus_init.clone().detach().requires_grad_(True)
-    return x, y_dose, masks, region_weights, config, ct_volume, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
+    return x, y_dose, masks, region_weights, config, ct_volume, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
 
 def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
     def lr_lambda(current_step):
@@ -127,94 +126,6 @@ def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
         )
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
-def compute_claude_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _masks):
-    """
-    Simplified loss function for sharp dose distributions.
-    Uses high-order penalties and gradient-based edge sharpening.
-    """
-    # Unpack masks - assuming _masks contains [ptv, oars..., external]
-    mask_ptv = _masks[0] > 0.5
-    mask_oars = torch.stack(_masks[1:-1], dim=0).sum(0) > 0.5 if len(_masks) > 2 else torch.zeros_like(mask_ptv)
-    mask_external = _masks[-1] > 0.5
-    mask_ptv = mask_ptv.to(dose_pred.device)
-    mask_oars = mask_oars.to(dose_pred.device)
-    mask_external = mask_external.to(dose_pred.device)
-    
-    # Target dose (assuming 50 Gy prescription for PTV)
-    target_dose = 42.7
-    
-    # 1. PTV Coverage Loss - Use high-order penalty for sharper convergence
-    # This pushes dose strongly toward the target value
-    ptv_dose_diff = (dose_pred - target_dose) * mask_ptv
-    ptv_underdose = torch.relu(-ptv_dose_diff)  # Penalize dose < target
-    ptv_overdose = torch.relu(ptv_dose_diff)    # Penalize dose > target
-    
-    # Use 4th power for very sharp penalty around target dose
-    loss_ptv_coverage = torch.mean(ptv_underdose**4) * 10.0 + torch.mean(ptv_overdose**2) * 1.0
-    
-    # 2. OAR Sparing - Exponential penalty for high doses
-    # This creates a sharp cutoff for OAR doses
-    oar_doses = dose_pred * mask_oars
-    oar_threshold = 30.0  # Threshold above which we heavily penalize
-    excess_oar_dose = torch.relu(oar_doses - oar_threshold)
-    loss_oar = torch.mean(torch.exp(excess_oar_dose / 10.0) - 1.0) * 0.1
-    
-    # 3. Edge Sharpness Loss - Maximize gradient magnitude at PTV boundary
-    # This is the key for sharp edges
-    # Compute spatial gradients
-    dose_grad_x = dose_pred[:, :, 1:, :] - dose_pred[:, :, :-1, :]
-    dose_grad_y = dose_pred[:, :, :, 1:] - dose_pred[:, :, :, :-1]
-    dose_grad_z = dose_pred[:, 1:, :, :] - dose_pred[:, :-1, :, :]
-    
-    # Compute PTV boundary (dilated PTV minus eroded PTV)
-    from torch.nn.functional import max_pool3d
-    kernel_size = 3
-    ptv_float = mask_ptv.float()
-    ptv_dilated = max_pool3d(ptv_float.unsqueeze(0), kernel_size, stride=1, padding=1).squeeze(0)
-    ptv_eroded = -max_pool3d(-ptv_float.unsqueeze(0), kernel_size, stride=1, padding=1).squeeze(0)
-    ptv_boundary = (ptv_dilated - ptv_eroded) > 0.5
-    
-    # We want HIGH gradients at the boundary (negative loss encourages high gradients)
-    grad_mag_x = torch.abs(dose_grad_x[:, :, :-1, :]) * ptv_boundary[:, :, 1:-1, :]
-    grad_mag_y = torch.abs(dose_grad_y[:, :, :, :-1]) * ptv_boundary[:, :, :, 1:-1]
-    grad_mag_z = torch.abs(dose_grad_z[:, :-1, :, :]) * ptv_boundary[:, 1:-1, :, :]
-    
-    # Negative because we want to maximize gradient magnitude
-    loss_edge_sharpness = -(torch.mean(grad_mag_x) + torch.mean(grad_mag_y) + torch.mean(grad_mag_z)) * 0.01
-    
-    # 4. Dose Conformity - Penalize dose outside PTV
-    outside_ptv = (~mask_ptv) & mask_external
-    dose_outside = dose_pred * outside_ptv
-    conformity_threshold = 25.0  # 50% of prescription
-    excess_outside_dose = torch.relu(dose_outside - conformity_threshold)
-    loss_conformity = torch.mean(excess_outside_dose**3)
-    
-    # 5. MU efficiency (keep MUs reasonable)
-    mu_total = torch.sum(pred_mus)
-    loss_mu_efficiency = mu_total * 0.0001
-    
-    # 6. Leaf smoothness (prevent jagged leaf patterns)
-    leaf_diff_cp = leafs[:, :, 1:, :] - leafs[:, :, :-1, :]  # Between control points
-    leaf_diff_pairs = leafs[:, :, :, 1:] - leafs[:, :, :, :-1]  # Between leaf pairs
-    loss_leaf_smooth = (torch.mean(leaf_diff_cp**2) + torch.mean(leaf_diff_pairs**2)) * 0.001
-    
-    # Combine all losses
-    all_losses = [
-        loss_ptv_coverage * weights.get("loss_ptv_coverage", 1.0),
-        loss_oar * weights.get("loss_oar", 1.0),
-        loss_edge_sharpness * weights.get("loss_edge_sharpness", 1.0),
-        loss_conformity * weights.get("loss_conformity", 1.0),
-        loss_mu_efficiency * weights.get("loss_mu_efficiency", 1.0),
-        loss_leaf_smooth * weights.get("loss_leaf_smooth", 1.0),
-        torch.tensor(0.0).to(dose_pred.device),  # Placeholder for compatibility
-        torch.tensor(0.0).to(dose_pred.device),
-        torch.tensor(0.0).to(dose_pred.device),
-        torch.tensor(0.0).to(dose_pred.device),
-        torch.tensor(0.0).to(dose_pred.device),
-    ]
-    
-    return all_losses
 
 def compute_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _masks):
     (
@@ -292,7 +203,7 @@ for test_i in range(n_tests):
         api_key=os.getenv("COMET_API"), project_name="autoplan_static"
     )
     try:
-        x, y_dose, masks, region_weights, config, ct_volume, valid_parameters_layer, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()
+        x, y_dose, masks, region_weights, config, ct_volume, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch = get_example_data()
         treatment = config.treatment
         machine_config = config.machine
 
@@ -307,6 +218,7 @@ for test_i in range(n_tests):
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=20)
 
         dose_layer = DoseEngine(machine_config, kernel_size, permute_ct=False, leafs_centered=False, adjust_values=True)
+        valid_parameters_layer = ValidParametersLayer(config.machine, leafs_centered=False, adjust_values=True)
         dose_layer.train()
 
         experiment.log_parameters(
