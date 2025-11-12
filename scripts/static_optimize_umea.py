@@ -99,15 +99,15 @@ def get_example_data():
 
 
     pred_mlc_init = torch.ones((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs), dtype=torch.float32, device=device)
-    pred_mlc_init[:, 0, :, :] = -100.0
-    pred_mlc_init[:, 1, :, :] = 100.0
+    pred_mlc_init[:, 0, :, :] = -5.0
+    pred_mlc_init[:, 1, :, :] = 5.0
     pred_mlc = pred_mlc_init.clone().detach().requires_grad_(True)
     pred_jaws_init = torch.from_numpy(config.patient.plan_jaws).to(device).clone().detach()
     # pred_jaws_init = torch.zeros((1, 2, config.machine.number_of_cps), dtype=torch.float32, device=device)
     # pred_jaws_init[:, 0, :] = 0.1
     # pred_jaws_init[:, 1, :] = 0.9
     pred_jaws = pred_jaws_init.clone().detach().requires_grad_(True)
-    pred_mus_init = (100.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
+    pred_mus_init = (1700.0 / config.machine.number_of_cps) * torch.ones((1, config.machine.number_of_cps), dtype=torch.float32, device=device)
     pred_mus = pred_mus_init.clone().detach().requires_grad_(True)
     return x, y_dose, masks, region_weights, config, ct_volume, mask_target, mask_external, mask_oar, dose_target, current_res, weights, latest, pred_mlc, pred_jaws, pred_mus, masks_torch
 

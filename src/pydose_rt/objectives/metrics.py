@@ -253,7 +253,7 @@ def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
     config.machine.iso_center = (0.0, iso_y, 0.0)
  
     # Create water phantom (HU = 0 for water)
-    x_ct = 0.0 * np.expand_dims(np.ones(config.machine.ct_array_shape), 0)
+    x_ct = 0.0 * np.expand_dims(np.ones(np.multiply(config.machine.ct_array_shape, config.machine.downsampling_factor)), 0)
  
     # Set up MLC positions for full 10x10 field
     # Positions are normalized: 0.5 and 1.0 create a centered field
