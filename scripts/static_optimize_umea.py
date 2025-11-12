@@ -210,7 +210,7 @@ for test_i in range(n_tests):
         patience = 0
         epoch = 0
         lr = 10**(np.random.uniform(-4, 2)) # 1e-1 # 4e-3
-        kernel_size = 3
+        kernel_size = 55
         lr_decay = 1e-4
         optimizer = torch.optim.AdamW([pred_mlc, pred_mus, pred_jaws], lr=lr, weight_decay=lr_decay)
         # optimizer = torch.optim.LBFGS([pred_mlc, pred_mus, pred_jaws], lr=lr, tolerance_grad=0.0, tolerance_change=0.0, history_size=10, line_search_fn='strong_wolfe')
