@@ -179,8 +179,8 @@ class FluenceMapLayer(nn.Module):
             B * G, 2, N
         )  # [B*G, 2, N]
 
-        left_positions = leaf_positions[:, 0, :]  # [B*G, N]
-        right_positions = leaf_positions[:, 1, :]  # [B*G, N]
+        left_positions = leaf_positions[:, 0, :] - 2.0  # [B*G, N]
+        right_positions = leaf_positions[:, 1, :] + 2.0  # [B*G, N]
 
         W = self.config.field_size[1]
 
@@ -215,8 +215,8 @@ class FluenceMapLayer(nn.Module):
             jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions)
 
             jaw_mask = jaw_mask.view(B, G, H, 1)
-            jaw_mask = jaw_mask.view(B * G, H, 1, 1)
-            jaw_mask = jaw_mask.repeat(1, 1, W, 1)
+            jaw_mask = jaw_mask.view(B * G, 1, H, 1)
+            jaw_mask = jaw_mask.repeat(1, W, 1, 1)
 
             mask *= jaw_mask
 
