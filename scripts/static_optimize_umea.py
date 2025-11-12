@@ -46,7 +46,7 @@ if remote:
         dtype=torch.float32,
         device=device
     )
-    max_iter = 3000
+    max_iter = 10000
 else:
     ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
     rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
@@ -209,9 +209,9 @@ for test_i in range(n_tests):
 
         patience = 0
         epoch = 0
-        lr = 1e-2 # 4e-3
+        lr = 1e-1 # 4e-3
         kernel_size = 3
-        lr_decay = 1e-6
+        lr_decay = 1e-4
         optimizer = torch.optim.AdamW([pred_mlc, pred_mus, pred_jaws], lr=lr, weight_decay=lr_decay)
         # optimizer = torch.optim.LBFGS([pred_mlc, pred_mus, pred_jaws], lr=lr, tolerance_grad=0.0, tolerance_change=0.0, history_size=10, line_search_fn='strong_wolfe')
         
