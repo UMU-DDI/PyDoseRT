@@ -225,7 +225,7 @@ class DoseEngine(nn.Module):
             ct_image = self.ct_image
             batched_kernels = self.batched_kernels
             
-        with torch.amp.autocast(self.device.type):
+        with torch.amp.autocast(self.device.type, dtype=self.config.dtype):
             if self.ct_image is None:
                 with torch.no_grad():
                     batched_radiological_depths = self.rad_depth_layer(ct_image)
