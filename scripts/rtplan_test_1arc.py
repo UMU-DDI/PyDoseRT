@@ -68,7 +68,7 @@ config = DoseConfig.from_dicom(
     machine_preset="umea",
         treatment_preset="umea",
     downsampling_factor=(1, 2, 2),
-    dtype=torch.float16,
+    dtype=torch.float32,
     device=device
 )
 ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
@@ -109,7 +109,7 @@ dose_pred = dose_pred.cpu().detach().numpy()
 
 dose_pred = np.where(external_mask, dose_pred, 0.0)
 dose_pred = dose_pred * mae_optimal_scale(dose_pred[0, ...], dose_volume)
-# dose_pred = dose_pred * dose_volume[masks["CTV"] > 0].mean() / dose_pred[0, ...][masks["CTV"] > 0].mean()
+dose_max = max(dose_volume.max(), dose_pred.max())
 
 
 vmax = 10
@@ -118,23 +118,24 @@ mae_loss = np.mean(np.abs(dose_pred[0] - dose_volume))
 plt.figure()
 plt.subplot(131)
 # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-plt.imshow(dose_volume[slice_idx, 64:119, 64:128], cmap='jet')
+plt.imshow(dose_volume[slice_idx, :, :], cmap='jet', vmax=dose_max)
 plt.axis('off')
 plt.colorbar()
 plt.subplot(132)
 # plt.title(f"MAE {mae_loss}")
 # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-plt.imshow(dose_pred[0, slice_idx, 64:119, 64:128], cmap='jet')
+plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet', vmax=dose_max)
 plt.axis('off')
 plt.colorbar()
 plt.subplot(133)
-plt.imshow(ct_volume[slice_idx, 64:119, 64:128], cmap='gray')
-plt.imshow(dose_volume[slice_idx, 64:119, 64:128] - dose_pred[0, slice_idx, 64:119, 64:128], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
 plt.axis('off')
 plt.colorbar()
+
 plt.show()
 
 print_results(None, config.treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], torch.from_numpy(dose_pred), torch.from_numpy(np.expand_dims(ct_volume, 0)), [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], mae_loss)
-res = result_validation(config, dose_pred, leafs, jaws, mus, compute_gamma=True)
+res = result_validation(config, dose_pred, leafs, jaws, mus, dose_volume, compute_gamma=True)
 print(res)
 # make_animation(None, config, dose_layer, leafs, mus, jaws, dose_pred.max())

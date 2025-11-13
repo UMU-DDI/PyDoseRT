@@ -1,20 +1,29 @@
 import torch
+import torch.nn.functional as F
 
-def fractional_box_overlap(d, left, right):
-    """
-    Compute fractional overlap using only standard PyTorch operations.
+def fractional_box_overlap(d, left, right) -> torch.Tensor:
+    """    
+    Compute fractional overlap with STE for gradient propagation.
+    Forward pass: Uses geometric max/min for accurate overlap computation.
+    Backward pass: Uses simple linear surrogate (right - left) that always
+                   propagates gradients to both left and right positions.
     """
     half_w = 0.5
-
     bin_start = d - half_w
     bin_end   = d + half_w
-    
-    overlap_start = torch.maximum(left, bin_start)
-    overlap_end = torch.minimum(right, bin_end)
-    overlap = torch.clamp(overlap_end - overlap_start, min=0.0, max=1.0).to(d.dtype)
-    
-    return overlap
 
+    # ----- Hard geometric overlap (forward) -----
+    overlap_start_hard = torch.maximum(left, bin_start)
+    overlap_end_hard = torch.minimum(right, bin_end)
+    hard = torch.clamp(overlap_end_hard - overlap_start_hard, min=0.0, max=1.0)
+
+    # ----- Simple linear surrogate (backward) -----
+    soft = right - left
+
+    # ----- STE: forward uses hard, backward uses soft -----
+    overlap = soft + (hard - soft).detach()
+
+    return overlap.to(d.dtype)
 
 def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_size: int, dtype: type) -> torch.Tensor:
     """
