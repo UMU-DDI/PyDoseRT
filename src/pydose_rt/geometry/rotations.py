@@ -3,51 +3,64 @@ import math
 import torch.nn.functional as F
 
 def get_radiological_depth_indices(input_shape, angles_rad, dtype):
+    """
+    Generate sampling coordinates for radiological depth calculation using ray tracing.
+
+    For each angle, creates a ray through the volume center with uniform voxel spacing
+    in the rotated coordinate frame. Returns exactly D points per ray.
+
+    Args:
+        input_shape: (H, D, W) - shape of CT volume in voxels
+        angles_rad: list/tensor of rotation angles in radians
+        dtype: torch dtype for output
+
+    Returns:
+        indices: [1, G, D, 3] - floating point coordinates (x, y, z) for sampling
+                 where x∈[0,W-1], y∈[0,D-1], z∈[0,H-1]
+                 Each ray has exactly D points
+    """
     H, D, W = input_shape
-    y = torch.linspace(0, D - 1, D)
-    x = torch.linspace(0, W - 1, W)
-    # Storing the two seperately enables more efficient torch operations
-    grid_x, grid_y = torch.meshgrid(x, y, indexing="ij")  # shape [W, D]
-    
-    grid = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)  # [1, W, D, 2]
+
+    # Center of the volume in voxel coordinates
+    center_x = (W - 1) / 2.0
+    center_y = (D - 1) / 2.0
+    center_z = (H - 1) / 2.0
+
+    # Create a line of D points along the Y axis (depth direction)
+    # This is the reference line at angle=0
+    y_line = torch.linspace(0, D - 1, D, dtype=dtype)
+    x_line = torch.full_like(y_line, center_x)  # X stays at center
 
     indices_list = []
 
     for angle in angles_rad:
-        theta = angle
-        rot_matrix = torch.tensor(
-            [
-                [math.cos(theta), -math.sin(theta)],
-                [math.sin(theta), math.cos(theta)],
-            ]
-        ).to(dtype)
+        theta = float(angle)
 
-        # Centered grid for rotation
-        center_y = (D - 1) / 2.0
-        center_x = (W - 1) / 2.0
-        shifted = (grid[0] - torch.tensor([center_x, center_y])).to(dtype)
-        rotated = torch.matmul(shifted, rot_matrix.T) + torch.tensor(
-            [center_x, center_y]
-        )
+        # Rotation matrix
+        cos_theta = math.cos(theta)
+        sin_theta = math.sin(theta)
 
-        mid_x = W // 2
-        line_points = rotated[mid_x, :]  # shape [D, 2]
+        # Shift to origin for rotation
+        x_shifted = x_line - center_x
+        y_shifted = y_line - center_y
 
-        z_index = H // 2
-        z_col = torch.full(
-            (line_points.shape[0], 1), z_index, dtype=dtype
-        )
-        indices = torch.cat([line_points, z_col], dim=-1)  # [D, 3]
+        # Apply rotation
+        x_rotated = x_shifted * cos_theta - y_shifted * sin_theta
+        y_rotated = x_shifted * sin_theta + y_shifted * cos_theta
 
-        indices_list.append(indices.int())
+        # Shift back to center
+        x_coords = x_rotated + center_x
+        y_coords = y_rotated + center_y
+        z_coords = torch.full_like(x_coords, center_z)
 
-    stacked_indices = torch.stack(indices_list, dim=0)
+        # Stack into [D, 3] with order [x, y, z] = [W, D, H]
+        ray_coords = torch.stack([x_coords, y_coords, z_coords], dim=-1)
 
-    G, P, _ = stacked_indices.shape
-    stacked_indices = stacked_indices.view(1, G, P, 3)
-    
+        indices_list.append(ray_coords)
 
-    return stacked_indices
+    stacked_indices = torch.stack(indices_list, dim=0)  # [G, D, 3]
+
+    return stacked_indices.unsqueeze(0)  # [1, G, D, 3]
 
 def build_rotation_grids(input_shape, angles_rad, device, dtype):
     """

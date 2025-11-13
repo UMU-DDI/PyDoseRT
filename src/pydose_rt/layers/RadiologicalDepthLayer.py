@@ -92,57 +92,92 @@ class RadiologicalDepthLayer(nn.Module):
             B, H, D, W = ct_stack.shape
             _, G, P, _ = self.stacked_indices.shape
 
-            # Prepare batched indices for sampling CT volume along rotated lines
-            batch_ids = (
-                torch.arange(B, device=self.device).view(B, 1, 1, 1).expand(B, G, P, 1)
-            )
-            index_expanded = (
-                self.stacked_indices.expand(B, G, P, 3).to(self.device)
-            )
-            batched_indices = torch.cat(
-                [batch_ids, index_expanded], dim=-1
-            )  # [B, G, P, 4]
+            # Sample CT volume using trilinear interpolation at floating-point coordinates
+            # stacked_indices: [1, G, P, 3] with order [x, y, z] = [W, D, H]
 
-            # Flatten for advanced indexing
-            flat_indices = batched_indices.view(-1, 4)
-            b_idx, x_idx, y_idx, z_idx = (
-                flat_indices[:, 0],
-                flat_indices[:, 1],
-                flat_indices[:, 2],
-                flat_indices[:, 3],
-            )
+            # Expand for batch dimension: [B, G, P, 3]
+            coords = self.stacked_indices.expand(B, G, P, 3)
 
-            # Gather voxel values along each line for each batch and angle
-            gathered = ct_stack[b_idx, z_idx, y_idx, x_idx]
+            # Extract coordinates
+            x_coords = coords[..., 0]  # W dimension [B, G, P]
+            y_coords = coords[..., 1]  # D dimension [B, G, P]
+            z_coords = coords[..., 2]  # H dimension [B, G, P]
 
-            # Reshape to [B, G, P]
-            gathered = gathered.view(B, G, P)
+            # Perform trilinear interpolation manually
+            # Clamp coordinates to valid range
+            x_coords = torch.clamp(x_coords, 0, W - 1)
+            y_coords = torch.clamp(y_coords, 0, D - 1)
+            z_coords = torch.clamp(z_coords, 0, H - 1)
+
+            # Get integer parts (floor) and fractional parts
+            x0 = torch.floor(x_coords).long()
+            y0 = torch.floor(y_coords).long()
+            z0 = torch.floor(z_coords).long()
+
+            x1 = torch.clamp(x0 + 1, 0, W - 1)
+            y1 = torch.clamp(y0 + 1, 0, D - 1)
+            z1 = torch.clamp(z0 + 1, 0, H - 1)
+
+            xd = x_coords - x0.float()
+            yd = y_coords - y0.float()
+            zd = z_coords - z0.float()
+
+            # Sample at 8 corners for trilinear interpolation
+            # ct_stack shape: [B, H, D, W]
+            # Need to expand batch indices
+            b_idx = torch.arange(B, device=self.device).view(B, 1, 1).expand(B, G, P)
+
+            c000 = ct_stack[b_idx, z0, y0, x0]
+            c001 = ct_stack[b_idx, z0, y0, x1]
+            c010 = ct_stack[b_idx, z0, y1, x0]
+            c011 = ct_stack[b_idx, z0, y1, x1]
+            c100 = ct_stack[b_idx, z1, y0, x0]
+            c101 = ct_stack[b_idx, z1, y0, x1]
+            c110 = ct_stack[b_idx, z1, y1, x0]
+            c111 = ct_stack[b_idx, z1, y1, x1]
+
+            # Trilinear interpolation
+            c00 = c000 * (1 - xd) + c001 * xd
+            c01 = c010 * (1 - xd) + c011 * xd
+            c10 = c100 * (1 - xd) + c101 * xd
+            c11 = c110 * (1 - xd) + c111 * xd
+
+            c0 = c00 * (1 - yd) + c01 * yd
+            c1 = c10 * (1 - yd) + c11 * yd
+
+            gathered = c0 * (1 - zd) + c1 * zd  # [B, G, P]
 
             # Convert HU to density using lookup table
             density = convert_HU_to_density(
                 gathered, self.config.lookup_table
             )  # shape: [B, G, P]
 
-            # Calculate the actual step size for each angle
-            step_sizes = []
-            for i in range(self.config.number_of_cps):
-                if P > 1:
-                    diff = self.stacked_indices[0, i, 1:, :] - self.stacked_indices[0, i, :-1, :]
-                    # Calculate physical step size accounting for resolution in all dimensions
-                    # diff is in pixel units, so multiply by resolution to get physical distance
-                    res_tensor = torch.tensor([self.config.resolution[0], self.config.resolution[1], self.config.resolution[2]],
-                                             device=self.device, dtype=self.config.dtype)
-                    physical_diff = diff * res_tensor
-                    avg_step = torch.sqrt((physical_diff ** 2).sum(dim=-1)).mean()
-                else:
-                    # For single point, use resolution[1]
-                    avg_step = self.config.resolution[1]
+            # Calculate physical step size per angle (accounts for anisotropic voxels)
+            if P > 1:
+                # Compute for all rays: [G, P, 3]
+                all_rays = self.stacked_indices[0, :, :, :]  # [G, P, 3]
+                diff = all_rays[:, 1:, :] - all_rays[:, :-1, :]  # [G, P-1, 3]
 
-                step_sizes.append(avg_step)
+                # Convert voxel differences to physical distances
+                res_tensor = torch.tensor(
+                    [self.config.resolution[0], self.config.resolution[1], self.config.resolution[2]],
+                    device=self.device, dtype=self.config.dtype
+                )
+                physical_diff = diff * res_tensor
 
-            step_sizes = torch.tensor(step_sizes, device=self.device, dtype=self.config.dtype).view(1, G, 1)
+                # Calculate euclidean distance for each step: [G, P-1]
+                step_distances = torch.sqrt((physical_diff ** 2).sum(dim=-1))
+                # Average step size per angle: [G]
+                step_sizes = step_distances.mean(dim=-1).view(1, G, 1)  # [1, G, 1]
+            else:
+                step_sizes = torch.tensor(
+                    self.config.resolution[1],
+                    device=self.device,
+                    dtype=self.config.dtype
+                ).view(1, 1, 1)
 
             # Integrate density along each line (cumulative sum) and scale by step size
+            # Each angle gets its own physically correct step size
             # This accumulates radiological depth from source (entrance) toward patient interior
             cumsum = torch.cumsum(density, dim=-1) * step_sizes  # shape: [B, G, P]
 
