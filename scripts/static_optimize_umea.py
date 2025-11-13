@@ -300,7 +300,7 @@ for test_i in range(n_tests):
 
             epoch += 1
 
-        print(f"Optimization finished in {int(time.time() - start_time)}s.")
+        print(f"Optimization finished in {int(time.time() - start_time)}s. It used the new fluence map!")
         pred_mlc = current_res[2]
         pred_mus = current_res[3]
         pred_jaws = current_res[4]
