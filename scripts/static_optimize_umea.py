@@ -34,7 +34,7 @@ if remote:
     ct_folder = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21/"
     rtplan_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
     rtdose_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-    dtype = torch.float32
+    dtype = torch.float16
 
     config = DoseConfig.from_dicom(
         ct_folder=ct_folder, 
@@ -47,8 +47,8 @@ if remote:
         dtype=dtype,
         device=device
     )
-    max_iter = 2000
-    kernel_size = 15
+    max_iter = 3000
+    kernel_size = 5
 else:
     ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
     rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
@@ -159,14 +159,14 @@ def compute_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, _mas
 
 def compute_mae_loss(dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks):
     losses = []
-    # losses.append(torch.mean(torch.abs((dose_true - dose_pred))**2))
-    for index, mask in enumerate([masks[0], masks[1], masks[-1]]):
-        losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
+    losses.append(torch.mean(torch.abs((dose_true - dose_pred))**2))
+    # for index, mask in enumerate([masks[0], masks[1], masks[-1]]):
+    #     losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
 
-    jaw_loss = torch.mean((torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :]))**2)
-    bank_loss = leaf_range_loss(leafs, config.machine)
-    losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
-    losses.append(scale_loss(bank_loss, weights["leaf_reg_loss"]))
+    # jaw_loss = torch.mean((torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :]))**2)
+    # bank_loss = leaf_range_loss(leafs, config.machine)
+    # losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
+    # losses.append(scale_loss(bank_loss, weights["leaf_reg_loss"]))
 
     return losses
 
