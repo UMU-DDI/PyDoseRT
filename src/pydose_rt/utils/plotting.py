@@ -308,34 +308,45 @@ def make_animation(experiment, dose_config: DoseConfig, dose_layer: DoseEngine, 
     
     # Loop through all control points
     for cp_idx in range(num_cps):
-        # Create figure with tight layout
-        # Using equal aspect ratio for both subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), 
-                                        gridspec_kw={'hspace': 0.02})  # Minimal vertical spacing
+        fig = plt.figure(figsize=(12, 9))
+        gs = fig.add_gridspec(2, 2, height_ratios=[1, 2], hspace=0.15, wspace=0.05)
+        ax_depth = fig.add_subplot(gs[0, :])  # Depth profile spans both columns
+        ax1 = fig.add_subplot(gs[1, 0])  # Fluence map
+        ax2 = fig.add_subplot(gs[1, 1])  # CT with dose overlay
         
         # Get dose and map for current control point
         with torch.no_grad():
-            pred_dose, pred_map = dose_layer(
+            pred_dose, pred_map, pred_depths = dose_layer(
                 pred_mlc, 
                 pred_mus, 
                 jaw_positions=pred_jaws, 
-                ct_image=torch.zeros_like(ct_volume), 
+                ct_image=ct_volume, 
                 single_cp=cp_idx
             )
         # pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))
+        
+        # Plot radiological depth profile
+        central_profile = np.diff(pred_depths.cpu().detach().numpy()[0, :, 0])  # Adjust indexing as needed
+        ax_depth.plot(central_profile, linewidth=2)
+        ax_depth.set_ylim([0, 10.0])
+        ax_depth.set_ylabel('Radiological Depth')
+        ax_depth.set_title(f'Control Point {cp_idx + 1}/{num_cps}', pad=5)
+        ax_depth.grid(True, alpha=0.3)
         
         # Plot beam's eye view (fluence map) - make it square
         fluence_data = pred_map.cpu().detach().numpy()[0, 0, :, :]
         w, h = fluence_data.shape
         im1 = ax1.imshow(fluence_data, interpolation='none', cmap='gray', vmin=0.0, vmax=1.0, aspect=h/w)
-        ax1.set_title(f'Control Point {cp_idx + 1}/{num_cps}', pad=5)
+        ax1.set_title('Fluence Map', pad=5)
         ax1.axis('off')
         
         # Plot CT slice with dose overlay - already square
-        dose_data += pred_dose.cpu().detach().numpy()[0, slice_idx, :, :]
+        pred_dose = pred_dose.cpu().detach().numpy()[0, slice_idx, :, :]
+        dose_data += pred_dose
         
         ax2.imshow(ct_data, cmap='gray', vmin=-1000, vmax=1000, aspect='equal')
         ax2.imshow(dose_data, cmap=jet_alpha, vmin=0.0, vmax=dose_max, aspect='equal')
+        overlay_mask_outline(pred_dose > 0.01 * pred_dose.max(), color='orange')
         
         # Add ROI contours
         for idx, struct_name in enumerate(patient_data.structures):
@@ -345,27 +356,32 @@ def make_animation(experiment, dose_config: DoseConfig, dose_layer: DoseEngine, 
             overlay_mask_outline(roi[slice_idx, :, :], 
                                color='white')
         
+        ax2.set_title('Dose Overlay', pad=5)
         ax2.axis('off')
         ax2.set_aspect('equal', 'box')  # Force square aspect
         
-        # Make the layout very tight
-        plt.subplots_adjust(left=0.01, right=0.99, top=0.98, bottom=0.01, hspace=0.02)
+        # Make the layout tight
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
         
         # Save frame as image with tight bounding box
         frame_path = f"out/frame_{cp_idx:03d}.png"
         plt.savefig(frame_path, dpi=100, bbox_inches='tight', pad_inches=0.02)
+        plt.close(fig)
         
         # Read the saved image and add to frames list
         frame = cv2.imread(frame_path)
         if frame is not None:
             frames.append(frame)
+        else:
+            print(f"Failed to read frame image: {frame_path}")
         
-        plt.close(fig)
-        if os.path.exists(frame_path):
-            os.remove(frame_path)
+        # if os.path.exists(frame_path):
+        #     os.remove(frame_path)
 
-    
+
     if frames:
+        if (len(frames) != num_cps):
+            print(f"Warning: Number of frames ({len(frames)}) does not match number of control points ({num_cps})")
         # Get dimensions from first frame
         height, width, layers = frames[0].shape
         

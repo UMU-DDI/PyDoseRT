@@ -236,6 +236,9 @@ class DoseEngine(nn.Module):
                         dtype=self.config.dtype,
                     ).detach()
 
+            if single_cp is not None:
+                single_radiological_depth = batched_radiological_depths[single_cp:single_cp+1, ...]
+            del batched_radiological_depths
 
             leaf_positions, mus, jaw_positions = self.valid_parameters_layer(
                 leaf_positions, mus, jaw_positions
@@ -323,4 +326,4 @@ class DoseEngine(nn.Module):
             if single_cp is None:
                 return batched_accumulated_dose
             else:
-                return batched_accumulated_dose, single_fluence_map
+                return batched_accumulated_dose, single_fluence_map, single_radiological_depth
