@@ -2,12 +2,17 @@ import torch
 import torch.nn.functional as F
 
 def soft_max(a, b, sharpness=10.0):
-    """Smooth approximation of max(a, b) using LogSumExp."""
-    return torch.logsumexp(torch.stack([a * sharpness, b * sharpness], dim=-1), dim=-1) / sharpness
+    """Smooth approximation of max(a, b) using LogSumExp with broadcasting support."""
+    a_scaled = a * sharpness
+    b_scaled = b * sharpness
+    # Manual LogSumExp: log(exp(a) + exp(b)) with numerical stability
+    max_val = torch.maximum(a_scaled, b_scaled)
+    return (max_val + torch.log(torch.exp(a_scaled - max_val) + torch.exp(b_scaled - max_val))) / sharpness
  
 def soft_min(a, b, sharpness=10.0):
-    """Smooth approximation of min(a, b) using LogSumExp."""
-    return -torch.logsumexp(torch.stack([-a * sharpness, -b * sharpness], dim=-1), dim=-1) / sharpness
+    """Smooth approximation of min(a, b) using LogSumExp with broadcasting support."""
+    # min(a, b) = -max(-a, -b)
+    return -soft_max(-a, -b, sharpness)
 
 def fractional_box_overlap(d, left, right, sharpness=10.0) -> torch.Tensor:
     """
