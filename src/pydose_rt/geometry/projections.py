@@ -111,9 +111,6 @@ def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_
     # total_overlap = overlap.sum(dim=0)  # [H]
     total_overlap = overlap.sum(dim=0)  # [M]
     total_overlap = total_overlap.view(1, 1, H)
-    # resolution = self.config.resolution[0]
-    # total_overlap = torch.full((H,), resolution, device=self.device, dtype=self.config.dtype)
-    # total_overlap = total_overlap.view(1, 1, H)
 
     result = total_weighted / (total_overlap + 1e-8)
     result = result.unsqueeze(-1)  # [B, W, H, 1]

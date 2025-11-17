@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data.machine_config import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 
 
 class BeamWiseConvolutionalLayer(nn.Module):
@@ -32,7 +32,9 @@ class BeamWiseConvolutionalLayer(nn.Module):
         device (torch.device): Device on which computations are performed.
     """
 
-    def __init__(self, config: MachineConfig, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
+        dtype, 
+        device, verbose: bool = False):
         """
         Initializes the BeamWiseConvolutionalLayer.
 
@@ -41,9 +43,12 @@ class BeamWiseConvolutionalLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """
         super().__init__()
-        self.config = config
+
+        self.device=device
+        self.dtype=dtype
+        self.machine_config = machine_config
+        self.treatment_config = treatment_config
         self.verbose = verbose
-        self.device = self.config.device
 
     def forward(self, fluence_vol: torch.Tensor, kernels: torch.Tensor) -> torch.Tensor:
         """

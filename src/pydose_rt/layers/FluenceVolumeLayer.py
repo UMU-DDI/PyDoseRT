@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data.machine_config import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 
 
 class FluenceVolumeLayer(nn.Module):
@@ -47,7 +47,9 @@ class FluenceVolumeLayer(nn.Module):
         sampling_grids (torch.Tensor): Precomputed ray sampling grids for mapping MLC plane to CT volume.
     """
 
-    def __init__(self, config: MachineConfig, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
+        dtype, 
+        device, verbose: bool = False):
         """
         Initializes the FluenceVolumeLayer and precomputes profile corrections and sampling grids.
 
@@ -56,37 +58,42 @@ class FluenceVolumeLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()
-        self.config = config
+
+        self.device=device
+        self.dtype=dtype
+        self.machine_config = machine_config
+        self.treatment_config = treatment_config
         self.verbose = verbose
-        self.device = self.config.device
         # Configuration & Constants
-        self.SID = float(config.SID)
+        self.SID = float(treatment_config.SID)
         self.profile_radius = torch.tensor(
-            config.fluence_profile[0], dtype=self.config.dtype
+            machine_config.fluence_profile[0], dtype=self.dtype
         )
         self.profile_factors = torch.tensor(
-            config.fluence_profile[1], dtype=self.config.dtype
+            machine_config.fluence_profile[1], dtype=self.dtype
         )
-
-        H, D, W = config.ct_array_shape
+        self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
+        self.ct_array_shape = tuple([int(x / y) for x, y in zip(machine_config.ct_array_shape,  treatment_config.downsampling_factor)])
+        H, D, W = self.ct_array_shape
         self.D = D
+
 
         # Precompute the physical depth (distance from source for each depth slice)
         depths = (
-            self.config.iso_center[1]
-            + self.config.SID
-            - (self.D // 2) * self.config.resolution[1]
-            + torch.arange(D, dtype=self.config.dtype) * config.resolution[1]
+            self.treatment_config.iso_center[1]
+            + self.treatment_config.SID
+            - (self.D // 2) * self.resolution[1]
+            + torch.arange(D, dtype=self.dtype) * self.resolution[1]
         )  # mm
 
         # Compute the physical coordinates for each pixel in the depth slice (center is (0,0))
-        H_field, W_field = config.field_size
+        H_field, W_field = self.treatment_config.field_size
         hs = (
-        torch.arange(H, dtype=self.config.dtype) - (H - 1) / 2
-        ) * config.resolution[0]
+        torch.arange(H, dtype=self.dtype) - (H - 1) / 2
+        ) * self.resolution[0]
         ws = (
-            torch.arange(W, dtype=self.config.dtype) - (W - 1) / 2
-        ) * config.resolution[2]
+            torch.arange(W, dtype=self.dtype) - (W - 1) / 2
+        ) * self.resolution[2]
         WT, HT = torch.meshgrid(ws, hs, indexing="ij")  # Both [W, H]
 
         # Normalization factors use the field size (fluence map coordinates)
@@ -97,7 +104,7 @@ class FluenceVolumeLayer(nn.Module):
         corrections = []
         sample_grids = []
         for d in depths:
-            scale = self.config.SID / d
+            scale = self.treatment_config.SID / d
             inv_square = scale**2
             corrections.append(inv_square)
 
@@ -128,7 +135,7 @@ class FluenceVolumeLayer(nn.Module):
             torch.Tensor: 3D volume grid of shape [B*G, D, cropped_W, cropped_H, 1] representing the projected fluence.
         """
         B = fluence_map.shape[0]
-        H, D, W = self.config.ct_array_shape
+        H, D, W = self.machine_config.ct_array_shape
         h_min_idx, h_max_idx, w_min_idx, w_max_idx = bbox
         h_min_idx = 0 if h_min_idx is None else h_min_idx
         h_max_idx = H - 1 if h_max_idx is None else h_max_idx

@@ -1,12 +1,7 @@
 {
     "ct_array_shape": [320, 128, 128],
     "resolution": [2.5, 5.0, 5.0],
-    "field_size": [400, 400],
-    "number_of_leaf_pairs": 60,
-    "number_of_cps": 240,
-    "mean_photon_energy_MeV": 0.0031357418595505454,
-    "tpr_20_10": 0.742, 
-    "starting_angle": 177.0,
-    "clockwise": "True",
-    "iso_center": [0.0, 0.0, 0.0]
+    "mean_photon_energy_MeV": 0.002618552223592056,
+    "tpr_20_10": 0.742,
+    "number_of_leaf_pairs": 60
 }

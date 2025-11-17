@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 from pydose_rt.physics.kernels.pencil_beam_model import PencilBeamModel
-from pydose_rt.data.machine_config import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 
         
 
@@ -42,7 +42,9 @@ class PencilBeamKernelLayer(nn.Module):
         device (torch.device): Device for computation (CPU or CUDA).
         pbm: PencilBeamModel instance for kernel calculation.
     """
-    def __init__(self, config: MachineConfig, kernel_size: int = 25, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
+        dtype, 
+        device, verbose: bool = False):
         """
         Initializes the PencilBeamKernelLayer and creates the pencil beam model.
 
@@ -52,12 +54,15 @@ class PencilBeamKernelLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()
-        self.config = config
-        self.kernel_size = kernel_size
-        self.verbose = verbose
-        self.device = self.config.device
 
-        self.pbm = PencilBeamModel(self.config, kernel_size)
+        self.device=device
+        self.dtype=dtype
+        self.machine_config = machine_config
+        self.kernel_size = treatment_config.kernel_size
+        self.verbose = verbose
+        self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
+
+        self.pbm = PencilBeamModel(self.resolution, self.machine_config.tpr_20_10, treatment_config.kernel_size)
 
     def forward(self, radiological_depth: torch.Tensor) -> np.ndarray:
         """

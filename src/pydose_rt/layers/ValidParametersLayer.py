@@ -25,7 +25,7 @@ Classes:
 import torch
 import torch.nn as nn
 from typing import Tuple
-from pydose_rt.data.machine_config import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 
 class MaximumLeafTipProjector(nn.Module):
     def __init__(self, value=1.0, k=2.0, center=0.5):
@@ -70,7 +70,7 @@ class ValidParametersLayer(nn.Module):
         __init__(config, slope=None, verbose=False): Initializes the ValidParametersLayer with configuration and verbosity.
         forward(leaf_positions, mus): Clamps and scales leaf positions and MUs, returning validated tensors.
     """
-    def __init__(self, config: MachineConfig, leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, dtype, device, leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False):
         """
         Initializes the ValidParametersLayer.
 
@@ -79,14 +79,16 @@ class ValidParametersLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()
-        self.config = config
+
+        self.device=device
+        self.dtype=dtype
+        self.machine_config = machine_config
         self.verbose = verbose
-        self.device = self.config.device
         self.leafs_centered = leafs_centered
         self.adjust_values = adjust_values
-        self.min_leaf_opening = config.minimum_leaf_overlap
-        self.min_jaw_opening = config.minimum_jaw_overlap
-        self.half_field_width = config.field_size[1] / 2.0
+        self.min_leaf_opening = machine_config.minimum_leaf_overlap
+        self.min_jaw_opening = machine_config.minimum_jaw_overlap
+        self.half_field_width = treatment_config.field_size[1] / 2.0
 
     @staticmethod
     def _proj_ste(x, lo=None, hi=None):

@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 from pydose_rt.geometry.rotations import build_rotation_grids
 
 class CPRotationLayer(nn.Module):
@@ -29,7 +29,10 @@ class CPRotationLayer(nn.Module):
         device (torch.device): Device on which computations are performed.
         rot_angles_rad (torch.Tensor): Tensor of gantry angles in radians.
     """
-    def __init__(self, config: MachineConfig, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
+        dtype, 
+        device,
+          verbose: bool = False):
         """
         Initializes the CPPRotationLayer.
 
@@ -38,10 +41,13 @@ class CPRotationLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """        
         super().__init__()
-        self.config = config
+        self.device=device
+        self.dtype=dtype
+        self.machine_config = machine_config
+        self.treatment_config = treatment_config
         self.verbose = verbose
-        self.device = self.config.device
-        self.rot_angles_rad = torch.tensor(self.config.gantry_angles, dtype=self.config.dtype, device=self.device)
+        self.device = treatment_config.device
+        self.rot_angles_rad = torch.tensor(self.treatment_config.gantry_angles, dtype=treatment_config.dtype, device=treatment_config.device)
 
     def forward(self, accumulated_dose: torch.Tensor, center: tuple = None) -> torch.Tensor:
         """
@@ -56,7 +62,7 @@ class CPRotationLayer(nn.Module):
 
         # TODO: Implement iso center functionality
         B, G, D, H, W = accumulated_dose.shape
-        grid2d = build_rotation_grids(accumulated_dose.shape, self.rot_angles_rad, self.config.device, self.config.dtype)
+        grid2d = build_rotation_grids(accumulated_dose.shape, self.rot_angles_rad, self.device, self.dtype)
         accumulated_dose = accumulated_dose.permute(0, 1, 3, 2, 4)   # [B, G, H, D, W]
         accumulated_dose = accumulated_dose.reshape(B*G*H, 1, D, W)   # [B*G*H, 1, D, W]
         

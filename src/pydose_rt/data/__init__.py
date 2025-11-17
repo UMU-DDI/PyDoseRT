@@ -1,11 +1,10 @@
 from .machine_config import MachineConfig
-from .patient_data import PatientData
+from .patient import Patient, Phantom
 from .treatment_config import TreatmentConfig
-from .dose_config import DoseConfig
 
 __all__ = [
     "MachineConfig",
-    "PatientData",
+    "Patient",
     "TreatmentConfig",
-    "DoseConfig"
+    "Phantom"
     ]

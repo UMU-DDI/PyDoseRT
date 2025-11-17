@@ -7,7 +7,7 @@ import time
 import math
 
 from pydicom.data import get_testdata_file
-from pydose_rt.data import MachineConfig, PatientData, DoseConfig
+from pydose_rt.data import MachineConfig, Patient, loaders
 # from pydose_rt.data import MachineConfig
 from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
 import numpy as np
@@ -31,16 +31,21 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 kernel_size = 55
 
-config = DoseConfig.from_dicom(
-    ct_folder=ct_folder, 
-    dose_path=rtdose_path,
-    plan_path=rtplan_path,
-    struct_names=["External", "CTV", "FemoralHead_R", "FemoralHead_L", "Bladder", "PTVT_42.7"],
-    machine_preset="umea",
-    downsampling_factor=(1, 2, 2),
-    dtype=torch.float32,
-    device=device
-)
+patient, treatment = loaders.load_dicom(
+            ct_folder=ct_folder, 
+            dose_path=rtdose_path, 
+            plan_path=rtplan_path, 
+            struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
+            treatment_preset="src/pydose_rt/data/treatment_presets/umea.json",
+            dtype=torch.float16,
+            device=device
+            )
+
+treatment.kernel_size = 75
+treatment.device = device
+treatment.dtype = torch.float16
+
+machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
 
 
 mu_path = '/home/bolo/Documents/PyDose/out/mu_values-3000.npy'
@@ -53,7 +58,7 @@ with open(mlc_path, "r") as f:
     mlcs = np.array(ast.literal_eval(f.read()))
 
 
-config.patient.plan_mus = 10 * mus
-config.patient.plan_mlcs = mlcs
+treatment.plan_mus = 10 * mus
+treatment.plan_mlcs = mlcs
 
-export_plan(config, rtplan_path, "out/plan.dcm")
+export_plan(treatment, rtplan_path, "out/plan.dcm")

@@ -1,5 +1,10 @@
 {
   "prescription_gy": 42.7,
+  "starting_angle": 177.0,
+  "clockwise": "True",
+  "iso_center": [0.0, 0.0, 0.0],
+  "field_size": [400, 400],
+  "number_of_cps": 240,
   "structures": [
     {
       "name": "CTV",

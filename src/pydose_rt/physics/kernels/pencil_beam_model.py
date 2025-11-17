@@ -163,7 +163,7 @@ class PencilBeamModel:
         params (dict): Precomputed kernel parameters for the given TPR.
         rs (np.ndarray): Radial distance grid for kernel calculation.
     """
-    def __init__(self, config: MachineConfig, kernel_size: int):
+    def __init__(self, resolution, tpr_20_10, kernel_size: int):
         """
         Initialize the PencilBeamModel.
 
@@ -171,9 +171,9 @@ class PencilBeamModel:
             config (MachineConfig): Configuration object with TPR and resolution.
             kernel_size (int): Size of the kernel (number of pixels) in the dimension with smaller pixel size.
         """
-        self.tpr = config.tpr_20_10
-        self.config = config
-        self.res_h, self.res_w = self.config.resolution[0] / 10, self.config.resolution[2] / 10
+        self.tpr = tpr_20_10
+        self.resolution = resolution
+        self.res_h, self.res_w = resolution[0] / 10, resolution[2] / 10
 
         # Determine which dimension has smaller pixel size
 
@@ -356,8 +356,8 @@ class PencilBeamModel:
         np.divide(exact_num, r2, out=exact, where=mask)
 
         # center pixel: area-average over a disk whose area = one pixel
-        dx = float(self.config.resolution[0] / 10.0)
-        dy = float(self.config.resolution[2] / 10.0)
+        dx = float(self.resolution[0] / 10.0)
+        dy = float(self.resolution[2] / 10.0)
         r_h = np.sqrt(dx * dy / np.pi)
         center_val = (2.0 / (r_h * r_h)) * (
             A_over_a * (1.0 - np.exp(-depth_a * r_h)) +

@@ -8,7 +8,7 @@ from matplotlib.colors import ListedColormap
 import os
 import cv2
 from pydose_rt.engine.dose_engine import DoseEngine
-from pydose_rt.data import MachineConfig, DoseConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig, Patient
 
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1):
@@ -91,7 +91,7 @@ def print_results(
     _imshow_fullwidth(
         ax,
         pred_jaws.cpu().detach().numpy()[0, 0:1, :],
-        cmap='gray', vmin=0.0, vmax=1.0
+        cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_jaws_grads is not None):
         _imshow_fullwidth(
@@ -106,7 +106,7 @@ def print_results(
     _imshow_fullwidth(
         ax,
         pred_jaws.cpu().detach().numpy()[0, 1:2, :],
-        cmap='gray', vmin=0.0, vmax=1.0
+        cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_jaws_grads is not None):
         _imshow_fullwidth(
@@ -121,7 +121,7 @@ def print_results(
     _imshow_fullwidth(
         ax,
         np.transpose(pred_mlc.cpu().detach().numpy()[0, 0, :, :]),
-        cmap='gray', vmin=0.0, vmax=1.0
+        cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_mlc_grads is not None):
         _imshow_fullwidth(
@@ -136,7 +136,7 @@ def print_results(
     _imshow_fullwidth(
         ax,
         np.transpose(pred_mlc.cpu().detach().numpy()[0, 1, :, :]),
-        cmap='gray', vmin=0.0, vmax=1.0
+        cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_mlc_grads is not None):
         _imshow_fullwidth(
@@ -183,8 +183,8 @@ def print_results(
         axial_xstart = 0
         axial_xend = 256
         coronal_x = 128
-        coronal_zstart = 0
-        coronal_zend = 256
+        coronal_zstart = 64
+        coronal_zend = 128
         coronal_ystart = 0
         coronal_yend = 256
 
@@ -196,7 +196,7 @@ def print_results(
     def _dose_slice_coronal(arr, x=128, y_start=0, y_end=256, z_start=0, z_end=256):
         # coronal view, transpose to show (z, y) or (y, z) consistently
         # matching your original "np.transpose(...[0, 64:198, 128, :])"
-        return np.transpose(arr[0, z_start:z_end, y_start:y_end,x])
+        return np.flipud(arr[0, z_start:z_end, y_start:y_end,x])
 
     # --- 6) Dose distribution (pred, axial)
     ax = fig.add_subplot(gs[5])
@@ -214,7 +214,7 @@ def print_results(
     ax.set_title('Dose distribution (pred, coronal)')
     for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
+        overlay_mask_outline(np.flipud(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 8) Dose distribution (gt, axial)
     ax = fig.add_subplot(gs[7])
@@ -236,7 +236,7 @@ def print_results(
     ax.set_title('Dose distribution (gt, coronal)')
     for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(np.transpose(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
+        overlay_mask_outline(np.flipud(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 10) DVH (line plot; same panel height as others for uniformity)
     ax = fig.add_subplot(gs[9])
@@ -276,13 +276,10 @@ def print_results(
         experiment.log_figure(save_path, overwrite=True)
     plt.close()
 
-def make_animation(experiment, dose_config: DoseConfig, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):
+def make_animation(experiment, treatment: TreatmentConfig, machine_config: MachineConfig, patient_data: Patient, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    treatment = dose_config.treatment
-    machine_config = dose_config.machine
-    patient_data = dose_config.patient
     mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=machine_config.dtype, device=machine_config.device) > 0
     ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=machine_config.dtype, device=machine_config.device)
 

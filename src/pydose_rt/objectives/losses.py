@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pydose_rt.utils.utils import get_model_input
+import math
 
 def scale_loss(loss, weight):
     return loss * weight
@@ -346,3 +348,85 @@ def create_sphere_mask(center, radius, shape=(64, 64, 64)):
     mask = (dist <= radius).astype(np.float32)
     mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0)  # [1, 1, D, H, W]
     return mask
+
+
+def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            # Linear warmup
+            return float(current_step) / float(max(1, warmup_steps))
+        # Cosine decay
+        progress = float(current_step - warmup_steps) / float(
+            max(1, total_steps - warmup_steps)
+        )
+        return max(
+            min_lr / optimizer.defaults["lr"],
+            0.5 * (1.0 + math.cos(math.pi * progress)),
+        )
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+def compute_loss(patient, treatment, machine_config, region_weights, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
+
+    x = get_model_input(patient, treatment)
+    x = torch.from_numpy(x)
+    x = x.expand(1, -1, -1, -1, -1)
+    (
+        loss_lower_bound_gy,
+        loss_higher_bound_gy,
+        loss_lower_bound_target,
+        loss_higher_bound_target,
+        l2_loss_oars_and_background,
+    ) = dose_loss(x, dose_pred, treatment, masks, region_weights, None)
+    mu_rate_loss, mu_complexity_loss = mus_loss(pred_mus, machine_config)
+    leaf_reg_loss, leaf_complexity_loss = leafs_loss(leafs, machine_config)
+    jaw_opening_loss, jaw_complexity_loss = jaws_loss(pred_jaws, machine_config)
+    all_losses = [
+        scale_loss(loss_lower_bound_gy, weights["loss_lower_bound_gy"]),
+        scale_loss(loss_higher_bound_gy, weights["loss_higher_bound_gy"]),
+        scale_loss(loss_lower_bound_target, weights["loss_lower_bound_target"]),
+        scale_loss(loss_higher_bound_target, weights["loss_higher_bound_target"]),
+        scale_loss(l2_loss_oars_and_background, weights["l2_loss_oars_and_background"]),
+        scale_loss(mu_rate_loss, weights["mu_rate_loss"]),
+        scale_loss(mu_complexity_loss, weights["mu_complexity_loss"]),
+        scale_loss(leaf_reg_loss, weights["leaf_reg_loss"]),
+        scale_loss(leaf_complexity_loss, weights["leaf_complexity_loss"]),
+        scale_loss(jaw_opening_loss, weights["jaw_opening_loss"]),
+        scale_loss(jaw_complexity_loss, weights["jaw_complexity_loss"]),
+    ]
+    return all_losses
+
+def compute_mae_loss(patient, treatment, machine_config, region_weights, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
+    losses = []
+    for index, mask in enumerate([_masks[0], _masks[1], _masks[-1]]):
+        losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
+
+    jaw_loss = torch.mean((torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :]))**2)
+    bank_loss = leaf_range_loss(leafs, treatment)
+    losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
+    losses.append(scale_loss(bank_loss, weights["leaf_reg_loss"]))
+
+    return losses
+
+def leaf_range_loss(leafs, config, threshold_mm=150.0):
+    """
+    Penalize leaf tip differences (max - min) that exceed threshold.
+    
+    Args:
+        leafs: [B, 2, CP, num_leafs] - leaf positions (normalized 0-1)
+        config: machine config with field_size
+        threshold_mm: maximum allowed range in mm (default 150.0)
+    """
+    # Convert threshold from mm to normalized units
+    threshold_normalized = threshold_mm / config.field_size[0]
+    
+    # Compute range (max - min) for each leaf bank
+    bank0_range = leafs[:, 0, :, :].max() - leafs[:, 0, :, :].min()
+    bank1_range = leafs[:, 1, :, :].max() - leafs[:, 1, :, :].min()
+    
+    # Penalize when range exceeds threshold
+    # Using ReLU so we only penalize violations, and squaring for smooth gradients
+    bank0_violation = torch.nn.LeakyReLU(negative_slope=0.01)(bank0_range - threshold_normalized) ** 2
+    bank1_violation = torch.nn.LeakyReLU(negative_slope=0.01)(bank1_range - threshold_normalized) ** 2
+    
+    return bank0_violation + bank1_violation

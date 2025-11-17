@@ -17,12 +17,11 @@ Typical usage example::
 Classes:
     RadiologicalDepthLayer: Torch layer for computing radiological depth profiles through CT volumes.
 """
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data.machine_config import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 from pydose_rt.physics.attenuation.hu_density_conversion import convert_HU_to_density
 from pydose_rt.geometry.rotations import get_radiological_depth_indices
 
@@ -43,7 +42,9 @@ class RadiologicalDepthLayer(nn.Module):
 
     """
 
-    def __init__(self, config: MachineConfig, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
+        dtype, 
+        device, verbose: bool = False):
         """
         Initializes the RadiologicalDepthLayer and precomputes sampling indices for each gantry angle.
 
@@ -52,24 +53,25 @@ class RadiologicalDepthLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super(RadiologicalDepthLayer, self).__init__()
-        self.config = config
+
+        self.device=device
+        self.dtype=dtype
+        self.machine_config = machine_config
+        self.treatment_config = treatment_config
         self.verbose = verbose
-        self.device = self.config.device
 
         # Determine if we should use full-sized CT for depth extraction
-        self.downsample_depths = self.config.downsampling_factor != (1, 1, 1)
+        self.downsample_depths = self.treatment_config.downsampling_factor != (1, 1, 1)
 
         # Store the target (downsampled) CT shape
-        self.target_ct_shape = self.config.ct_array_shape
+        self.ct_array_shape = tuple([int(x / y) for x, y in zip(machine_config.ct_array_shape,  treatment_config.downsampling_factor)])
+        self.target_ct_shape = self.ct_array_shape
+        self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
 
         # If using full CT, compute indices for full-sized CT
-        self.full_ct_shape = (
-            self.config.ct_array_shape[0] * self.config.downsampling_factor[0],
-            self.config.ct_array_shape[1] * self.config.downsampling_factor[1],
-            self.config.ct_array_shape[2] * self.config.downsampling_factor[2],
-        )
+        self.full_ct_shape = self.machine_config.ct_array_shape
         stacked_indices = get_radiological_depth_indices(
-            self.full_ct_shape, self.config.gantry_angles, self.config.dtype
+            self.full_ct_shape, self.treatment_config.gantry_angles, self.dtype
         ).to(self.device)
 
         # Final shape: [1, G, P, 3]
@@ -149,7 +151,7 @@ class RadiologicalDepthLayer(nn.Module):
 
             # Convert HU to density using lookup table
             density = convert_HU_to_density(
-                gathered, self.config.lookup_table
+                gathered, self.treatment_config.lookup_table
             )  # shape: [B, G, P]
 
             # Calculate physical step size per angle (accounts for anisotropic voxels)
@@ -160,8 +162,8 @@ class RadiologicalDepthLayer(nn.Module):
 
                 # Convert voxel differences to physical distances
                 res_tensor = torch.tensor(
-                    [self.config.resolution[0], self.config.resolution[1], self.config.resolution[2]],
-                    device=self.device, dtype=self.config.dtype
+                    [self.resolution[0], self.resolution[1], self.resolution[2]],
+                    device=self.device, dtype=self.dtype
                 )
                 physical_diff = diff * res_tensor
 
@@ -171,9 +173,9 @@ class RadiologicalDepthLayer(nn.Module):
                 step_sizes = step_distances.mean(dim=-1).view(1, G, 1)  # [1, G, 1]
             else:
                 step_sizes = torch.tensor(
-                    self.config.resolution[1],
+                    self.resolution[1],
                     device=self.device,
-                    dtype=self.config.dtype
+                    dtype=self.dtype
                 ).view(1, 1, 1)
 
             # Integrate density along each line (cumulative sum) and scale by step size
@@ -187,7 +189,7 @@ class RadiologicalDepthLayer(nn.Module):
                 cumsum = cumsum.view(B * G, 1, P)
 
                 # Calculate target size based on downsampling factor
-                downsample_factor = max(self.config.downsampling_factor)
+                downsample_factor = max(self.treatment_config.downsampling_factor)
                 P_target = P // downsample_factor
 
                 # Downsample using linear interpolation

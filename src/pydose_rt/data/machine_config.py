@@ -6,8 +6,6 @@ import numpy as np
 import torch
 import math
 from typing import Any, Optional
-_THIS_DIR = Path(__file__).resolve().parent
-_PRESET_DIR_DEFAULT = _THIS_DIR / "machine_presets"   # <--- now relative to this module file
 
 class MachineConfig(BaseSettings):
     preset: Optional[str] = Field(
@@ -21,18 +19,6 @@ class MachineConfig(BaseSettings):
     resolution: tuple[float, float, float] = Field(
         default=(1.25, 3.125, 3.125),
         description="The resolution in mm of the CT array in the order z,y,x",
-    )
-    field_size: tuple[int, int] = Field(
-        default=(400, 400), description="The field size in the plane given in mm (H,W)"
-    )
-    downsampling_factor: tuple[int, int, int] = Field(
-        default=(1, 1, 1),
-        description="The downsampling factor in the order z,y,x",
-    )
-    # For now, only the first value of the isocenter is used.
-    iso_center: tuple[float, float, float] = Field(
-        default=(0.0, 0.0, 0.0),
-        description="The distance of the isocenter from the center of the CT volume in mm",
     )
     minimum_leaf_overlap: float = Field(
         default=5.0, description="The minimum opening of the leafs, given in mm."
@@ -88,28 +74,19 @@ class MachineConfig(BaseSettings):
         default=0.7,
         description="Linear attenuation coefficient (1/cm) for the MLC material",
     )
-    dtype: torch.dtype = Field(
-        default=torch.float32, description="The data type used for the calculations"
-    )
 
-    device: torch.device = Field(
-        default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        description="The device used for the calculations",
-    )
+    number_of_leaf_pairs: int = Field(description="The number of leafs")
 
     @staticmethod
-    def _load_preset_json(name: str, base_dir: Path) -> dict[str, Any]:
+    def _load_preset_json(path_str: str) -> dict[str, Any]:
         """
         Read presets/{name}.json and return its dict. Raise a nice error if missing.
         """
-        path = base_dir / f"{name}.json"
+        path = Path(path_str)
+        name = path.stem
         if not path.is_file():
-            # Build a helpful error listing available preset files
-            available = sorted(p.stem for p in base_dir.glob("*.json"))
-            valid = ", ".join(available) if available else "(no presets found)"
             raise ValueError(
-                f"Unknown preset '{name}'. Expected a JSON at '{path}'. "
-                f"Valid presets: {valid}"
+                f"Unknown preset '{name}' at path '{path}'. "
             )
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
@@ -137,7 +114,7 @@ class MachineConfig(BaseSettings):
         if not name:
             return data
 
-        preset_values = cls._load_preset_json(name, _PRESET_DIR_DEFAULT)
+        preset_values = cls._load_preset_json(name)
 
         # Merge so explicit kwargs in `data` override preset entries.
         # (Env vars will still override later because BaseSettings.)
@@ -149,119 +126,11 @@ class MachineConfig(BaseSettings):
     def mlc_transmission(self) -> float:
         return math.exp(-self.mlc_mu * self.mlc_thickness)
 
-    @property
-    def lookup_table(self) -> np.ndarray:
-        return np.array(
-            [
-                [-1000, 0.0],  # SAT: Added for safety
-                [-992, 0.00109],
-                [-960, 0.00109],
-                [-500, 0.5],
-                [-75, 0.95],
-                [42, 1.04],
-                [85, 1.08],
-                [490, 1.29],
-                [890, 1.52],
-                [1240, 1.72],
-                [1670, 1.95],
-                [2155, 2.15],
-                [2640, 2.34],
-                [2832, 2.46],
-                [2840, 6.6],
-            ],
-            dtype=np.float32,
-        )
-
-    number_of_leaf_pairs: int = Field(description="The number of leafs")
     tpr_20_10: float = Field(description="The tissue phantom ratio TPR20/10")
     mean_photon_energy_MeV: float = Field(
         default=10.0, description="Mean photon energy in MeV"
     )
-    SID: float = Field(default=1000, description="Source-to-isocenter distance in mm")
-    number_of_cps: int = Field(
-        description="The number of beams for the plan"
-    )
-    starting_angle: float = Field(
-        default=0.0,
-        description="The beam angle of the first beam in the series in degrees",
-    )
-    clockwise: bool = Field(
-        default=False,
-        description="Determines whether the arc moves clockwise or not.",
-    )
-    # Private flag to prevent double-validation
-    _shapes_adjusted: bool = False
-
-    @model_validator(mode="after")
-    def adjust_shapes(self) -> "MachineConfig":
-        if self._shapes_adjusted:
-            return self
-        
-        self.ct_array_shape = (
-            self.ct_array_shape[0] // self.downsampling_factor[0],
-            self.ct_array_shape[1] // self.downsampling_factor[1],
-            self.ct_array_shape[2] // self.downsampling_factor[2],
-        )
-
-        self.resolution = (
-            self.resolution[0] * self.downsampling_factor[0],
-            self.resolution[1] * self.downsampling_factor[1],
-            self.resolution[2] * self.downsampling_factor[2],
-        )
-
-        self._shapes_adjusted = True
-
-        return self
-
-    @computed_field(repr=False)
-    @property
-    def gantry_angles(self) -> np.ndarray:
-        start = math.radians(self.starting_angle)
-        if self.clockwise:
-            end = math.radians(self.starting_angle) + math.radians(360)  
-        else:
-            end = math.radians(self.starting_angle) - math.radians(360)
-
-        return np.linspace(
-            start, 
-            end,
-            self.number_of_cps + 2,
-            endpoint=False,
-        )[:-2] % (2 * math.pi)
-
-    @computed_field(repr=False)
-    @property
-    def depth_offset(self) -> np.ndarray:
-        return self.SID - self.iso_center[1]
-
-    @computed_field(repr=False)
-    @property
-    def gantry_diff(self) -> float:
-        return float(math.radians(360) / self.number_of_cps)
-
-    @computed_field(repr=False)
-    @property
-    def gantry_diff_deg(self) -> float:
-        return float(360.0 / self.number_of_cps)
-
-    @computed_field(repr=False)
-    @property
-    def iso_center_in_pixels(self) -> int:
-        return np.ceil(np.divide(self.iso_center, self.resolution)).astype(np.int32)
-
-    @computed_field(repr=False)
-    @property
-    def field_size_in_pixels(self) -> tuple[int, int]:
-        return (
-            int(np.ceil(self.field_size[0] / self.resolution[0])),
-            int(np.ceil(self.field_size[1] / self.resolution[2])),
-        )
-
-    @computed_field(repr=False)
-    @property
-    def leaf_size(self) -> float:
-        return float(self.field_size[1] / self.number_of_leaf_pairs)
-
+    
     @computed_field(repr=False)
     @property
     def leaf_widths(self) -> np.ndarray:
@@ -332,7 +201,15 @@ class MachineConfig(BaseSettings):
                 dtype=np.float32,
             )
         else:
-            return np.ones(self.number_of_leaf_pairs, dtype=np.float32) * self.leaf_size
+            return None
+        
+    @computed_field(repr=False)
+    @property
+    def physical_size_ct(self) -> np.ndarray:
+        return np.multiply(
+            np.array(self.ct_array_shape, dtype=np.float32),
+            np.array(self.resolution, dtype=np.float32),
+        )
 
     @computed_field(repr=False)
     @property
@@ -382,53 +259,6 @@ class MachineConfig(BaseSettings):
                 ],
                 dtype=np.float32,
             ),
-        )
-
-    @computed_field(repr=False)
-    @property
-    def shape_mlc(self) -> tuple[np.ndarray, np.ndarray]:
-        return (
-            (1, 2, self.number_of_cps, self.number_of_leaf_pairs),
-            (1, self.number_of_cps),
-        )
-
-    @computed_field(repr=False)
-    @property
-    def shape_jaws(self) -> np.ndarray:
-        return (1, 2, self.number_of_cps)
-
-    @computed_field(repr=False)
-    @property
-    def shape_fluence_map(self) -> np.ndarray:
-        return (
-            self.number_of_cps,
-            self.field_size_in_pixels[0],
-            self.field_size_in_pixels[1],
-            1,
-        )
-
-    @computed_field(repr=False)
-    @property
-    def shape_fluence_volume(self) -> np.ndarray:
-        return (
-            self.number_of_cps,
-            self.ct_array_shape[0],
-            self.ct_array_shape[1],
-            self.ct_array_shape[2],
-            1,
-        )
-
-    @computed_field(repr=False)
-    @property
-    def shape_radiological_depth(self) -> np.ndarray:
-        return (self.number_of_cps, self.ct_array_shape[0], 1)
-    
-    @computed_field(repr=False)
-    @property
-    def physical_size_ct(self) -> np.ndarray:
-        return np.multiply(
-            np.array(self.ct_array_shape, dtype=np.float32),
-            np.array(self.resolution, dtype=np.float32),
         )
 
     model_config = SettingsConfigDict(

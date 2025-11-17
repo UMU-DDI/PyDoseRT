@@ -6,13 +6,14 @@ import scipy.ndimage as ndi
 import random
 import copy
 import numpy as np
-from pydose_rt.data import PatientData, MachineConfig
+from pydose_rt.data import Patient, MachineConfig
 import torch
 import os
 import time
 import pydicom
+from pydose_rt.data import TreatmentConfig
 
-def export_plan(config, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
+def export_plan(treatment: TreatmentConfig, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
 
     """
     Writes MLC positions and MU values to a new RTPLAN DICOM file.
@@ -32,9 +33,9 @@ def export_plan(config, input_plan_path, output_plan_path, scaling=400, beam_num
     ds = pydicom.dcmread(input_plan_path)
  
     # Remove batch dimension
-    leafs = config.patient.plan_mlcs[0]  # (2, num_cp, num_leaves)
-    jaws = config.patient.plan_jaws[0]    # (2, num_cp)
-    mus = config.patient.plan_mus[0]      # (num_cp,)
+    leafs = treatment.plan_mlcs[0]  # (2, num_cp, num_leaves)
+    jaws = treatment.plan_jaws[0]    # (2, num_cp)
+    mus = treatment.plan_mus[0]      # (num_cp,)
  
     # Reverse the scaling transformation
     leafs = leafs * scaling - (scaling / 2)
@@ -145,7 +146,7 @@ def export_plan(config, input_plan_path, output_plan_path, scaling=400, beam_num
     ds.save_as(output_plan_path)
     print(f"Plan saved to {output_plan_path}")
 
-def get_model_input(patient: PatientData, machine: MachineConfig):
+def get_model_input(patient: Patient, machine: MachineConfig):
     structures = patient.structures
     lower_bound_gys = create_bound_weight_matrix(structures, machine.lower_bound_gys)
     higher_bound_gys = create_bound_weight_matrix(structures, machine.higher_bound_gys)

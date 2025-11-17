@@ -16,7 +16,7 @@ from pydose_rt.utils.grad_monitor import GradMonitor
 import numpy as np
 from pydose_rt.objectives.losses import compute_loss, compute_mae_loss
 from pydose_rt.objectives.metrics import result_validation
-from pydose_rt.utils.utils import create_bound_weight_matrix, get_initial_weights
+from pydose_rt.utils.utils import create_bound_weight_matrix, get_initial_weights, prune_patients
 from pydose_rt.utils.plotting import print_results, make_animation
 from dotenv import load_dotenv
 load_dotenv()  # will look for .env in project root
@@ -31,47 +31,33 @@ else:
 
 if remote:
     
-    ct_folder = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21/"
-    rtplan_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
-    rtdose_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-    dtype = torch.float32
-
-    patient, treatment = loaders.load_dicom(
-                ct_folder=ct_folder, 
-                dose_path=rtdose_path, 
-                plan_path=rtplan_path, 
-                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
-                treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
-                )
+    data_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/converted_lund/"
+    patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
+    patient = loaders.load_nifti(
+        folder_path=patient_list[0]
+    )
+    treatment = TreatmentConfig(preset="src/pydose_rt/data/treatment_presets/lund-probe.json")
 
     treatment.kernel_size = 15
     treatment.device = device
     treatment.dtype = torch.float16
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 3000
 else:
-    ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
-    rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
-    rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-    dtype = torch.float16
-
-    patient, treatment = loaders.load_dicom(
-                ct_folder=ct_folder, 
-                dose_path=rtdose_path, 
-                plan_path=rtplan_path, 
-                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
-                treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
-                )
+    data_path = "/media/bolo/Datasets/converted_lund/"
+    patient_list = prune_patients([os.path.join(data_path, name) for name in os.listdir(data_path)])
+    patient = loaders.load_nifti(
+        folder_path=patient_list[0]
+    )
+    treatment = TreatmentConfig(preset="src/pydose_rt/data/treatment_presets/lund-probe.json")
 
     treatment.kernel_size = 3
     treatment.device = device
     treatment.dtype = torch.float16
-    treatment.downsampling_factor = (1, 4, 4)
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 100
-    kernel_size = 3
 
 
 

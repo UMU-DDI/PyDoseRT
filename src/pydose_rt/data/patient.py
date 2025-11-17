@@ -7,16 +7,16 @@ from token import OP
 from typing import Optional, TYPE_CHECKING, List
 import torch
 import numpy as np
-from .utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
+from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
 from .utils.nifti_utils import load_files
 import SimpleITK as sitk
 
 
 if TYPE_CHECKING:
-    from pydose_rt.data import PatientData
+    from pydose_rt.data import Patient
 
 @dataclass
-class PatientData:
+class Patient:
     """
     Patient-specific configuration.
 
@@ -24,7 +24,7 @@ class PatientData:
     """
 
     # CT dimensions
-    ct_array: np.array
+    ct_array: torch.Tensor
     structures: dict[str, np.array]
     dose: Optional[np.array] = None
     voxel_spacing_mm: Optional[tuple[float, float, float]] = None
@@ -46,15 +46,15 @@ class PatientData:
         dose_path: str | None, 
         plan_path: str | None, 
         struct_names: List[str] | None = None, 
-        recenter: bool = True) -> 'PatientData':
+        recenter: bool = True) -> 'Patient':
         """
-        Create PatientCoPatientDatanfig from PatientData.
+        Create PatientCoPatientnfig from Patient.
         
         Args:
-            patient: PatientData instance
+            patient: Patient instance
             
         Returns:
-            PatientData with CT dimensions from patient
+            Patient with CT dimensions from patient
         """
         ct_series, ref = load_ct_series(ct_folder)
         structures = load_structures(ct_series, ct_folder, struct_names=struct_names)
@@ -93,7 +93,7 @@ class PatientData:
     def from_nifti(
         cls,
         folder_path
-        ) -> 'PatientData':
+        ) -> 'Patient':
         ct, structures, dose = load_files(folder_path)
 
         return cls(
@@ -109,7 +109,7 @@ class PatientData:
         ct_array: torch.Tensor,
         voxel_spacing_mm: tuple,
         patient_id: Optional[str] = None
-    ) -> 'PatientData':
+    ) -> 'Patient':
         """Create from CT array directly."""
         return cls(
             ct_shape=tuple(ct_array.shape),
@@ -117,3 +117,57 @@ class PatientData:
             patient_id=patient_id
         )
     
+
+@dataclass
+class Phantom(Patient):
+    """
+    Phantom patient configuration for testing.
+
+    Inherits from Patient.
+    """
+
+    def __init__(
+        self,
+        ct_array: np.array,
+        voxel_spacing_mm: tuple[float, float, float],
+        patient_id: Optional[str] = "Phantom"
+    ):
+        super().__init__(
+            ct_array=ct_array,
+            structures={},
+            dose=None,
+            voxel_spacing_mm=voxel_spacing_mm,
+            patient_id=patient_id
+        )
+    
+    @classmethod
+    def from_sphere(
+        cls,
+        shape: tuple[int, int, int],
+        spacing: tuple[float, float, float],
+        radius_mm: float,
+        ct_value: float = 0.0,
+        background_value: float = -1000.0
+    ) -> "Phantom":
+        """
+        Alternate constructor: create a Phantom directly from a spherical phantom.
+        """
+        z = np.arange(shape[0]) * spacing[0]
+        y = np.arange(shape[1]) * spacing[1]
+        x = np.arange(shape[2]) * spacing[2]
+        Z, Y, X = np.meshgrid(z, y, x, indexing="ij")
+
+        center = (np.array(shape) * np.array(spacing)) / 2.0
+        distances = np.sqrt(
+            (X - center[2]) ** 2 +
+            (Y - center[1]) ** 2 +
+            (Z - center[0]) ** 2
+        )
+
+        ct_array = torch.from_numpy(np.expand_dims(np.where(distances <= radius_mm, ct_value, background_value), 0))
+
+        return cls(
+            ct_array=ct_array,
+            voxel_spacing_mm=spacing,
+            patient_id="",
+        )

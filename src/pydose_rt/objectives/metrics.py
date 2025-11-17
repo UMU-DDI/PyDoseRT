@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import trapezoid
-from pydose_rt.data import DoseConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig, Patient
 from pydose_rt import DoseEngine
 import copy
 import pymedphys
@@ -62,7 +62,9 @@ def weighted_area_difference(x, y1, y2, weight_func=None):
     
     return area
 
-def result_validation(config: DoseConfig, 
+def result_validation(patient: Patient,
+                      machine_config: MachineConfig,
+                      treatment_config: TreatmentConfig, 
                       pred_dose: np.array, 
                       pred_mlc: np.array, 
                       pred_jaws: np.array, 
@@ -72,13 +74,13 @@ def result_validation(config: DoseConfig,
     results = {}
     if compute_gamma:
         axes = tuple(
-            np.arange(config.patient.dose.shape[i]) * config.patient.voxel_spacing_mm[i]
+            np.arange(patient.dose.shape[i]) * patient.voxel_spacing_mm[i]
             for i in range(3)
         )
         
         # Compute dose cutoff value (10% of max dose)
         dose_cutoff = 10.0
-        dose_cutoff_value = dose_cutoff / 100 * np.max(config.patient.dose)
+        dose_cutoff_value = dose_cutoff / 100 * np.max(patient.dose)
         dose_threshold = 3.0
         distance_threshold = 3.0
         max_gamma = 2.0
@@ -88,7 +90,7 @@ def result_validation(config: DoseConfig,
         # Compute gamma
         gamma_map = pymedphys.gamma(
             axes_reference=axes,
-            dose_reference=config.patient.dose,
+            dose_reference=patient.dose,
             axes_evaluation=axes,
             dose_evaluation=pred_dose[0, ...],
             dose_percent_threshold=dose_threshold,
@@ -101,7 +103,7 @@ def result_validation(config: DoseConfig,
         )
         
         # Calculate pass rate
-        mask = config.patient.dose > dose_cutoff_value
+        mask = patient.dose > dose_cutoff_value
         # mask = config.patient.structures["External"] > 0
         gamma_valid = gamma_map[mask]
         gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
@@ -132,13 +134,13 @@ def result_validation(config: DoseConfig,
     else:
         results["check_mus_bounds_pass"] = 1
 
-    if (((pred_mlc[0, 1, :, :] - pred_mlc[0, 0, :, :]).min() * config.machine.field_size[0]).item() < config.machine.minimum_leaf_overlap):
+    if (((pred_mlc[0, 1, :, :] - pred_mlc[0, 0, :, :]).min() * treatment_config.field_size[0]).item() < machine_config.minimum_leaf_overlap):
         results["check_mlc_collision_pass"] = 0
     else:
         results["check_mlc_collision_pass"] = 1
 
-    if (((pred_mlc[0, 0, :, :].max() - pred_mlc[0, 0, :, :].min()) * config.machine.field_size[0]).item() > 150.0 or \
-        ((pred_mlc[0, 1, :, :].max() - pred_mlc[0, 1, :, :].min()) * config.machine.field_size[0]).item() > 150.0):
+    if (((pred_mlc[0, 0, :, :].max() - pred_mlc[0, 0, :, :].min()) * treatment_config.field_size[0]).item() > 150.0 or \
+        ((pred_mlc[0, 1, :, :].max() - pred_mlc[0, 1, :, :].min()) * treatment_config.field_size[0]).item() > 150.0):
         results["maximum_leaf_tip_difference"] = 0
     else:
         results["maximum_leaf_tip_difference"] = 1
@@ -237,47 +239,47 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-def validate_unit_dose(config: DoseConfig, kernel_size: int, target_mu: int):
+def validate_unit_dose(machine: MachineConfig, treatment: TreatmentConfig, kernel_size: int, target_mu: int):
     # Create config for 20x20x20 cm phantom with 2mm resolution
     # 200mm / 2mm = 100 voxels per dimension
-    config = copy.deepcopy(config)
-    device = config.device
+    treatment = copy.deepcopy(treatment)
+    device = treatment.device
     # config.machine.ct_array_shape = tuple(np.divide((200, 200, 200), config.machine.resolution).astype(np.int32))
-    config.machine.number_of_cps = 1
-    config.machine.starting_angle = 0
+    treatment.number_of_cps = 1
+    treatment.starting_angle = 0
     
     # config.machine.downsampling_factor = (1,1,1)
-    center_x, center_y, center_z = np.divide(config.machine.ct_array_shape, 2).astype(np.int32)
-    iso_y = - (100 - center_y * config.machine.resolution[1])
-    center_y_iso = center_y - int(iso_y / config.machine.resolution[1])
-    config.machine.iso_center = (0.0, iso_y, 0.0)
+    center_x, center_y, center_z = np.divide(machine.ct_array_shape, 2).astype(np.int32)
+    iso_y = - (100 - center_y * machine.resolution[1])
+    center_y_iso = center_y - int(iso_y / machine.resolution[1])
+    machine.iso_center = (0.0, iso_y, 0.0)
  
     # Create water phantom (HU = 0 for water)
-    x_ct = 0.0 * np.expand_dims(np.ones(np.multiply(config.machine.ct_array_shape, config.machine.downsampling_factor)), 0)
+    x_ct = 0.0 * np.expand_dims(np.ones(np.multiply(machine.ct_array_shape, treatment.downsampling_factor)), 0)
  
     # Set up MLC positions for full 10x10 field
     # Positions are normalized: 0.5 and 1.0 create a centered field
-    y_mlc = np.zeros((1, 2, config.machine.number_of_cps, config.machine.number_of_leaf_pairs))
+    y_mlc = np.zeros((1, 2, treatment.number_of_cps, machine.number_of_leaf_pairs))
     y_mlc[:, 0, :, :] = - 100.0
     y_mlc[:, 1, :, :] = 100.0
  
     # Set up jaw positions for 10x10 field
-    y_jaws = np.zeros((1, 2, config.machine.number_of_cps))
+    y_jaws = np.zeros((1, 2, treatment.number_of_cps))
     y_jaws[:, 0, :] = - 100.0
     y_jaws[:, 1, :] = 100.0
  
     # Set monitor units
-    mus = target_mu * np.ones((1, config.machine.number_of_cps), dtype=np.float32)
+    mus = target_mu * np.ones((1, treatment.number_of_cps), dtype=np.float32)
  
     # Create dose engine
-    dose_layer = DoseEngine(config.machine, kernel_size, permute_ct=False, leafs_centered=False)
+    dose_layer = DoseEngine(machine, treatment, permute_ct=False, leafs_centered=False)
  
     # Calculate dose
     dose = dose_layer(
-        torch.tensor(y_mlc, dtype=config.dtype, device=device),
-        torch.tensor(mus, dtype=config.dtype, device=device),
-        jaw_positions=torch.tensor(y_jaws, dtype=config.dtype, device=device),
-        ct_image=torch.tensor(x_ct, dtype=config.dtype, device=device)
+        torch.tensor(y_mlc, dtype=treatment.dtype, device=device),
+        torch.tensor(mus, dtype=treatment.dtype, device=device),
+        jaw_positions=torch.tensor(y_jaws, dtype=treatment.dtype, device=device),
+        ct_image=torch.tensor(x_ct, dtype=treatment.dtype, device=device)
     )
 
     # Get center dose (at 10cm depth - index 50 for 100 voxels)
