@@ -292,7 +292,7 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
     colors[:, -1] = alpha
     jet_alpha = ListedColormap(colors)
     dose_layer.eval()
-    num_cps = machine_config.number_of_cps
+    num_cps = treatment.number_of_cps
     slice_idx = patient_data.ct_array.shape[0] // 2
     ct_data = ct_volume.cpu().detach().numpy()[0, slice_idx, :, :]
     dose_data = np.zeros(patient_data.ct_array.shape[1:])
