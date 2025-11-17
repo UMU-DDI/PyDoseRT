@@ -153,14 +153,19 @@ for test_i in range(n_tests):
 
         def closure():
             optimizer.zero_grad(set_to_none=True)
-
+            
             pred_mus = base_mus * pred_scales[0]
-            pred_mlc = base_mlc.clone()
-            pred_mlc[:, 0, ...] = pred_mlc[:, 0, ...] * pred_scales[1] + pred_scales[2]
-            pred_mlc[:, 1, ...] = pred_mlc[:, 1, ...] * pred_scales[3] + pred_scales[4]
-            pred_jaws = base_jaws.clone()
-            pred_jaws[:, 0, ...] = pred_jaws[:, 0, ...] + pred_scales[5]
-            pred_jaws[:, 1, ...] = pred_jaws[:, 1, ...] + pred_scales[6]
+ 
+            # Construct pred_mlc without in-place operations
+            mlc_left = base_mlc[:, 0, ...] * pred_scales[1] + pred_scales[2]
+            mlc_right = base_mlc[:, 1, ...] * pred_scales[3] + pred_scales[4]
+            pred_mlc = torch.stack([mlc_left, mlc_right], dim=1)
+ 
+            # Construct pred_jaws without in-place operations
+            jaws_left = base_jaws[:, 0, ...] + pred_scales[5]
+            jaws_right = base_jaws[:, 1, ...] + pred_scales[6]
+            pred_jaws = torch.stack([jaws_left, jaws_right], dim=1)
+
             # Forward
             dose_pred = dose_layer(pred_mlc, pred_mus, jaw_positions=pred_jaws, ct_image=ct_volume)
             dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
