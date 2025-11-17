@@ -280,8 +280,8 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=machine_config.dtype, device=machine_config.device) > 0
-    ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=machine_config.dtype, device=machine_config.device)
+    mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=treatment.dtype, device=treatment.device) > 0
+    ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=treatment.dtype, device=treatment.device)
 
     # Get the base colormap (jet)
     alpha_max = 1.0

@@ -46,7 +46,7 @@ if remote:
 
     treatment.kernel_size = 15
     treatment.device = device
-    treatment.dtype = torch.float16
+    treatment.dtype = torch.float32
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 3000
