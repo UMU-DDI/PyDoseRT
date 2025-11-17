@@ -44,8 +44,9 @@ if remote:
                 treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
                 )
 
-    treatment.kernel_size = 15
+    treatment.kernel_size = 55
     treatment.device = device
+    treatment.downsampling_factor = (1, 4, 4)
     treatment.dtype = torch.float32
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
