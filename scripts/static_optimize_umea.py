@@ -117,17 +117,20 @@ for test_i in range(n_tests):
         valid_parameters_layer = ValidParametersLayer(machine_config, treatment, treatment.dtype, treatment.device, leafs_centered=False, adjust_values=True)
         dose_layer.train()
         # pred_mlc, pred_jaws, pred_mus = dose_layer.get_open_parameters()
-        pred_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
-        pred_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
-        pred_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
+        base_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
+        base_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
+        base_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
+        # pred_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
+        # pred_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
+        # pred_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
         pred_scales = torch.Tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to(treatment.device).to(treatment.dtype).requires_grad_(True)
-        pred_mus *= pred_scales[0]
-        pred_mlc[:, 0, ...] *= pred_scales[1]
-        pred_mlc[:, 0, ...] += pred_scales[2]
-        pred_mlc[:, 1, ...] *= pred_scales[3]
-        pred_mlc[:, 1, ...] += pred_scales[4]
-        pred_jaws[:, 0, ...] += pred_scales[5]
-        pred_jaws[:, 1, ...] += pred_scales[6]
+        # pred_mus *= pred_scales[0]
+        # pred_mlc[:, 0, ...] *= pred_scales[1]
+        # pred_mlc[:, 0, ...] += pred_scales[2]
+        # pred_mlc[:, 1, ...] *= pred_scales[3]
+        # pred_mlc[:, 1, ...] += pred_scales[4]
+        # pred_jaws[:, 0, ...] += pred_scales[5]
+        # pred_jaws[:, 1, ...] += pred_scales[6]
 
 
 
@@ -151,6 +154,13 @@ for test_i in range(n_tests):
         def closure():
             optimizer.zero_grad(set_to_none=True)
 
+            pred_mus = base_mus * pred_scales[0]
+            pred_mlc = base_mlc.clone()
+            pred_mlc[:, 0, ...] = pred_mlc[:, 0, ...] * pred_scales[1] + pred_scales[2]
+            pred_mlc[:, 1, ...] = pred_mlc[:, 1, ...] * pred_scales[3] + pred_scales[4]
+            pred_jaws = base_jaws.clone()
+            pred_jaws[:, 0, ...] = pred_jaws[:, 0, ...] + pred_scales[5]
+            pred_jaws[:, 1, ...] = pred_jaws[:, 1, ...] + pred_scales[6]
             # Forward
             dose_pred = dose_layer(pred_mlc, pred_mus, jaw_positions=pred_jaws, ct_image=ct_volume)
             dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
