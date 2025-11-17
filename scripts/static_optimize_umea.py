@@ -89,7 +89,7 @@ for test_i in range(n_tests):
     try:
         current_res = [np.inf]
         weights = get_initial_weights()
-        latest = {"raw_losses": None, "loss_val": None, "dose_pred": None}
+        latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
         treatment.randomize_weights()
 
         y_dose = torch.from_numpy(patient.dose)
@@ -185,6 +185,9 @@ for test_i in range(n_tests):
             latest["raw_losses"] = [v.detach().item() for v in raw_losses]
             latest["loss_val"]   = loss.detach().item()
             latest["dose_pred"]  = dose_pred.detach()
+            latest["pred_mlc"]   = pred_mlc
+            latest["pred_mus"]   = pred_mus
+            latest["pred_jaws"]  = pred_jaws
 
             return loss
 
@@ -200,13 +203,16 @@ for test_i in range(n_tests):
             raw_losses = latest["raw_losses"]
             dose_pred = latest["dose_pred"]
             loss_val = latest["loss_val"]
+            pred_mlc = latest["pred_mlc"]
+            pred_mus = latest["pred_mus"]
+            pred_jaws = latest["pred_jaws"]
             mae_loss = np.round(torch.mean(torch.abs((y_dose - dose_pred)[masks_torch[-1] > 0])).cpu().detach().numpy(), 4)
             
             
             patience += 1
             if (loss < current_res[0]):
                 patience = 0
-                current_res = [loss, weights]# , pred_mlc, pred_mus, pred_jaws, mae_loss]
+                current_res = [loss, weights , pred_mlc, pred_mus, pred_jaws, mae_loss]
                 
             else:
                 # print("Patience count:", patience)
