@@ -71,7 +71,6 @@ else:
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 100
-    kernel_size = 3
 
 
 
@@ -129,7 +128,7 @@ for test_i in range(n_tests):
         experiment.log_parameters(
             {
                 "lr_0": lr,
-                "kernel_size": kernel_size,
+                "kernel_size": treatment.kernel_size,
                 "lr_decay": lr_decay,
                 "weights": weights,
                 "physical_size": machine_config.physical_size_ct,
