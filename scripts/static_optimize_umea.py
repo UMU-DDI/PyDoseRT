@@ -201,7 +201,7 @@ for test_i in range(n_tests):
             patience += 1
             if (loss < current_res[0]):
                 patience = 0
-                current_res = [loss, weights, pred_mlc, pred_mus, pred_jaws, mae_loss]
+                current_res = [loss, weights]# , pred_mlc, pred_mus, pred_jaws, mae_loss]
                 
             else:
                 # print("Patience count:", patience)
@@ -223,7 +223,8 @@ for test_i in range(n_tests):
 
             epoch += 1
 
-        print(f"Optimization finished in {int(time.time() - start_time)}s. It used the new fluence map!")
+        print(f"Optimization finished in {int(time.time() - start_time)}s.")
+        print(pred_scales)
         pred_mlc = current_res[2]
         pred_mus = current_res[3]
         pred_jaws = current_res[4]
