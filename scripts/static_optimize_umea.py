@@ -239,9 +239,9 @@ for test_i in range(n_tests):
         pred_mlc = current_res[2]
         pred_mus = current_res[3]
         pred_jaws = current_res[4]
-        pred_mlc_grads = pred_mlc.grad.cpu().detach().numpy()
-        pred_jaws_grads = pred_jaws.grad.cpu().detach().numpy()
-        pred_mus_grads = pred_mus.grad.cpu().detach().numpy()
+        pred_mlc_grads = None # pred_mlc.grad.cpu().detach().numpy()
+        pred_jaws_grads = None # pred_jaws.grad.cpu().detach().numpy()
+        pred_mus_grads = None # pred_mus.grad.cpu().detach().numpy()
         pred_mlc_valid, pred_mus_valid, pred_jaws_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
         )
