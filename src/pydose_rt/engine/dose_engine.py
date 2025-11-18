@@ -84,7 +84,7 @@ class DoseEngine(nn.Module):
         self.pencil_beam_kernel_layer = PencilBeamKernelLayer(
             machine_config, treatment_config, verbose
         )
-        self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(machine_config, treatment_config)
+        self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(treatment_config.device, treatment_config.dtype)
         self.rotation_layer = CPRotationLayer(machine_config, treatment_config, verbose)
 
         self.ct_image = ct_image
