@@ -199,7 +199,7 @@ def print_results(
     ax.set_title('Dose distribution (pred, axial)')
     for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(roi.cpu().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
+        overlay_mask_outline(roi.cpu().detach().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
 
     # --- 7) Dose distribution (pred, sagittal)
     ax = fig.add_subplot(gs[6])
@@ -208,7 +208,7 @@ def print_results(
     ax.set_title('Dose distribution (pred, coronal)')
     for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(np.flipud(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
+        overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 8) Dose distribution (gt, axial)
     ax = fig.add_subplot(gs[7])
@@ -219,7 +219,7 @@ def print_results(
     ax.set_title('Dose distribution (gt, axial)')
     for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(roi.cpu().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
+        overlay_mask_outline(roi.cpu().detach().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
 
     # --- 9) Dose distribution (gt, sagittal)
     ax = fig.add_subplot(gs[8])
@@ -230,7 +230,7 @@ def print_results(
     ax.set_title('Dose distribution (gt, coronal)')
     for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
         roi = masks[idx]
-        overlay_mask_outline(np.flipud(roi.cpu().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
+        overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 10) DVH (line plot; same panel height as others for uniformity)
     ax = fig.add_subplot(gs[9])

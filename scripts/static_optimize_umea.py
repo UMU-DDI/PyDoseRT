@@ -45,7 +45,7 @@ if remote:
     treatment.kernel_size = 15
     treatment.device = device
     treatment.downsampling_factor = (1, 2, 2)
-    treatment.dtype = torch.float32
+    treatment.dtype = dtype
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 500
@@ -53,7 +53,7 @@ else:
     ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
     rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
     rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-    dtype = torch.float16
+    dtype = torch.float32
 
     patient, treatment = loaders.load_dicom(
                 ct_folder=ct_folder, 
@@ -65,11 +65,11 @@ else:
 
     treatment.kernel_size = 3
     treatment.device = device
-    treatment.dtype = torch.float16
+    treatment.dtype = dtype
     treatment.downsampling_factor = (1, 4, 4)
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
-    max_iter = 100
+    max_iter = 10
 
 
 
@@ -243,7 +243,7 @@ for test_i in range(n_tests):
         pred_mlc_valid, pred_mus_valid, pred_jaws_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
         )
-        results = result_validation(patient, machine_config, treatment, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid, compute_gamma=True)
+        results = result_validation(patient, machine_config, treatment, dose_pred.cpu().detach().numpy(), pred_mlc_valid.cpu().detach().numpy(), pred_jaws_valid.cpu().detach().numpy(), pred_mus_valid.cpu().detach().numpy(), compute_gamma=True)
         experiment.log_metrics(
             {
                 "results": results,
