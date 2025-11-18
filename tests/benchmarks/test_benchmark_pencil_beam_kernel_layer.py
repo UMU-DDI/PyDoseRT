@@ -1,24 +1,25 @@
 import sys
+
+from pydose_rt.utils.utils import get_shapes
 sys.path.append("../../")
 import pytest
 import numpy as np
 import torch
-from pydose_rt.data import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 from pydose_rt.layers import PencilBeamKernelLayer
 
 @pytest.fixture
-def pencil_beam_kernel_layer(request, default_config):
+def pencil_beam_kernel_layer(request, default_machine_config, default_treatment_config):
     """Fixture to create a PencilBeamKernelLayer with configurable kernel_size and number_of_cps."""
-    kernel_size = request.param.get("kernel_size", 5)
     number_of_cps = request.param.get(
-        "number_of_cps", default_config.number_of_cps
+        "number_of_cps", default_treatment_config.number_of_cps
     )
 
-    config = MachineConfig(
-        preset="test",
+    config = TreatmentConfig(
+        preset="src/pydose_rt/data/treatment_presets/test.json",
         number_of_cps=number_of_cps,
     )
-    return PencilBeamKernelLayer(config, kernel_size), config
+    return PencilBeamKernelLayer(default_machine_config, config), config
 
 
 @pytest.mark.parametrize(
@@ -31,9 +32,10 @@ def pencil_beam_kernel_layer(request, default_config):
     ],
     indirect=True,
 )
-def test_pencil_beam_kernel(benchmark, pencil_beam_kernel_layer):
+def test_pencil_beam_kernel(benchmark, default_machine_config, pencil_beam_kernel_layer):
     """Benchmark radiological depth computation."""
     pencil_beam_kernel_layer, config = pencil_beam_kernel_layer
+    shapes = get_shapes(default_machine_config, config)
 
-    radiological_depth = torch.zeros(config.shape_radiological_depth, dtype=torch.float32, device=config.device)
+    radiological_depth = torch.zeros(shapes["radiological_depths"], dtype=torch.float32, device=config.device)
     benchmark(lambda: pencil_beam_kernel_layer(radiological_depth))

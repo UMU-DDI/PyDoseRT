@@ -150,5 +150,6 @@ class FluenceMapLayer(nn.Module):
 
         fluence_map = mask.permute(0, 3, 2, 1)
         fluence_map = apply_source_penumbra(fluence_map, source_size_mm=3.0, pixel_size_mm=self.resolution[2])
-
+        fluence_map = fluence_map[:, 0, :, :]
+        
         return fluence_map

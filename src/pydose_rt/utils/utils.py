@@ -13,6 +13,18 @@ import time
 import pydicom
 from pydose_rt.data import TreatmentConfig
 
+def get_shapes(machine: MachineConfig, treatment: TreatmentConfig):
+    shapes = dict()
+    shapes["MLCs"] = (1, 2, treatment.number_of_cps, machine.number_of_leaf_pairs)
+    shapes["jaws"] = (1, 2, treatment.number_of_cps)
+    shapes["MUs"] = (1, treatment.number_of_cps)
+    shapes["radiological_depths"] = (treatment.number_of_cps, machine.ct_array_shape[1], 1)
+    shapes["kernels"] = (treatment.kernel_size, treatment.kernel_size, treatment.number_of_cps, machine.ct_array_shape[1])
+    shapes["fluence_maps"] = (treatment.number_of_cps, treatment.field_size[0], treatment.field_size[1])
+    shapes["fluence_volumes"] = (treatment.number_of_cps, machine.ct_array_shape[0], machine.ct_array_shape[1], machine.ct_array_shape[2], 1)
+
+    return shapes
+
 def export_plan(treatment: TreatmentConfig, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
 
     """

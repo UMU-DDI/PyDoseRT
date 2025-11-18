@@ -1,35 +1,38 @@
 from pathlib import Path
 import sys
+
+from pydose_rt.utils.utils import get_shapes
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydose_rt.data import MachineConfig
+from pydose_rt.data import MachineConfig, TreatmentConfig
 from pydose_rt.layers import FluenceVolumeLayer
 
 
 # ---- Fixtures -----
 @pytest.fixture
-def fluence_volume_layer(default_config):
+def fluence_volume_layer(default_machine_config, default_treatment_config):
     """Fixture to create a FluenceMapLayer instance"""
-    return FluenceVolumeLayer(default_config)
+    return FluenceVolumeLayer(default_machine_config, default_treatment_config)
 
 
 @pytest.fixture
-def fluence_volume_layer_with_configurable_beams(request) -> tuple[FluenceVolumeLayer, MachineConfig]:
+def fluence_volume_layer_with_configurable_beams(request) -> tuple[FluenceVolumeLayer, TreatmentConfig]:
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
-    config = MachineConfig(
-        preset="test",
+    config = TreatmentConfig(
+        preset="src/pydose_rt/data/treatment_presets/test.json",
         number_of_cps=request.param,
     )
     return FluenceVolumeLayer(config), config
 
 
 # ----- Tests -----
-def test_fluence_volume_output_shape(fluence_volume_layer, default_config):
+def test_fluence_volume_output_shape(fluence_volume_layer, default_machine_config, default_treatment_config):
     """Test that fluence map behaves correctly based on input width."""
     # Arrange
-    fluence_map = torch.zeros(default_config.shape_fluence_map, dtype=torch.float32, device=default_config.device)
-    expected = default_config.shape_fluence_volume
+    shapes = get_shapes(default_machine_config, default_treatment_config)
+    fluence_map = torch.zeros(shapes["fluence_maps"], dtype=torch.float32, device=default_treatment_config.device)
+    expected = shapes["fluence_volumes"]
 
     # Act
     fluence_volume = fluence_volume_layer(fluence_map)
@@ -37,4 +40,4 @@ def test_fluence_volume_output_shape(fluence_volume_layer, default_config):
 
     # Assert
     assert actual == expected, (
-        f"Expected shape {default_config.shape_fluence_volume}, but got {fluence_volume.shape}")
+        f"Expected shape {expected}, but got {fluence_volume.shape}")

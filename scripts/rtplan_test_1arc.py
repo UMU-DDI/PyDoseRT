@@ -73,9 +73,10 @@ treatment.device = device
 treatment.dtype = torch.float16
 
 machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
-# ref_dose, calibration_factor = validate_unit_dose(config, kernel_size, 130)
-# if (np.abs(ref_dose - 1.0) > 0.001):
-#     raise Exception(f"Calibration failed. please use calibration factor: {calibration_factor}")
+ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 130)
+if (np.abs(ref_dose - 1.0) > 0.001):
+    print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
+    machine_config.mean_photon_energy_MeV = calibration_factor
     
 ct_image = patient.ct_array
 dose = patient.dose

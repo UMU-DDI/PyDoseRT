@@ -239,7 +239,7 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-def validate_unit_dose(machine: MachineConfig, treatment: TreatmentConfig, kernel_size: int, target_mu: int):
+def validate_unit_dose(machine: MachineConfig, treatment: TreatmentConfig, target_mu: int):
     # Create config for 20x20x20 cm phantom with 2mm resolution
     # 200mm / 2mm = 100 voxels per dimension
     treatment = copy.deepcopy(treatment)
@@ -252,10 +252,10 @@ def validate_unit_dose(machine: MachineConfig, treatment: TreatmentConfig, kerne
     center_x, center_y, center_z = np.divide(machine.ct_array_shape, 2).astype(np.int32)
     iso_y = - (100 - center_y * machine.resolution[1])
     center_y_iso = center_y - int(iso_y / machine.resolution[1])
-    machine.iso_center = (0.0, iso_y, 0.0)
+    treatment.iso_center = (0.0, iso_y, 0.0)
  
     # Create water phantom (HU = 0 for water)
-    x_ct = 0.0 * np.expand_dims(np.ones(np.multiply(machine.ct_array_shape, treatment.downsampling_factor)), 0)
+    x_ct = 0.0 * np.expand_dims(np.ones(machine.ct_array_shape), 0)
  
     # Set up MLC positions for full 10x10 field
     # Positions are normalized: 0.5 and 1.0 create a centered field
@@ -287,6 +287,6 @@ def validate_unit_dose(machine: MachineConfig, treatment: TreatmentConfig, kerne
 
     # Calculate calibration factor
     # This gives the factor to normalize to 1 Gy per MU at reference conditions
-    calibration_factor = config.machine.mean_photon_energy_MeV / center_dose
+    calibration_factor = machine.mean_photon_energy_MeV / center_dose
 
     return center_dose, calibration_factor
