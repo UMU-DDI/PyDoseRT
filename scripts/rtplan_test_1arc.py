@@ -39,12 +39,12 @@ patient, treatment = loaders.load_dicom(
             treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
             )
 
-treatment.kernel_size = 75
+treatment.kernel_size = 25
 treatment.device = device
 treatment.dtype = torch.float16
 
 machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
-ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 110)
+ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 100)
 if (np.abs(ref_dose - 1.0) > 0.001):
     print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
     machine_config.mean_photon_energy_MeV = calibration_factor
@@ -70,7 +70,7 @@ leafs = torch.tensor(np.array(leafs), dtype=dose_layer.dtype, device=dose_layer.
 mus = torch.tensor(np.array(mus), dtype=dose_layer.dtype, device=dose_layer.device)
 jaws = torch.tensor(np.array(jaws), dtype=dose_layer.dtype, device=dose_layer.device)
    
-dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device), jaw_x=7.0, jaw_y=-8.2)
+dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device), jaw_x=0.0, jaw_y=0.0)
 dose_pred = dose_pred.cpu().detach().numpy()
 
 
@@ -81,67 +81,67 @@ dose_pred = dose_pred * scale
 dose_max = max(dose_volume.max(), dose_pred.max())
 
 
-vmax = 10
+vmax = 1
 mae_map = np.abs(dose_pred[0] - dose_volume)
 mae_losses = [np.mean(mae_map[mask]) for mask in [masks["CTV"] > 0, masks["PTVT_42.7"] > 0, masks["Bladder"] > 0, masks["FemoralHead_L"] > 0, masks["FemoralHead_R"] > 0]]
 mae_loss = np.mean(mae_losses)
 
-# plt.figure()
-# slice_idx = dose_volume.shape[0] // 2 - 5
-# plt.subplot(331)
-# # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-# plt.imshow(dose_volume[slice_idx, :, :], cmap='jet', vmax=dose_max)
-# plt.axis('off')
-# plt.colorbar()
-# plt.subplot(332)
-# plt.title(f"({str(np.round(scale, 3))})MAE {mae_loss}")
-# # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-# plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet', vmax=dose_max)
-# plt.axis('off')
-# plt.colorbar()
-# plt.subplot(333)
+plt.figure()
+slice_idx = dose_volume.shape[0] // 2 - 5
+plt.subplot(331)
 # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-# plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
-# plt.axis('off')
-# plt.colorbar()
+plt.imshow(dose_volume[slice_idx, :, :], cmap='jet', vmax=dose_max)
+plt.axis('off')
+plt.colorbar()
+plt.subplot(332)
+plt.title(f"({str(np.round(scale, 3))})MAE {mae_loss}")
+# plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_pred[0, slice_idx, :, :], cmap='jet', vmax=dose_max)
+plt.axis('off')
+plt.colorbar()
+plt.subplot(333)
+plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+plt.axis('off')
+plt.colorbar()
 
-# slice_idx = dose_volume.shape[1] // 2 - 5
-# plt.subplot(334)
-# # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-# plt.imshow(dose_volume[:, slice_idx, :], cmap='jet', vmax=dose_max)
-# plt.axis('off')
-# plt.colorbar()
-# plt.subplot(335)
-# # plt.title(f"MAE {mae_loss}")
-# # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-# plt.imshow(dose_pred[0, :, slice_idx, :], cmap='jet', vmax=dose_max)
-# plt.axis('off')
-# plt.colorbar()
-# plt.subplot(336)
-# plt.imshow(ct_volume[:, slice_idx, :], cmap='gray')
-# plt.imshow(dose_volume[:, slice_idx, :] - dose_pred[0, :, slice_idx, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
-# plt.axis('off')
-# plt.colorbar()
+slice_idx = dose_volume.shape[1] // 2 - 5
+plt.subplot(334)
+# plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_volume[:, slice_idx, :], cmap='jet', vmax=dose_max)
+plt.axis('off')
+plt.colorbar()
+plt.subplot(335)
+# plt.title(f"MAE {mae_loss}")
+# plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_pred[0, :, slice_idx, :], cmap='jet', vmax=dose_max)
+plt.axis('off')
+plt.colorbar()
+plt.subplot(336)
+plt.imshow(ct_volume[:, slice_idx, :], cmap='gray')
+plt.imshow(dose_volume[:, slice_idx, :] - dose_pred[0, :, slice_idx, :], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+plt.axis('off')
+plt.colorbar()
 
-# slice_idx = dose_volume.shape[2] // 2 - 5
-# plt.subplot(337)
-# # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-# plt.imshow(dose_volume[:, :, slice_idx], cmap='jet', vmax=dose_max)
-# plt.axis('off')
-# plt.colorbar()
-# plt.subplot(338)
-# # plt.title(f"MAE {mae_loss}")
-# # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-# plt.imshow(dose_pred[0, :, :, slice_idx], cmap='jet', vmax=dose_max)
-# plt.axis('off')
-# plt.colorbar()
-# plt.subplot(339)
-# plt.imshow(ct_volume[:, :, slice_idx], cmap='gray')
-# plt.imshow(dose_volume[:, :, slice_idx] - dose_pred[0, :, :, slice_idx], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
-# plt.axis('off')
-# plt.colorbar()
+slice_idx = dose_volume.shape[2] // 2 - 5
+plt.subplot(337)
+# plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_volume[:, :, slice_idx], cmap='jet', vmax=dose_max)
+plt.axis('off')
+plt.colorbar()
+plt.subplot(338)
+# plt.title(f"MAE {mae_loss}")
+# plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+plt.imshow(dose_pred[0, :, :, slice_idx], cmap='jet', vmax=dose_max)
+plt.axis('off')
+plt.colorbar()
+plt.subplot(339)
+plt.imshow(ct_volume[:, :, slice_idx], cmap='gray')
+plt.imshow(dose_volume[:, :, slice_idx] - dose_pred[0, :, :, slice_idx], cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+plt.axis('off')
+plt.colorbar()
 
-# plt.show()
+plt.show()
 
 print_results(None, treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], torch.from_numpy(dose_pred), torch.from_numpy(np.expand_dims(ct_volume, 0)), [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], mae_loss, dose_max=7.0)
 

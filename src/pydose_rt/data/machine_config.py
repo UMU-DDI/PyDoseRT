@@ -130,78 +130,9 @@ class MachineConfig(BaseSettings):
     mean_photon_energy_MeV: float = Field(
         default=10.0, description="Mean photon energy in MeV"
     )
-    
-    @computed_field(repr=False)
-    @property
-    def leaf_widths(self) -> np.ndarray:
-        if (self.preset == "umea") and (self.number_of_leaf_pairs == 60):
-            return np.array(
-                [
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    5,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                    10,
-                ],
-                dtype=np.float32,
-            )
-        else:
-            return None
+
+    leaf_widths: list[float] = Field(
+        default=None, description="A list of the leaf widths" )
         
     @computed_field(repr=False)
     @property

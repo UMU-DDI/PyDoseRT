@@ -144,7 +144,6 @@ class FluenceMapLayer(nn.Module):
             jaw_mask = jaw_mask.view(B, G, H, 1)
             jaw_mask = jaw_mask.view(B * G, 1, H, 1)
             jaw_mask = jaw_mask.repeat(1, W, 1, 1)
-            # jaw_mask = torch.flip(jaw_mask, dims=[2])
 
             mask *= jaw_mask
 
