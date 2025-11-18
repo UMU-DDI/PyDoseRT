@@ -82,24 +82,22 @@ for test_i in range(n_tests):
 
         y_dose = torch.from_numpy(patient.dose)
         masks = torch.from_numpy(np.stack([v for k,v in patient.structures.items()], 0))
-        region_weights = torch.from_numpy(create_bound_weight_matrix(patient.structures, treatment.weights))
         y_dose = y_dose.expand(1, -1, -1, -1)
         masks = masks.expand(1, -1, -1, -1, -1)
 
-        ct_volume = torch.from_numpy(np.expand_dims(patient.ct_array, 0)).to(device).to(dtype)  # scale to HU
+        ct_volume = torch.from_numpy(np.expand_dims(patient.ct_array, 0)).to(treatment.device).to(treatment.dtype)  # scale to HU
 
 
-        mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(device) > 0
-        mask_external = masks.sum(1).clone().detach().to(device) > 0
-        mask_oar = torch.sum(masks[0, 1:-1, ...], 0).expand(1, -1, -1, -1).clone().detach().to(device) > 0
-        dose_target = y_dose.expand(1, -1, -1, -1).clone().detach().to(device)
+        mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(treatment.device) > 0
+        mask_external = masks.sum(1).clone().detach().to(treatment.device) > 0
+        mask_oar = torch.sum(masks[0, 1:-1, ...], 0).expand(1, -1, -1, -1).clone().detach().to(treatment.device) > 0
+        dose_target = y_dose.expand(1, -1, -1, -1).clone().detach().to(treatment.device)
         masks_torch = []
         for i in range(masks.shape[1]):
             masks_torch.append(masks[0, i, ...].expand(1, -1, -1, -1))
         y_dose = y_dose.to(treatment.device)
         y_dose = torch.where(mask_external, y_dose, torch.zeros_like(y_dose))
         masks = masks.to(treatment.device)
-        region_weights = region_weights.to(treatment.device)
 
         dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=True)
         valid_parameters_layer = ValidParametersLayer(machine_config, treatment, treatment.dtype, treatment.device, leafs_centered=False, adjust_values=True)
@@ -115,7 +113,7 @@ for test_i in range(n_tests):
         experiment.log_parameters(
             {
                 "lr_0": lr,
-                "kernel_size": kernel_size,
+                "kernel_size": treatment.kernel_size,
                 "lr_decay": lr_decay,
                 "weights": weights,
                 "physical_size": machine_config.physical_size_ct,
@@ -131,7 +129,7 @@ for test_i in range(n_tests):
             dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
 
             # Compute loss
-            raw_losses = compute_mae_loss(patient, treatment, machine_config, region_weights, dose_pred, dose_target, pred_mus, pred_mlc, pred_jaws, weights, masks, masks_torch)
+            raw_losses = compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_target, pred_mus, pred_mlc, pred_jaws, weights, masks, masks_torch)
             loss = torch.stack(raw_losses).sum()
             
             # Backprop

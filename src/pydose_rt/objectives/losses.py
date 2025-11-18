@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pydose_rt.utils.utils import get_model_input
+from pydose_rt.utils.utils import get_model_input, create_bound_weight_matrix
 import math
 
 def scale_loss(loss, weight):
@@ -366,7 +366,10 @@ def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-def compute_loss(patient, treatment, machine_config, region_weights, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
+def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
+
+    region_weights = torch.from_numpy(create_bound_weight_matrix(patient.structures, treatment.weights))
+    region_weights = region_weights.to(treatment.device)
 
     x = get_model_input(patient, treatment)
     x = torch.from_numpy(x)
@@ -396,7 +399,7 @@ def compute_loss(patient, treatment, machine_config, region_weights, dose_pred, 
     ]
     return all_losses
 
-def compute_mae_loss(patient, treatment, machine_config, region_weights, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
+def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
     losses = []
     for index, mask in enumerate([_masks[0], _masks[1], _masks[-1]]):
         losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))

@@ -16,7 +16,7 @@ from pydose_rt.utils.grad_monitor import GradMonitor
 import numpy as np
 from pydose_rt.objectives.losses import compute_loss, compute_mae_loss
 from pydose_rt.objectives.metrics import result_validation
-from pydose_rt.utils.utils import create_bound_weight_matrix, get_initial_weights
+from pydose_rt.utils.utils import get_initial_weights
 from pydose_rt.utils.plotting import print_results, make_animation
 from dotenv import load_dotenv
 load_dotenv()  # will look for .env in project root
@@ -94,7 +94,6 @@ for test_i in range(n_tests):
 
         y_dose = torch.from_numpy(patient.dose)
         masks = torch.from_numpy(np.stack([v for k,v in patient.structures.items()], 0))
-        region_weights = torch.from_numpy(create_bound_weight_matrix(patient.structures, treatment.weights))
         y_dose = y_dose.expand(1, -1, -1, -1)
         masks = masks.expand(1, -1, -1, -1, -1)
 
@@ -111,7 +110,6 @@ for test_i in range(n_tests):
         y_dose = y_dose.to(treatment.device)
         y_dose = torch.where(mask_external, y_dose, torch.zeros_like(y_dose))
         masks = masks.to(treatment.device)
-        region_weights = region_weights.to(treatment.device)
 
         dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=True)
         valid_parameters_layer = ValidParametersLayer(machine_config, treatment, treatment.dtype, treatment.device, leafs_centered=False, adjust_values=True)
@@ -123,7 +121,7 @@ for test_i in range(n_tests):
         # pred_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
         # pred_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
         # pred_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
-        pred_scales = torch.Tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to(treatment.device).to(treatment.dtype).requires_grad_(True)
+        pred_scales = torch.Tensor([1.0, 1.0, 1.0, 1.0, 1.0]).to(treatment.device).to(treatment.dtype).requires_grad_(True)
         # pred_mus *= pred_scales[0]
         # pred_mlc[:, 0, ...] *= pred_scales[1]
         # pred_mlc[:, 0, ...] += pred_scales[2]
@@ -157,13 +155,13 @@ for test_i in range(n_tests):
             pred_mus = base_mus * pred_scales[0]
  
             # Construct pred_mlc without in-place operations
-            mlc_left = base_mlc[:, 0, ...] * pred_scales[1] + pred_scales[2]
-            mlc_right = base_mlc[:, 1, ...] * pred_scales[3] + pred_scales[4]
+            mlc_left = base_mlc[:, 0, ...] + pred_scales[1]
+            mlc_right = base_mlc[:, 1, ...] + pred_scales[2]
             pred_mlc = torch.stack([mlc_left, mlc_right], dim=1)
  
             # Construct pred_jaws without in-place operations
-            jaws_left = base_jaws[:, 0, ...] + pred_scales[5]
-            jaws_right = base_jaws[:, 1, ...] + pred_scales[6]
+            jaws_left = base_jaws[:, 0, ...] + pred_scales[3]
+            jaws_right = base_jaws[:, 1, ...] + pred_scales[4]
             pred_jaws = torch.stack([jaws_left, jaws_right], dim=1)
 
             # Forward
@@ -171,7 +169,7 @@ for test_i in range(n_tests):
             dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
 
             # Compute loss
-            raw_losses = compute_mae_loss(patient, treatment, machine_config, region_weights, dose_pred, dose_target, pred_mus, pred_mlc, pred_jaws, weights, masks, masks_torch)
+            raw_losses = compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_target, pred_mus, pred_mlc, pred_jaws, weights, masks, masks_torch)
             loss = torch.stack(raw_losses).sum()
             
             # Backprop
