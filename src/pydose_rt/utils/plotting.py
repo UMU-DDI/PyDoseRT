@@ -32,6 +32,7 @@ def print_results(
     masks,
     mae_loss,
     plot_ct=True,
+    dose_max=10.0,
     preset="umea"
 ):
     def _hide_ticks(ax):
@@ -61,7 +62,7 @@ def print_results(
     scale_mus  = float(np.max(np.abs(pred_mus_grads)))  if np.any(pred_mus_grads)  else 1.0
 
     # Visual parameters
-    dose_max = 50.0
+    
     alpha = 0.30  # overlay transparency for gradients
 
     # Figure + GridSpec: one column, all rows share the same height
@@ -87,7 +88,7 @@ def print_results(
 
     # --- 1) Jaws (centers)
     ax = fig.add_subplot(gs[0])
-    ax.set_title('Jaws (centers)')
+    ax.set_title('Jaws (lower)')
     _imshow_fullwidth(
         ax,
         pred_jaws.cpu().detach().numpy()[0, 0:1, :],
@@ -102,7 +103,7 @@ def print_results(
 
     # --- 2) Jaws (widths)
     ax = fig.add_subplot(gs[1])
-    ax.set_title('Jaws (widths)')
+    ax.set_title('Jaws (higher)')
     _imshow_fullwidth(
         ax,
         pred_jaws.cpu().detach().numpy()[0, 1:2, :],
@@ -117,7 +118,7 @@ def print_results(
 
     # --- 3) MLCs (centers)
     ax = fig.add_subplot(gs[2])
-    ax.set_title('MLCs (centers)')
+    ax.set_title('MLCs (left)')
     _imshow_fullwidth(
         ax,
         np.transpose(pred_mlc.cpu().detach().numpy()[0, 0, :, :]),
@@ -132,7 +133,7 @@ def print_results(
 
     # --- 4) MLCs (widths)
     ax = fig.add_subplot(gs[3])
-    ax.set_title('MLCs (widths)')
+    ax.set_title('MLCs (right)')
     _imshow_fullwidth(
         ax,
         np.transpose(pred_mlc.cpu().detach().numpy()[0, 1, :, :]),
@@ -174,19 +175,12 @@ def print_results(
         axial_xstart = 0
         axial_xend = 188
         coronal_x = 94
-        coronal_zstart = 0
-        coronal_zend = 168
-        coronal_ystart = 0
-        coronal_yend = 188
+        coronal_zstart = 48
+        coronal_zend = 124
+        coronal_ystart = 64
+        coronal_yend = 124
     else:
-        axial_z = 44
-        axial_xstart = 0
-        axial_xend = 256
-        coronal_x = 128
-        coronal_zstart = 64
-        coronal_zend = 128
-        coronal_ystart = 0
-        coronal_yend = 256
+        raise Exception("Preset missing")
 
     # If overlay_mask_outline expects already-sliced 2D arrays (as in your original code),
     # use these two helpers instead:
@@ -317,7 +311,9 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
                 pred_mlc, 
                 pred_mus, 
                 jaw_positions=pred_jaws, 
-                ct_image=ct_volume, 
+                ct_image=ct_volume,
+                jaw_x=7.0,
+                jaw_y=-8.5,
                 single_cp=cp_idx
             )
         # pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))

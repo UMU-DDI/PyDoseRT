@@ -37,7 +37,7 @@ def load_dicom(
     clockwise = True
     starting_angle = 0.0
     if plan_path is not None:
-        mlcs, jaws, mus, clockwise, starting_angle = fetch_plan_data(plan_path, scaling)
+        mlcs, jaws, mus, clockwise, starting_angle, num_fractions = fetch_plan_data(plan_path, scaling)
         # Use the first dose as reference
         ct_series, structures, dose, iso_center = resample_based_on_plan(ct_series, structures, dose, recenter, plan_path)
 
@@ -49,7 +49,7 @@ def load_dicom(
     num_of_cps = mus.shape[1]
     patient = Patient(ct_array=sitk.GetArrayFromImage(ct_series),
         structures={k: sitk.GetArrayFromImage(v) for k, v in structures.items()},            voxel_spacing_mm=ct_series.GetSpacing(),
-        dose=sitk.GetArrayFromImage(dose))
+        dose=sitk.GetArrayFromImage(dose) / num_fractions)
     
     treatment = TreatmentConfig(
         preset=treatment_preset,

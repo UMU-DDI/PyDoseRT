@@ -123,9 +123,11 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
     ds = pydicom.dcmread(plan_path)
     data = dict()
     beam_metersets = dict()
+    
     for ref_seq in ds.FractionGroupSequence[0].ReferencedBeamSequence:
         if hasattr(ref_seq, "BeamMeterset"):
             beam_metersets[str(ref_seq.ReferencedBeamNumber)] = ref_seq.BeamMeterset
+            number_of_fractions = int(ds.FractionGroupSequence[0].NumberOfFractionsPlanned)
             
     for beam in ds.BeamSequence:
         beam_data = []
@@ -201,7 +203,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
     clockwise = beams[0]["clockwise"] != "CC"
     starting_angle = beams[1]["angle"] # (beams[0]["angle"] + beams[1]["angle"]) / 2.0
 
-    return leafs, jaws, mus, clockwise, starting_angle
+    return leafs, jaws, mus, clockwise, starting_angle, number_of_fractions
 
 
 def load_structures(ct_series, folder_path, struct_names: List[str] | None = None):
@@ -230,15 +232,15 @@ def load_dose(path):
     # Load dose volumes
     doses = dict()
     dose_idx = 0
+    dataset = pydicom.dcmread(path)
 
-    scaling = float(pydicom.dcmread(path).DoseGridScaling)
+    scaling = float(dataset.DoseGridScaling)
     reader = sitk.ImageFileReader()
     reader.SetFileName(path)
     dose = reader.Execute()
     dose = sitk.Cast(dose, sitk.sitkFloat32)
     dose = scaling * dose
     
-    dataset = pydicom.dcmread(path)
     plan_sequence = dataset.ReferencedRTPlanSequence
 
     if len(plan_sequence) == 0 or not hasattr(plan_sequence[0], "ReferencedFractionGroupSequence"):

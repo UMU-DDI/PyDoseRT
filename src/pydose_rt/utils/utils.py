@@ -1,8 +1,5 @@
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import scipy.ndimage as ndi
 import random
 import copy
 import numpy as np
@@ -12,6 +9,37 @@ import os
 import time
 import pydicom
 from pydose_rt.data import TreatmentConfig
+
+def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
+    """
+    Finds scalar c that minimizes MAE(||c*A - P||_1).
+    A, P : numpy arrays of same shape (3D or any shape)
+    mask : optional boolean array (same shape) to include only specific voxels
+    """
+    if mask is not None:
+        A = A[mask]
+        P = P[mask]
+
+    valid = A > 0  # ignore zero or negative A if intensities are positive
+    A = A[valid]
+    P = P[valid]
+
+    ratios = P / A
+    weights = np.abs(A)
+
+    # Sort ratios by value
+    idx = np.argsort(ratios)
+    sorted_ratios = ratios[idx]
+    sorted_weights = weights[idx]
+
+    # Cumulative weight
+    cumulative = np.cumsum(sorted_weights)
+    cutoff = cumulative[-1] / 2.0
+
+    # Weighted median = first ratio where cumulative weight >= half total
+    median_idx = np.searchsorted(cumulative, cutoff)
+    c = sorted_ratios[median_idx]
+    return c
 
 def get_shapes(machine: MachineConfig, treatment: TreatmentConfig):
     shapes = dict()
