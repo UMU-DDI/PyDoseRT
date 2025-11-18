@@ -45,9 +45,8 @@ class FluenceMapLayer(nn.Module):
 
     def __init__(
         self,
-        machine_config: MachineConfig, treatment_config: TreatmentConfig, 
-        dtype, 
-        device,
+        machine_config: MachineConfig, 
+        treatment_config: TreatmentConfig, 
         verbose: bool = False,
     ):
         """
@@ -59,8 +58,8 @@ class FluenceMapLayer(nn.Module):
         """
         super().__init__()
 
-        self.device=device
-        self.dtype=dtype
+        self.device=treatment_config.device
+        self.dtype=treatment_config.dtype
         self.machine_config = machine_config
         self.treatment_config = treatment_config
         self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])

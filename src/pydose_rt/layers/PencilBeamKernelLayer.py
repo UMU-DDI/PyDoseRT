@@ -42,9 +42,10 @@ class PencilBeamKernelLayer(nn.Module):
         device (torch.device): Device for computation (CPU or CUDA).
         pbm: PencilBeamModel instance for kernel calculation.
     """
-    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
-        dtype, 
-        device, verbose: bool = False):
+    def __init__(self, 
+                 machine_config: MachineConfig, 
+                 treatment_config: TreatmentConfig, 
+                 verbose: bool = False):
         """
         Initializes the PencilBeamKernelLayer and creates the pencil beam model.
 
@@ -55,8 +56,8 @@ class PencilBeamKernelLayer(nn.Module):
         """
         super().__init__()
 
-        self.device=device
-        self.dtype=dtype
+        self.device=treatment_config.device
+        self.dtype=treatment_config.dtype
         self.machine_config = machine_config
         self.kernel_size = treatment_config.kernel_size
         self.verbose = verbose

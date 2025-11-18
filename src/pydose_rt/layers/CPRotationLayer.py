@@ -29,10 +29,11 @@ class CPRotationLayer(nn.Module):
         device (torch.device): Device on which computations are performed.
         rot_angles_rad (torch.Tensor): Tensor of gantry angles in radians.
     """
-    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
-        dtype, 
-        device,
-          verbose: bool = False):
+    def __init__(self, 
+                 machine_config: MachineConfig, 
+                 treatment_config: TreatmentConfig,
+                 verbose: bool = False
+                ):
         """
         Initializes the CPPRotationLayer.
 
@@ -41,8 +42,8 @@ class CPRotationLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """        
         super().__init__()
-        self.device=device
-        self.dtype=dtype
+        self.device=treatment_config.device
+        self.dtype=treatment_config.dtype
         self.machine_config = machine_config
         self.treatment_config = treatment_config
         self.verbose = verbose

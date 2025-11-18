@@ -47,9 +47,9 @@ class FluenceVolumeLayer(nn.Module):
         sampling_grids (torch.Tensor): Precomputed ray sampling grids for mapping MLC plane to CT volume.
     """
 
-    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
-        dtype, 
-        device, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, 
+                 treatment_config: TreatmentConfig, 
+                 verbose: bool = False):
         """
         Initializes the FluenceVolumeLayer and precomputes profile corrections and sampling grids.
 
@@ -59,8 +59,8 @@ class FluenceVolumeLayer(nn.Module):
         """
         super().__init__()
 
-        self.device=device
-        self.dtype=dtype
+        self.device=treatment_config.device
+        self.dtype=treatment_config.dtype
         self.machine_config = machine_config
         self.treatment_config = treatment_config
         self.verbose = verbose

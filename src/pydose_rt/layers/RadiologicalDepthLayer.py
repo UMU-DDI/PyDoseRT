@@ -42,9 +42,10 @@ class RadiologicalDepthLayer(nn.Module):
 
     """
 
-    def __init__(self, machine_config: MachineConfig, treatment_config: TreatmentConfig, 
-        dtype, 
-        device, verbose: bool = False):
+    def __init__(self, 
+                 machine_config: MachineConfig, 
+                 treatment_config: TreatmentConfig, 
+                 verbose: bool = False):
         """
         Initializes the RadiologicalDepthLayer and precomputes sampling indices for each gantry angle.
 
@@ -54,8 +55,8 @@ class RadiologicalDepthLayer(nn.Module):
         """
         super(RadiologicalDepthLayer, self).__init__()
 
-        self.device=device
-        self.dtype=dtype
+        self.device=treatment_config.device
+        self.dtype=treatment_config.dtype
         self.machine_config = machine_config
         self.treatment_config = treatment_config
         self.verbose = verbose

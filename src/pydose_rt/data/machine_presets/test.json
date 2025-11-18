@@ -1,9 +1,6 @@
 {
     "ct_array_shape": [64, 64, 64],
     "resolution": [3.0, 3.0, 3.0],
-    "field_size": [400, 400],
     "number_of_leaf_pairs": 10,
-    "tpr_20_10": 0.72,
-    "number_of_cps": 24,
-    "starting_angle": 180.0
+    "tpr_20_10": 0.72
 }

@@ -77,15 +77,15 @@ class DoseEngine(nn.Module):
         self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
         self.ct_array_shape = tuple([int(x / y) for x, y in zip(machine_config.ct_array_shape,  treatment_config.downsampling_factor)])
 
-        self.valid_parameters_layer = ValidParametersLayer(machine_config, treatment_config, treatment_config.dtype, treatment_config.device, leafs_centered, adjust_values=adjust_values)
-        self.fluence_map_layer = FluenceMapLayer(machine_config, treatment_config, treatment_config.dtype, treatment_config.device, verbose)
-        self.fluence_volume_layer = FluenceVolumeLayer(machine_config, treatment_config, treatment_config.dtype, treatment_config.device, verbose)
-        self.rad_depth_layer = RadiologicalDepthLayer(machine_config, treatment_config, treatment_config.dtype, treatment_config.device, verbose)
+        self.valid_parameters_layer = ValidParametersLayer(machine_config, treatment_config, leafs_centered, adjust_values=adjust_values)
+        self.fluence_map_layer = FluenceMapLayer(machine_config, treatment_config, verbose)
+        self.fluence_volume_layer = FluenceVolumeLayer(machine_config, treatment_config, verbose)
+        self.rad_depth_layer = RadiologicalDepthLayer(machine_config, treatment_config, verbose)
         self.pencil_beam_kernel_layer = PencilBeamKernelLayer(
-            machine_config, treatment_config, treatment_config.dtype, treatment_config.device, verbose
+            machine_config, treatment_config, verbose
         )
-        self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(machine_config, treatment_config, treatment_config.dtype, treatment_config.device)
-        self.rotation_layer = CPRotationLayer(machine_config, treatment_config, treatment_config.dtype, treatment_config.device, verbose)
+        self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(machine_config, treatment_config)
+        self.rotation_layer = CPRotationLayer(machine_config, treatment_config, verbose)
 
         self.ct_image = ct_image
         if self.ct_image is not None:
