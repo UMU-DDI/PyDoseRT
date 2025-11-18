@@ -243,7 +243,7 @@ for test_i in range(n_tests):
         pred_mlc_valid, pred_mus_valid, pred_jaws_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
         )
-        results = result_validation(patient, machine_config, treatment, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid)
+        results = result_validation(patient, machine_config, treatment, dose_pred, pred_mlc_valid, pred_jaws_valid, pred_mus_valid, compute_gamma=True)
         experiment.log_metrics(
             {
                 "results": results,
