@@ -67,7 +67,6 @@ class CPRotationLayer(nn.Module):
         accumulated_dose = accumulated_dose.permute(0, 1, 3, 2, 4)   # [B, G, H, D, W]
         accumulated_dose = accumulated_dose.reshape(B*G*H, 1, D, W)   # [B*G*H, 1, D, W]
         
-        
         # Rotate
         accumulated_dose = F.grid_sample(accumulated_dose, grid2d,
                                     mode="bilinear",

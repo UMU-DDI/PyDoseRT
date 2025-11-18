@@ -196,8 +196,8 @@ class PencilBeamModel:
         self.rs = self.get_rs(
             [self.kernel_size_h, self.kernel_size_w]
         )  # Calculate the radial distance
-        d_10cm = 10.0 * np.ones((1, 1, 1, 1)) # 100mm depth
-        self.norm = np.max(self.get_pencil_beam(d=d_10cm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
+        d_100mm = 100.0 * np.ones((1, 1, 1, 1)) # 100mm depth
+        self.norm = np.max(self.get_pencil_beam(d=d_100mm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
 
     def get_param(self, parameter: str, TPR: float) -> float:
         """
@@ -331,7 +331,7 @@ class PencilBeamModel:
         d = np.asarray(d, float)
         r2 = np.asarray(r, float)                # (Hk, Wk)
 
-        # Convert radiological depth to cm from mm
+        # Convert radiological depth from mm to cm
         d /= 10
 
         BG, N, _, _ = d.shape

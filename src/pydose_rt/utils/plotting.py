@@ -172,8 +172,8 @@ def print_results(
         coronal_yend = 224
     elif (preset == "umea"):
         axial_z = 84
-        axial_xstart = 0
-        axial_xend = 188
+        axial_xstart = 64
+        axial_xend = 124
         coronal_x = 94
         coronal_zstart = 48
         coronal_zend = 124
