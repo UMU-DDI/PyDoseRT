@@ -112,7 +112,7 @@ for test_i in range(n_tests):
         masks = masks.to(treatment.device)
 
         dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=True)
-        valid_parameters_layer = ValidParametersLayer(machine_config, treatment, treatment.dtype, treatment.device, leafs_centered=False, adjust_values=True)
+        valid_parameters_layer = ValidParametersLayer(machine_config, treatment, leafs_centered=False, adjust_values=True)
         dose_layer.train()
         # pred_mlc, pred_jaws, pred_mus = dose_layer.get_open_parameters()
         base_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
