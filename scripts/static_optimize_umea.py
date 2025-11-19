@@ -255,7 +255,7 @@ for test_i in range(n_tests):
         experiment.log_asset_data(pred_mus_valid.cpu().detach().numpy(), "mu_values.npy")
 
         print_results(experiment, treatment, raw_losses, y_dose, pred_mlc_valid, pred_mus_valid, pred_jaws_valid, pred_mlc_grads, pred_jaws_grads, pred_mus_grads, best_results, dose_pred, ct_volume, masks_torch, mae_loss, dose_max=7.0)
-        make_animation(experiment, treatment, machine_config, patient, dose_layer, pred_mlc, pred_mus, pred_jaws, dose_max=50.0)
+        make_animation(experiment, treatment, machine_config, patient, dose_layer, pred_mlc, pred_mus, pred_jaws, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
         
