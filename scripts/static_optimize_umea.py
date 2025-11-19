@@ -42,9 +42,9 @@ if remote:
                 treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
                 )
 
-    treatment.kernel_size = 15
+    treatment.kernel_size = 25
     treatment.device = device
-    treatment.downsampling_factor = (1, 1, 1)
+    treatment.downsampling_factor = (1, 2, 2)
     treatment.dtype = dtype
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
