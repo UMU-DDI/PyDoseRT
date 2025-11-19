@@ -144,6 +144,7 @@ class FluenceVolumeLayer(nn.Module):
         w_max_idx = W - 1 if w_max_idx is None else w_max_idx
         
         vol_slices = []
+        open_volumes = torch.sum(fluence_map, [1, 2, 3], keepdims=True)
         for d in range(self.D):
             # Get the precomputed sampling grid of the slice, crop to region
             grid = (
@@ -163,11 +164,12 @@ class FluenceVolumeLayer(nn.Module):
             )
             sampled = sampled.permute(0, 2, 3, 1)  # [B*G,cropped_W,cropped_H,1]
             # Apply correction
-            corr = self.profile_corrections[d].unsqueeze(0).unsqueeze(-1)
+            # corr = self.profile_corrections[d].unsqueeze(0).unsqueeze(-1)
+            corr = (open_volumes / torch.sum(sampled, (1, 2, 3), keepdims=True)).to(self.dtype)
             vol_slices.append(sampled * corr)
         volume_grid = torch.stack(vol_slices, dim=1)  # [B*G,D,cropped_W,cropped_H,1]
         # Free Memory (TODO: Does this still work when using autograd?)
-        del sampled, fluence_map, grid, corr, vol_slices
+        del sampled, fluence_map, grid, corr, vol_slices, open_volumes
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
