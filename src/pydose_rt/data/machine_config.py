@@ -131,7 +131,7 @@ class MachineConfig(BaseSettings):
         default=10.0, description="Mean photon energy in MeV"
     )
 
-    leaf_widths: list[float] = Field(
+    leaf_widths: Optional[list[float]] = Field(
         default=None, description="A list of the leaf widths" )
         
     @computed_field(repr=False)
