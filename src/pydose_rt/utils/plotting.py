@@ -312,8 +312,6 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
                 pred_mus, 
                 jaw_positions=pred_jaws, 
                 ct_image=ct_volume,
-                jaw_x=7.0,
-                jaw_y=-8.5,
                 single_cp=cp_idx
             )
         # pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))
@@ -327,7 +325,7 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
         ax_depth.grid(True, alpha=0.3)
         
         # Plot beam's eye view (fluence map) - make it square
-        fluence_data = pred_map.cpu().detach().numpy()[0, 0, :, :]
+        fluence_data = pred_map.cpu().detach().numpy()[0, :, :]
         w, h = fluence_data.shape
         im1 = ax1.imshow(fluence_data, interpolation='none', cmap='gray', vmin=0.0, vmax=1.0, aspect=h/w)
         ax1.set_title('Fluence Map', pad=5)
