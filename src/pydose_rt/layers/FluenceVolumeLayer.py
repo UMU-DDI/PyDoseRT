@@ -82,7 +82,7 @@ class FluenceVolumeLayer(nn.Module):
         depths = (
             self.treatment_config.iso_center[1]
             + self.treatment_config.SID
-            - (self.D // 2) * self.resolution[1]
+            - ((self.D - 1) // 2) * self.resolution[1]
             + torch.arange(D, dtype=self.dtype) * self.resolution[1]
         )  # mm
 
