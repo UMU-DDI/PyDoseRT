@@ -100,7 +100,7 @@ def result_validation(patient: Patient,
             lower_percent_dose_cutoff=dose_cutoff,
             interp_fraction=10,  # Interpolation resolution
             max_gamma=max_gamma,
-            global_normalisation=global_normalisation,
+            # global_normalisation=global_normalisation,
             local_gamma=False,  # Global gamma (% of max dose)
             quiet=True
         )
