@@ -42,7 +42,7 @@ def resample_based_on_plan(ct_series, structures, dose, recenter, plan_path):
         for k in structures:
             structures[k], _ = resample_to_iso_center(structures[k], iso_center, reference_spacing, reference_size, 0, sitk.sitkNearestNeighbor)
     else:
-        iso_center = reference_origin + np.array(reference_dose_size) / 2.0 * np.array(reference_spacing)
+        iso_center = reference_origin + (np.array(reference_dose_size) - 1) / 2.0 * np.array(reference_spacing) # reference_origin + np.array(reference_dose_size) / 2.0 * np.array(reference_spacing)
     return ct_series, structures, dose, iso_center
 
 def load_ct_images(folder_path):
@@ -266,7 +266,7 @@ def resample_to_iso_center(image, iso_center, spacing, size, pixel_value=0, inte
     dim = image.GetDimension()
     direction = np.eye(dim).flatten()
 
-    center_index = np.array(size) / 2.0
+    center_index = (np.array(size) - 1) / 2.0 # np.array(size) / 2.0
     origin = iso_center - center_index * np.array(spacing)
 
     ref_img = sitk.Image(size, image.GetPixelIDValue())
