@@ -76,9 +76,7 @@ def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_
         ),
         dim=0,
     )
-    end_positions = start_positions + torch.tensor(
-        leaf_widths, device=values.device, dtype=dtype
-    )
+    end_positions = start_positions + leaf_widths.clone().detach().to(values.device).to(dtype)
 
     # divide field in bin stripes parallel to leaf movement
     output_bin_edges = torch.linspace(
@@ -115,4 +113,4 @@ def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_
     result = total_weighted / (total_overlap + 1e-8)
     result = result.unsqueeze(-1)  # [B, W, H, 1]
 
-    return result
+    return result.to(dtype)
