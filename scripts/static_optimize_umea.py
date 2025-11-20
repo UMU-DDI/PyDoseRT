@@ -115,9 +115,9 @@ for test_i in range(n_tests):
         valid_parameters_layer = ValidParametersLayer(machine_config, treatment, leafs_centered=False, adjust_values=True)
         dose_layer.train()
         # pred_mlc, pred_jaws, pred_mus = dose_layer.get_open_parameters()
-        pred_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
-        pred_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
-        pred_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
+        pred_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype).requires_grad_(True)
+        pred_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype).requires_grad_(True)
+        pred_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype).requires_grad_(True)
 
         patience = 0
         epoch = 0
@@ -220,7 +220,7 @@ for test_i in range(n_tests):
         pred_mlc = (pred_mlc[:, :, :-1, :] + pred_mlc[:, :, 1:, :]) / 2 
         pred_mus = (pred_mus[:, :-1] + pred_mus[:, 1:]) / 2
         pred_jaws = (pred_jaws[:, :, :-1] + pred_jaws[:, :, 1:]) / 2
-        
+
         pred_mlc_grads = None # pred_mlc.grad.cpu().detach().numpy()
         pred_jaws_grads = None # pred_jaws.grad.cpu().detach().numpy()
         pred_mus_grads = None # pred_mus.grad.cpu().detach().numpy()
