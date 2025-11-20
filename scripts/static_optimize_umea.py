@@ -115,28 +115,15 @@ for test_i in range(n_tests):
         valid_parameters_layer = ValidParametersLayer(machine_config, treatment, leafs_centered=False, adjust_values=True)
         dose_layer.train()
         # pred_mlc, pred_jaws, pred_mus = dose_layer.get_open_parameters()
-        base_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
-        base_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
-        base_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
-        # pred_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
-        # pred_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
-        # pred_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
-        pred_scales = torch.Tensor([1.0, 1.0, 1.0, 1.0, 1.0]).to(treatment.device).to(treatment.dtype).requires_grad_(True)
-        # pred_mus *= pred_scales[0]
-        # pred_mlc[:, 0, ...] *= pred_scales[1]
-        # pred_mlc[:, 0, ...] += pred_scales[2]
-        # pred_mlc[:, 1, ...] *= pred_scales[3]
-        # pred_mlc[:, 1, ...] += pred_scales[4]
-        # pred_jaws[:, 0, ...] += pred_scales[5]
-        # pred_jaws[:, 1, ...] += pred_scales[6]
-
-
+        pred_mlc = torch.from_numpy(treatment.plan_mlcs).to(treatment.device).to(treatment.dtype)
+        pred_jaws = torch.from_numpy(treatment.plan_jaws).to(treatment.device).to(treatment.dtype)
+        pred_mus = torch.from_numpy(treatment.plan_mus).to(treatment.device).to(treatment.dtype)
 
         patience = 0
         epoch = 0
         lr = 10**np.random.uniform(-3, 0) # 0.1
         lr_decay = 1e-4
-        optimizer = torch.optim.AdamW([pred_scales], lr=lr, weight_decay=lr_decay)
+        optimizer = torch.optim.AdamW([pred_mlc, pred_jaws, pred_mus], lr=lr, weight_decay=lr_decay)
 
         experiment.log_parameters(
             {
@@ -152,18 +139,6 @@ for test_i in range(n_tests):
         def closure():
             optimizer.zero_grad(set_to_none=True)
             
-            pred_mus = base_mus * pred_scales[0]
- 
-            # Construct pred_mlc without in-place operations
-            mlc_left = base_mlc[:, 0, ...] + pred_scales[1]
-            mlc_right = base_mlc[:, 1, ...] + pred_scales[2]
-            pred_mlc = torch.stack([mlc_left, mlc_right], dim=1)
- 
-            # Construct pred_jaws without in-place operations
-            jaws_left = base_jaws[:, 0, ...] + pred_scales[3]
-            jaws_right = base_jaws[:, 1, ...] + pred_scales[4]
-            pred_jaws = torch.stack([jaws_left, jaws_right], dim=1)
-
             # Forward
             dose_pred = dose_layer(
                 (pred_mlc[:, :, :-1, :] + pred_mlc[:, :, 1:, :]) / 2, 
@@ -181,7 +156,7 @@ for test_i in range(n_tests):
             loss.backward()
 
             # torch.nn.utils.clip_grad_norm_(pred_mlc, max_norm=1 / 40.0)
-            # torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
+            torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
             # torch.nn.utils.clip_grad_norm_(pred_mus, max_norm=1.0)
 
             # stash anything you want to inspect/plot after step()
@@ -238,10 +213,14 @@ for test_i in range(n_tests):
             epoch += 1
 
         print(f"Optimization finished in {int(time.time() - start_time)}s.")
-        print(pred_scales)
         pred_mlc = current_res[2]
         pred_mus = current_res[3]
         pred_jaws = current_res[4]
+
+        pred_mlc = (pred_mlc[:, :, :-1, :] + pred_mlc[:, :, 1:, :]) / 2 
+        pred_mus = (pred_mus[:, :-1] + pred_mus[:, 1:]) / 2
+        pred_jaws = (pred_jaws[:, :, :-1] + pred_jaws[:, :, 1:]) / 2
+        
         pred_mlc_grads = None # pred_mlc.grad.cpu().detach().numpy()
         pred_jaws_grads = None # pred_jaws.grad.cpu().detach().numpy()
         pred_mus_grads = None # pred_mus.grad.cpu().detach().numpy()
