@@ -165,7 +165,12 @@ for test_i in range(n_tests):
             pred_jaws = torch.stack([jaws_left, jaws_right], dim=1)
 
             # Forward
-            dose_pred = dose_layer(pred_mlc, pred_mus, jaw_positions=pred_jaws, ct_image=ct_volume)
+            dose_pred = dose_layer(
+                (pred_mlc[:, :, :-1, :] + pred_mlc[:, :, 1:, :]) / 2, 
+                (pred_mus[:, :-1] + pred_mus[:, 1:]) / 2, 
+                (pred_jaws[:, :, :-1] + pred_jaws[:, :, 1:]) / 2, 
+                ct_image=ct_volume
+            )
             dose_pred = torch.where(mask_external, dose_pred, torch.zeros_like(dose_pred))
 
             # Compute loss
