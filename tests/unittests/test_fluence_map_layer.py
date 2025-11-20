@@ -17,17 +17,52 @@ def fluence_map_layer(default_machine_config, default_treatment_config):
 @pytest.mark.parametrize(
     "center, width",
     [
-        (0.5, 0.0),
-        (0.5, 0.5),
-        (0.5, 1.0),
+        (-0.9, 0.05),
+        (0.0, 0.05),
+        (0.9, 0.05),
+    ]
+)
+def test_fluence_map_leaves_center_per_width(fluence_map_layer, default_machine_config, default_treatment_config, center, width):
+    """Test that fluence map behaves correctly based on input width."""
+    shapes = get_shapes(default_machine_config, default_treatment_config)
+    y_mlc = torch.zeros(shapes["MLCs"], dtype=torch.float32, device=default_treatment_config.device)
+    expected = (center * default_treatment_config.field_size[0] / 2) + default_treatment_config.field_size[0] / 2
+    y_mlc[:, 0, :, :] = (center * default_treatment_config.field_size[0] / 2) - (width * default_treatment_config.field_size[0] / 2)  # Set left positions
+    y_mlc[:, 1, :, :] = (center * default_treatment_config.field_size[0] / 2) + (width * default_treatment_config.field_size[0] / 2)  # Set right positions
+    y_mlc = y_mlc.clone().detach().requires_grad_(True)
+    y_jaws = torch.zeros(shapes["jaws"], dtype=torch.float32, device=default_treatment_config.device)
+    y_jaws[:, 0, :] = - default_treatment_config.field_size[1] / 2
+    y_jaws[:, 1, :] = default_treatment_config.field_size[1] / 2
+    y_jaws = y_jaws.clone().detach().requires_grad_(True)
+
+    fluence_map = fluence_map_layer(y_mlc, y_jaws)
+
+    # Convert TensorFlow tensor to numpy if necessary
+    if isinstance(fluence_map, torch.Tensor):
+        fluence_map = fluence_map.cpu().detach().numpy()
+
+    print(f"Test Case - Center: {center}, Width: {width}")
+    print("Fluence Map Shape:", fluence_map.shape)
+
+    actual = np.mean(np.argwhere(fluence_map > 0.5), (0))[2] + 0.5  # Look for the center of the one values
+
+    assert actual == pytest.approx(expected, 0.01)
+
+@pytest.mark.parametrize(
+    "center, width",
+    [
+        (0.0, 0.0),
+        (0.0, 0.001),
+        (0.0, 0.5),
+        (0.0, 1.0),
     ]
 )
 def test_fluence_map_leaves_open_per_width(fluence_map_layer, default_machine_config, default_treatment_config, center, width):
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, default_treatment_config)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=torch.float32, device=default_treatment_config.device)
-    y_mlc[:, 0, :, :] = center - (width * default_treatment_config.field_size[0] / 2)  # Set left positions
-    y_mlc[:, 1, :, :] = center + (width * default_treatment_config.field_size[0] / 2)  # Set right positions
+    y_mlc[:, 0, :, :] = (center * default_treatment_config.field_size[0] / 2) - (width * default_treatment_config.field_size[0] / 2)  # Set left positions
+    y_mlc[:, 1, :, :] = (center * default_treatment_config.field_size[0] / 2) + (width * default_treatment_config.field_size[0] / 2)  # Set right positions
     y_mlc = y_mlc.clone().detach().requires_grad_(True)
     y_jaws = torch.zeros(shapes["jaws"], dtype=torch.float32, device=default_treatment_config.device)
     y_jaws[:, 0, :] = - default_treatment_config.field_size[1] / 2
@@ -59,12 +94,12 @@ def test_fluence_map_jaws_open_per_width(fluence_map_layer, default_machine_conf
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, default_treatment_config)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=torch.float32, device=default_treatment_config.device)
-    y_mlc[:, 0, :, :] = - default_treatment_config.field_size[1] / 2
-    y_mlc[:, 1, :, :] = default_treatment_config.field_size[1] / 2
+    y_mlc[:, 0, :, :] = - default_treatment_config.field_size[0] / 2
+    y_mlc[:, 1, :, :] = default_treatment_config.field_size[0] / 2
     y_mlc = y_mlc.clone().detach().requires_grad_(True)
     y_jaws = torch.zeros(shapes["jaws"], dtype=torch.float32, device=default_treatment_config.device)
-    y_jaws[:, 0, :] = center - (width * default_treatment_config.field_size[0] / 2)  # Set bottom positions
-    y_jaws[:, 1, :] = center + (width * default_treatment_config.field_size[0] / 2)  # Set top positions
+    y_jaws[:, 0, :] = (center * default_treatment_config.field_size[1] / 2) - (width * default_treatment_config.field_size[1] / 2)  # Set bottom positions
+    y_jaws[:, 1, :] = (center * default_treatment_config.field_size[1] / 2) + (width * default_treatment_config.field_size[1] / 2)  # Set top positions
     y_jaws = y_jaws.clone().detach().requires_grad_(True)
 
     fluence_map = fluence_map_layer(y_mlc, y_jaws)

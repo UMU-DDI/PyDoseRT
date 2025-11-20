@@ -141,7 +141,25 @@ class Phantom(Patient):
         )
     
     @classmethod
-    def from_sphere(
+    def from_uniform_water(
+        cls,
+        shape: tuple[int, int, int],
+        spacing: tuple[float, float, float]
+    ) -> "Phantom":
+        """
+        Alternate constructor: create a Phantom directly from a spherical phantom.
+        """
+        ct_array = torch.from_numpy(np.expand_dims(np.ones(shape), 0))
+
+        return cls(
+            ct_array=ct_array,
+            voxel_spacing_mm=spacing,
+            patient_id="",
+        )
+
+
+    @classmethod
+    def from_sphere_water(
         cls,
         shape: tuple[int, int, int],
         spacing: tuple[float, float, float],

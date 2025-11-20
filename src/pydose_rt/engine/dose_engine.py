@@ -102,16 +102,19 @@ class DoseEngine(nn.Module):
                 dtype=treatment_config.dtype,
             ).detach()
 
-    def get_open_parameters(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-
+    def get_open_parameters(self, field_size: float = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if field_size is None:
+            field_size = self.treatment_config.field_size
+        else:
+            field_size = [field_size, field_size]
         mlcs = torch.zeros((1, 2, self.treatment_config.number_of_cps, self.machine_config.number_of_leaf_pairs), dtype=self.dtype, device=self.device)
-        mlcs[:, 0, :, :] = - self.treatment_config.field_size[0] / 2
-        mlcs[:, 1, :, :] = self.treatment_config.field_size[0] / 2
+        mlcs[:, 0, :, :] = - field_size[0] / 2
+        mlcs[:, 1, :, :] = field_size[0] / 2
         mlcs = mlcs.clone().detach().requires_grad_(True)
 
         jaws = torch.zeros((1, 2, self.treatment_config.number_of_cps), dtype=self.treatment_config.dtype, device=self.treatment_config.device)
-        jaws[:, 0, :] = - self.treatment_config.field_size[1] / 2
-        jaws[:, 1, :] = self.treatment_config.field_size[1] / 2
+        jaws[:, 0, :] = - field_size[1] / 2
+        jaws[:, 1, :] = field_size[1] / 2
         jaws = jaws.clone().detach().requires_grad_(True)
 
         mus = torch.ones((1, self.treatment_config.number_of_cps), dtype=self.treatment_config.dtype, device=self.treatment_config.device)

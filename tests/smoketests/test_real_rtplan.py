@@ -57,9 +57,9 @@ def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path, dtype, kernel_s
 
     dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=False)
 
-    leafs = torch.tensor(np.array(leafs), dtype=dose_layer.dtype, device=dose_layer.device)
-    mus = torch.tensor(np.array(mus), dtype=dose_layer.dtype, device=dose_layer.device)
-    jaws = torch.tensor(np.array(jaws), dtype=dose_layer.dtype, device=dose_layer.device)
+    leafs = torch.tensor((np.array(leafs)[:, :, :-1, :] + np.array(leafs)[:, :, 1:, :]) / 2, dtype=dose_layer.dtype, device=dose_layer.device)
+    mus = torch.tensor((np.array(mus)[:, :-1] + np.array(mus)[:, 1:]) / 2, dtype=dose_layer.dtype, device=dose_layer.device)
+    jaws = torch.tensor((np.array(jaws)[:, :, :-1] + np.array(jaws)[:, :, 1:]) / 2, dtype=dose_layer.dtype, device=dose_layer.device)
         
     dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device))
     dose_pred = dose_pred.cpu().detach().numpy()
