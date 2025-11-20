@@ -24,7 +24,7 @@ Classes:
 import torch
 import torch.nn as nn
 from pydose_rt.data import MachineConfig, TreatmentConfig
-from pydose_rt.physics.fluence.fluence_modeling import apply_source_penumbra
+from pydose_rt.physics.fluence.fluence_modeling import apply_source_penumbra, apply_mlc_scatter
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
 from pydose_rt.geometry.rotations import rotate_2d_images
 
@@ -156,6 +156,16 @@ class FluenceMapLayer(nn.Module):
             mask *= jaw_mask
 
         fluence_map = mask.permute(0, 3, 2, 1)
+
+        # Apply MLC scatter tail (distance-dependent scatter from field edges)
+        fluence_map = apply_mlc_scatter(
+            fluence_map,
+            scatter_amplitude=self.machine_config.mlc_scatter_amplitude,
+            scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
+            pixel_size_mm=self.resolution[2]
+        )
+
+        # Apply source penumbra (geometric blur from finite source size)
         fluence_map = apply_source_penumbra(fluence_map, source_size_mm=3.0, pixel_size_mm=self.resolution[2])
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 

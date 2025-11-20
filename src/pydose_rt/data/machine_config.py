@@ -63,6 +63,14 @@ class MachineConfig(BaseSettings):
         default=49.7,
         description="Distance from source to collimator (or isocenter) in cm",
     )
+    mlc_scatter_amplitude: float = Field(
+        default=0.1,
+        description="Relative MLC scatter contribution at field edge (unitless, typical: 0.01-0.03)",
+    )
+    mlc_scatter_range_mm: float = Field(
+        default=30.0,
+        description="Characteristic decay distance for MLC scatter tail in mm (typical: 20-50)",
+    )
     oar_coeffs: tuple[float, float, float] = Field(
         default=(1.0, -1e-4, 2.5e-7),
         description="Off-axis ratio polynomial coefficients (c0, c2, c4)",
@@ -75,6 +83,14 @@ class MachineConfig(BaseSettings):
         description="Linear attenuation coefficient (1/cm) for the MLC material",
     )
 
+    tpr_20_10: float = Field(description="The tissue phantom ratio TPR20/10")
+    mean_photon_energy_MeV: float = Field(
+        default=10.0, description="Mean photon energy in MeV"
+    )
+
+    leaf_widths: Optional[list[float]] = Field(
+        default=None, description="A list of the leaf widths" )
+        
     number_of_leaf_pairs: int = Field(description="The number of leafs")
 
     @staticmethod
@@ -126,14 +142,6 @@ class MachineConfig(BaseSettings):
     def mlc_transmission(self) -> float:
         return math.exp(-self.mlc_mu * self.mlc_thickness)
 
-    tpr_20_10: float = Field(description="The tissue phantom ratio TPR20/10")
-    mean_photon_energy_MeV: float = Field(
-        default=10.0, description="Mean photon energy in MeV"
-    )
-
-    leaf_widths: Optional[list[float]] = Field(
-        default=None, description="A list of the leaf widths" )
-        
     @computed_field(repr=False)
     @property
     def physical_size_ct(self) -> np.ndarray:
