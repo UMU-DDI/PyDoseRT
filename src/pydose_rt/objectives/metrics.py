@@ -69,7 +69,8 @@ def result_validation(patient: Patient,
                       pred_mlc: np.array, 
                       pred_jaws: np.array, 
                       pred_mus: np.array,
-                      compute_gamma: bool = False):
+                      compute_gamma: bool = False,
+                      global_normalisation = 6.1):
     
     results = {}
     if compute_gamma:
@@ -79,8 +80,9 @@ def result_validation(patient: Patient,
         )
         
         # Compute dose cutoff value (10% of max dose)
+        
         dose_cutoff = 10.0
-        dose_cutoff_value = dose_cutoff / 100 * np.max(patient.dose)
+        dose_cutoff_value = dose_cutoff / 100 * global_normalisation
         dose_threshold = 3.0
         distance_threshold = 3.0
         max_gamma = 2.0
@@ -98,6 +100,7 @@ def result_validation(patient: Patient,
             lower_percent_dose_cutoff=dose_cutoff,
             interp_fraction=10,  # Interpolation resolution
             max_gamma=max_gamma,
+            global_normalisation=global_normalisation,
             local_gamma=False,  # Global gamma (% of max dose)
             quiet=True
         )
