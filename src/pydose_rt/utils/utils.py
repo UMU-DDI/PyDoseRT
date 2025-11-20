@@ -53,6 +53,38 @@ def get_shapes(machine: MachineConfig, treatment: TreatmentConfig):
 
     return shapes
 
+def sample_tensor_nearest(dose_calc, voxel_size, iso_center, xyz_mm):
+    """
+    dose_calc: torch.Tensor, shape (Z, Y, X)
+    voxel_size: (dx, dy, dz) in mm
+    xyz_mm: np.ndarray of shape (N, 3) with columns [X, Y, Z] in mm
+    returns: torch.Tensor of shape (N,) with calculated dose at those points
+    """
+    Z, Y, X = dose_calc.shape
+    dx, dy, dz = voxel_size
+
+    # center index (isocenter at (0,0,0 mm))
+    cx = ((X - 1) / 2.0) - iso_center[0]
+    cy = 0 # ((Y - 1) / 2.0) - iso_center[1]
+    cz = ((Z - 1) / 2.0) - iso_center[2]
+
+    x_mm = xyz_mm[:, 0]
+    y_mm = xyz_mm[:, 1]
+    z_mm = xyz_mm[:, 2]
+
+    # physical -> index space
+    ix = cx + x_mm / dx
+    iy = cy + y_mm / dy
+    iz = cz + z_mm / dz
+
+    # nearest voxel
+    ix = torch.round(torch.from_numpy(ix)).long().clamp(0, X - 1)
+    iy = torch.round(torch.from_numpy(iy)).long().clamp(0, Y - 1)
+    iz = torch.round(torch.from_numpy(iz)).long().clamp(0, Z - 1)
+
+    # sample
+    return dose_calc[iz, iy, ix].cpu().detach().numpy()
+
 def export_plan(treatment: TreatmentConfig, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
 
     """
