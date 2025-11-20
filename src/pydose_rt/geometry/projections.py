@@ -38,8 +38,12 @@ def fractional_box_overlap(d, left, right, sharpness=10.0) -> torch.Tensor:
  
     # ----- Smooth surrogate (backward) -----
     # Uses smooth max/min that considers actual positions relative to bin edges
-    overlap_start_soft = soft_max(left, bin_start, sharpness)
-    overlap_end_soft = soft_min(right, bin_end, sharpness)
+    if sharpness is None:
+        overlap_start_soft = overlap_start_hard
+        overlap_end_soft = overlap_end_hard
+    else:
+        overlap_start_soft = soft_max(left, bin_start, sharpness)
+        overlap_end_soft = soft_min(right, bin_end, sharpness)
     soft = torch.clamp(overlap_end_soft - overlap_start_soft, min=0.0, max=1.0)
     overlap = soft + (hard - soft).detach()
  

@@ -46,9 +46,10 @@ class FluenceMapLayer(nn.Module):
 
     def __init__(
         self,
-        machine_config: MachineConfig, 
-        treatment_config: TreatmentConfig, 
+        machine_config: MachineConfig,
+        treatment_config: TreatmentConfig,
         verbose: bool = False,
+        training_sharpness: float = 10.0,
     ):
         """
         Initializes the FluenceMapLayer.
@@ -56,6 +57,8 @@ class FluenceMapLayer(nn.Module):
         Args:
             config (MachineConfig): Configuration object with field_size_in_pixels, leaf_widths, and number_of_leaf_pairs attributes.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
+            training_sharpness (float, optional): Sharpness parameter for smooth gradients during training. Defaults to 10.0.
+            eval_sharpness (float, optional): Sharpness parameter for sharp edges during evaluation. Defaults to 1000.0.
         """
         super().__init__()
 
@@ -65,6 +68,7 @@ class FluenceMapLayer(nn.Module):
         self.treatment_config = treatment_config
         self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
         self.verbose = verbose
+        self.training_sharpness = training_sharpness
 
         if self.machine_config.leaf_widths is None:
             self.leaf_widths = torch.ones((self.machine_config.number_of_leaf_pairs, ), dtype=self.dtype) * self.treatment_config.field_size[1] / self.machine_config.number_of_leaf_pairs
@@ -126,8 +130,11 @@ class FluenceMapLayer(nn.Module):
         if d.device != leaf_positions.device:
             d = d.to(leaf_positions.device)  # [1, H, N]
 
+        # Use training-dependent sharpness: smooth gradients during training, sharp during eval
+        sharpness = self.training_sharpness if self.training else None
+
         # ---------- new box (no sigmoids) ----------
-        mask = fractional_box_overlap(d, left_positions + leaf_x, right_positions + leaf_y)
+        mask = fractional_box_overlap(d, left_positions + leaf_x, right_positions + leaf_y, sharpness)
         # -------------------------------------------
 
         # Reshape
@@ -147,7 +154,7 @@ class FluenceMapLayer(nn.Module):
             j = self.jaw_indices
             if j.device != leaf_positions.device:
                 j = j.to(leaf_positions.device)  # [1, H, N]
-            jaw_mask = fractional_box_overlap(j, bottom_positions + jaw_x, top_positions + jaw_y)
+            jaw_mask = fractional_box_overlap(j, bottom_positions + jaw_x, top_positions + jaw_y, sharpness)
 
             jaw_mask = jaw_mask.view(B, G, H, 1)
             jaw_mask = jaw_mask.view(B * G, 1, H, 1)
@@ -166,7 +173,7 @@ class FluenceMapLayer(nn.Module):
         )
 
         # Apply source penumbra (geometric blur from finite source size)
-        fluence_map = apply_source_penumbra(fluence_map, source_size_mm=3.0, pixel_size_mm=self.resolution[2])
+        fluence_map = apply_source_penumbra(fluence_map, source_size_mm=1.5, pixel_size_mm=self.resolution[2])
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 
         # Apply collimator rotation (beam limiting device angle)

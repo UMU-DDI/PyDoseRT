@@ -82,7 +82,7 @@ class FluenceVolumeLayer(nn.Module):
         depths = (
             self.treatment_config.iso_center[1]
             + self.treatment_config.SID
-            - ((self.D - 1) // 2) * self.resolution[1]
+            - ((self.D - 1) / 2) * self.resolution[1]
             + torch.arange(D, dtype=self.dtype) * self.resolution[1]
         )  # mm
 
@@ -97,8 +97,8 @@ class FluenceVolumeLayer(nn.Module):
         WT, HT = torch.meshgrid(ws, hs, indexing="ij")  # Both [W, H]
 
         # Normalization factors use the field size (fluence map coordinates)
-        WT_max = ((W_field - 1) / 2)
-        HT_max = ((H_field - 1) / 2)
+        WT_max = ((W_field) / 2)
+        HT_max = ((H_field) / 2)
 
         # Calculate the inverse relative square distance for each depth
         corrections = []
@@ -164,8 +164,8 @@ class FluenceVolumeLayer(nn.Module):
             )
             sampled = sampled.permute(0, 2, 3, 1)  # [B*G,cropped_W,cropped_H,1]
             # Apply correction
-            # corr = self.profile_corrections[d].unsqueeze(0).unsqueeze(-1)
-            corr = (open_volumes / torch.sum(sampled, (1, 2, 3), keepdims=True)).to(self.dtype)
+            corr = self.profile_corrections[d].unsqueeze(0).unsqueeze(-1)
+            # corr = (open_volumes / torch.sum(sampled, (1, 2, 3), keepdims=True)).to(self.dtype)
             vol_slices.append(sampled * corr)
         volume_grid = torch.stack(vol_slices, dim=1)  # [B*G,D,cropped_W,cropped_H,1]
         # Free Memory (TODO: Does this still work when using autograd?)
