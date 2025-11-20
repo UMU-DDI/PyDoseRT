@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from token import OP
 from typing import Optional, TYPE_CHECKING, List
 import torch
+import math
 import numpy as np
 from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
 from pydose_rt.data import TreatmentConfig, Patient
 from .utils.nifti_utils import load_files
 import SimpleITK as sitk
+from typing import List, Dict, Any, Tuple
 
 def load_dicom(
     ct_folder: str, 
@@ -37,7 +39,8 @@ def load_dicom(
     clockwise = True
     starting_angle = 0.0
     if plan_path is not None:
-        mlcs, jaws, mus, clockwise, starting_angle, num_fractions = fetch_plan_data(plan_path, scaling)
+        plans = fetch_plan_data(plan_path, scaling)
+        mlcs, jaws, mus, clockwise, starting_angle, final_angle, bld_angle, num_fractions = list(plans.values())[0]
         # Use the first dose as reference
         ct_series, structures, dose, iso_center = resample_based_on_plan(ct_series, structures, dose, recenter, plan_path)
 
@@ -46,7 +49,7 @@ def load_dicom(
         mlcs = None
         ct_series, structures = resample_based_on_dose(ct_series, dose)
 
-    num_of_cps = mus.shape[1]
+    num_of_cps = max(mus.shape[1] - 1, 1)
     patient = Patient(ct_array=sitk.GetArrayFromImage(ct_series),
         structures={k: sitk.GetArrayFromImage(v) for k, v in structures.items()},            voxel_spacing_mm=ct_series.GetSpacing(),
         dose=sitk.GetArrayFromImage(dose) / num_fractions)
@@ -59,7 +62,8 @@ def load_dicom(
         plan_jaws=jaws,
         plan_mus=mus,
         clockwise=clockwise,
-        starting_angle=starting_angle
+        starting_angle=starting_angle,
+        beam_limiting_device_angle=math.radians(bld_angle),
     )
 
     return patient, treatment

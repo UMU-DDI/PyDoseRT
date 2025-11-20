@@ -26,6 +26,7 @@ import torch.nn as nn
 from pydose_rt.data import MachineConfig, TreatmentConfig
 from pydose_rt.physics.fluence.fluence_modeling import apply_source_penumbra
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
+from pydose_rt.geometry.rotations import rotate_2d_images
 
 
 
@@ -81,6 +82,13 @@ class FluenceMapLayer(nn.Module):
         centers = (torch.arange(H, dtype=self.dtype) + 0.5) - (H / 2)  # [W]
         jaw_indices = centers.view(1, H).repeat(1, 1)
         self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
+
+        # Store collimator angles (beam limiting device angles) for rotating fluence maps
+        self.collimator_angles = torch.tensor(
+            treatment_config.beam_limiting_device_angle,
+            dtype=self.dtype,
+            device=self.device
+        )  # [1, G] in radians
 
     def forward(
         self, leaf_positions: torch.Tensor, 
@@ -149,6 +157,15 @@ class FluenceMapLayer(nn.Module):
 
         fluence_map = mask.permute(0, 3, 2, 1)
         fluence_map = apply_source_penumbra(fluence_map, source_size_mm=3.0, pixel_size_mm=self.resolution[2])
-        fluence_map = fluence_map[:, 0, :, :]
+        fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
+
+        # Apply collimator rotation (beam limiting device angle)
+        # This rotates the fluence map in-plane before projection to 3D
+        fluence_map = rotate_2d_images(
+            fluence_map,
+            self.collimator_angles,
+            device=self.device,
+            dtype=self.dtype
+        )  # [B*G, H, W]
         
         return fluence_map

@@ -132,17 +132,21 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
     for beam in ds.BeamSequence:
         beam_data = []
         jaw_data = []
+        bld_angle = 0.0
         for index, cps in enumerate(beam.ControlPointSequence):
             if "BeamLimitingDevicePositionSequence" in cps:
                 for sequence in cps.BeamLimitingDevicePositionSequence:
                     if sequence.RTBeamLimitingDeviceType == "MLCX":
                         beam_meterset = beam_metersets[str(beam.BeamNumber)]
+                        if hasattr(cps, "BeamLimitingDeviceAngle"):
+                            bld_angle = float(cps.BeamLimitingDeviceAngle)
                         if hasattr(cps, "CumulativeMetersetWeight"):
                             if (len(beam.ControlPointSequence) == 2):
                                 mu_value = beam_meterset
                             else:
                                 mu_value = beam_meterset * cps.CumulativeMetersetWeight
                         seq_data = {
+                            "bld_angle": bld_angle,
                             "clockwise": cps.GantryRotationDirection,
                             "angle": cps.GantryAngle,
                             "ssd": cps.SourceToSurfaceDistance,
@@ -164,9 +168,9 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
                 _beam["jaw_higher"] = jaw_data[0]["higher"]
             data[str(beam.BeamNumber)] = beam_data
     
-    parameters = []
-    for index, beam_data in enumerate(data):
-        beams = data[beam_data]
+    parameters = dict()
+    for index, beam_index in enumerate(data):
+        beams = data[beam_index]
 
         if ((len(beams) == 0)):
             continue
@@ -177,13 +181,13 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
 
         mus =  np.array([beam["mu"] for beam in beams])
         if (multi_cp):
-            mus = np.abs(np.diff(mus))
+            mus = np.abs(np.diff(mus, prepend=0.0))
         mus = np.expand_dims(mus, axis=0)
 
-        beam_higher = np.array([beam["higher"] for beam in beams[1:]])
-        beam_lower = np.array([beam["lower"] for beam in beams[1:]])
-        jaw_higher = np.array([beam["jaw_higher"] for beam in beams[1:]])
-        jaw_lower = np.array([beam["jaw_lower"] for beam in beams[1:]])
+        beam_higher = np.array([beam["higher"] for beam in beams])
+        beam_lower = np.array([beam["lower"] for beam in beams])
+        jaw_higher = np.array([beam["jaw_higher"] for beam in beams])
+        jaw_lower = np.array([beam["jaw_lower"] for beam in beams])
 
         # beam_higher_start = np.array([beam["higher"] for beam in beams[:-1]])
         # beam_higher_end = np.array([beam["higher"] for beam in beams[1:]])
@@ -199,11 +203,18 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
         jaws = np.stack([jaw_lower, jaw_higher], axis=0)
         jaws = np.expand_dims(jaws, axis=0)
 
-        parameters.append((leafs, jaws, mus))
-    clockwise = beams[0]["clockwise"] != "CC"
-    starting_angle = beams[1]["angle"] # (beams[0]["angle"] + beams[1]["angle"]) / 2.0
+        clockwise = beams[0]["clockwise"] != "CC"
+        bld_angle = beams[0]["bld_angle"]
+        if (len(beams) == 1):
+            starting_angle = beams[0]["angle"]
+            final_angle = beams[-1]["angle"]
+        else:
+            starting_angle = (beams[0]["angle"] + beams[0]["angle"]) / 2
+            final_angle = (beams[-1]["angle"] + beams[-2]["angle"]) / 2
 
-    return leafs, jaws, mus, clockwise, starting_angle, number_of_fractions
+        parameters[beam_index] = (leafs, jaws, mus, clockwise, starting_angle, final_angle, bld_angle, number_of_fractions)
+
+    return parameters
 
 
 def load_structures(ct_series, folder_path, struct_names: List[str] | None = None):

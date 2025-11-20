@@ -62,6 +62,53 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype):
 
     return stacked_indices.unsqueeze(0)  # [1, G, D, 3]
 
+def rotate_2d_images(images, angles_rad, device, dtype):
+    """
+    Rotate 2D images by given angles using affine transformation.
+    Args:
+        images: [B*G, H, W] - batch of 2D images
+        angles_rad: [G] - rotation angles in radians (one per control point)
+        device: torch device
+        dtype: torch dtype
+    Returns:
+        rotated_images: [B*G, H, W] - rotated images
+    """
+    BG, H, W = images.shape
+
+    # Convert angles to tensor if needed
+    if not isinstance(angles_rad, torch.Tensor):
+        angles_rad = torch.tensor(angles_rad, device=device, dtype=dtype)
+    else:
+        angles_rad = angles_rad.to(device=device, dtype=dtype)
+
+    # Flatten angles to [1, G] if needed
+    if angles_rad.dim() == 2:
+        angles_rad = angles_rad.view(-1)  # [G]
+
+    # Expand angles for batch dimension: [B*G]
+    angles_expanded = angles_rad.unsqueeze(0).repeat(BG, 1).view(BG)  # [B*G]
+
+    cos_a = torch.cos(angles_expanded)
+    sin_a = torch.sin(angles_expanded)
+
+    # Create affine transformation matrices for rotation
+    # Note: negative angle for counter-clockwise rotation in image space
+    mats = torch.zeros((BG, 2, 3), device=device, dtype=dtype)
+    mats[:, 0, 0] = cos_a
+    mats[:, 0, 1] = sin_a
+    mats[:, 1, 0] = -sin_a
+    mats[:, 1, 1] = cos_a
+
+    # Generate rotation grids
+    grid = F.affine_grid(mats, size=(BG, 1, H, W), align_corners=False)  # [BG, H, W, 2]
+
+    # Rotate images
+    images_4d = images.unsqueeze(1)  # [BG, 1, H, W]
+    rotated = F.grid_sample(images_4d, grid, mode='bilinear', padding_mode='zeros', align_corners=False)
+    rotated = rotated.squeeze(1)  # [BG, H, W]
+
+    return rotated
+
 def build_rotation_grids(input_shape, angles_rad, device, dtype):
     """
     Build rotation grids for rotating D×W images by given angles.

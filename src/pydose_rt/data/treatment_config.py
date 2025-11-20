@@ -137,15 +137,19 @@ class TreatmentConfig(BaseModel):
     number_of_cps: int = Field(
         description="The number of beams for the plan"
     )
-    starting_angle: float = Field(
+    starting_angle: Optional[float] = Field(
         default=0.0,
         description="The beam angle of the first beam in the series in degrees",
     )
-    clockwise: bool = Field(
+    beam_limiting_device_angle: Optional[float] = Field(
+        default=0.0,
+        description="The beam limiting device angle in degrees for the in-plane fluence rotation.",
+    )
+    clockwise: Optional[bool] = Field(
         default=False,
         description="Determines whether the arc moves clockwise or not.",
     )
-    iso_center: tuple[float, float, float] = Field(
+    iso_center: Optional[tuple[float, float, float]] = Field(
         default=(0.0, 0.0, 0.0),
         description="The distance of the isocenter from the center of the CT volume in mm",
     )
@@ -155,6 +159,9 @@ class TreatmentConfig(BaseModel):
     @property
     def gantry_angles(self) -> np.ndarray:
         start = math.radians(self.starting_angle)
+        if self.number_of_cps == 1:
+            return [ start ]
+        
         if self.clockwise:
             end = math.radians(self.starting_angle) + math.radians(360)  
         else:
