@@ -22,7 +22,8 @@ dependencies = [
     "rt-utils>=1.2.7",
     "SimpleITK>=2.4.1",
     "pymedphys[tests]>=0.41.0",
-    "llvmlite>=0.45.1"
+    "llvmlite>=0.45.1",
+    "numba=>0.62.1"
 ]
 [project.optional-dependencies]
 test=[
