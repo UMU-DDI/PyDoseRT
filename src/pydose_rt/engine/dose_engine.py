@@ -191,7 +191,7 @@ class DoseEngine(nn.Module):
         # Deepest depth index
         d_idx = D - 1
         # Compute physical depth for last slice
-        depth = self.treatment_config.iso_center[0] + SID - (D // 2) * dz + d_idx * dz
+        depth = self.treatment_config.iso_center[0] + SID - ((D - 1) / 2) * dz + d_idx * dz
         scale = SID / depth
         # Field size in pixels (MLC plane)
         H_field, W_field = self.treatment_config.field_size_in_pixels

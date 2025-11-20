@@ -333,9 +333,9 @@ def compute_valid_leaf_mask_minh(
     (H, D, W) = config.ct_array_shape
     dx, dy, dz = voxel_sizes
 
-    iso_x = (W // 2) * dx
-    iso_y = (D // 2) * dy
-    iso_z = (H // 2) * dz
+    iso_x = ((W - 1) / 2) * dx
+    iso_y = ((D - 1) / 2) * dy
+    iso_z = ((H - 1) / 2) * dz
 
     isocenter = (iso_x, iso_y, iso_z)
 
