@@ -4,7 +4,7 @@ name = "pydose_rt"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 authors = [
     { name="Gerd Heilemann", email="gerd.heilemann@meduniwien.ac.at" },
     { name="Josef Lundman", email="josef@lundman.eu" },
