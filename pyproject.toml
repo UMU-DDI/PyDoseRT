@@ -23,7 +23,7 @@ dependencies = [
     "SimpleITK>=2.4.1",
     "pymedphys[tests]>=0.41.0",
     "llvmlite>=0.45.1",
-    "numba=>0.62.1"
+    "numba>=0.62.1"
 ]
 [project.optional-dependencies]
 test=[
@@ -31,9 +31,6 @@ test=[
     "pytest-benchmark",
     "pytest-cov>=6.2.1"
 ]
-
-[tool.uv]
-python-version = "3.11"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
