@@ -367,8 +367,8 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
         else:
             print(f"Failed to read frame image: {frame_path}")
         
-        # if os.path.exists(frame_path):
-        #     os.remove(frame_path)
+        if os.path.exists(frame_path):
+            os.remove(frame_path)
 
 
     if frames:
