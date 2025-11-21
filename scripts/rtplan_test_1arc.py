@@ -37,7 +37,6 @@ rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 patient, treatment = loaders.load_dicom(
             ct_folder=ct_folder, 
             dose_path=rtdose_path, 

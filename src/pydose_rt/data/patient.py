@@ -2,7 +2,7 @@
 Patient configuration - CT dimensions and geometric parameters.
 """
 # from pydantic import BaseModel, Field, model_validator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from token import OP
 from typing import Optional, TYPE_CHECKING, List
 import torch
@@ -25,97 +25,13 @@ class Patient:
 
     # CT dimensions
     ct_array: torch.Tensor
-    structures: dict[str, np.array]
-    dose: Optional[np.array] = None
+    structures: Optional[dict[str, torch.Tensor]] = field(default_factory=dict)
+    dose: Optional[torch.Tensor] = None
     voxel_spacing_mm: Optional[tuple[float, float, float]] = None
 
     plan_iso_center: Optional[tuple[float, float, float]] = None
-    plan_mlcs: Optional[np.array] = None
-    plan_mus: Optional[np.array] = None
-    plan_jaws: Optional[np.array] = None
     plan_clockwise: Optional[bool] = None
     plan_starting_angle: Optional[float] = None
-    
-    # Optional metadata
-    patient_id: Optional[str] = None
-    
-    @classmethod
-    def from_dicom(
-        cls, 
-        ct_folder: str, 
-        dose_path: str | None, 
-        plan_path: str | None, 
-        struct_names: List[str] | None = None, 
-        recenter: bool = True) -> 'Patient':
-        """
-        Create PatientCoPatientnfig from Patient.
-        
-        Args:
-            patient: Patient instance
-            
-        Returns:
-            Patient with CT dimensions from patient
-        """
-        ct_series, ref = load_ct_series(ct_folder)
-        structures = load_structures(ct_series, ct_folder, struct_names=struct_names)
-        dose = load_dose(dose_path)
-        scaling = 400
-
-        # If RTPLAN is available, use it to determine isocenter
-        clockwise = True
-        starting_angle = 0.0
-        if plan_path is not None:
-            mlcs, jaws, mus, clockwise, starting_angle = fetch_plan_data(plan_path, scaling)
-            # Use the first dose as reference
-            ct_series, structures, dose, iso_center = resample_based_on_plan(ct_series, structures, dose, recenter, plan_path)
-            
-
-
-
-        else:
-            # No plan, just match to first dose
-            mlcs = None
-            ct_series, structures = resample_based_on_dose(ct_series, dose)
-        
-        return cls(
-            ct_array=sitk.GetArrayFromImage(ct_series),
-            structures={k: sitk.GetArrayFromImage(v) for k, v in structures.items()},            voxel_spacing_mm=ct_series.GetSpacing(),
-            dose=sitk.GetArrayFromImage(dose),
-            plan_mlcs=mlcs,
-            plan_jaws=jaws,
-            plan_mus=mus,
-            plan_iso_center=iso_center,
-            plan_clockwise=clockwise,
-            plan_starting_angle=starting_angle,
-        )
-    
-    @classmethod
-    def from_nifti(
-        cls,
-        folder_path
-        ) -> 'Patient':
-        ct, structures, dose = load_files(folder_path)
-
-        return cls(
-            ct_array=ct,
-            structures=structures,
-            dose=dose,
-            patient_id="",
-        )
-
-    @classmethod
-    def from_ct_array(
-        cls,
-        ct_array: torch.Tensor,
-        voxel_spacing_mm: tuple,
-        patient_id: Optional[str] = None
-    ) -> 'Patient':
-        """Create from CT array directly."""
-        return cls(
-            ct_shape=tuple(ct_array.shape),
-            voxel_spacing_mm=voxel_spacing_mm,
-            patient_id=patient_id
-        )
     
 
 @dataclass
