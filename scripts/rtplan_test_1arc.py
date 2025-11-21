@@ -120,7 +120,7 @@ for epoch in range(100):
     print(f"Epoch {epoch}, MAE: {loss.item():.6f}")
     # Critical: clean up
     del dose_pred, loss
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
     
 # dose_pred = dose_pred.cpu().detach().numpy()
 
