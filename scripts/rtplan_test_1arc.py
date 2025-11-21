@@ -103,7 +103,7 @@ leafs = (leafs[:, :, :-1, :] + leafs[:, :, 1:, :]) / 2
 mus = (mus[:, :-1] + mus[:, 1:]) / 2
 jaws = (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2
 
-for epoch in range(10000):
+for epoch in range(100000):
     dose_pred = dose_layer(
         leafs,
         mus,
@@ -116,7 +116,7 @@ for epoch in range(10000):
     optimizer.step()
     optimizer.zero_grad()
 
-    if epoch % 100 == 0:
+    if epoch % 1000 == 0:
         print(f"Computing results for epoch {epoch}...")
         res = result_validation(patient, machine_config, treatment, dose_pred.cpu().detach().numpy(), leafs.cpu().detach().numpy(), jaws.cpu().detach().numpy(), mus.cpu().detach().numpy(), compute_gamma=True, compute_clinical_criteria=False)
         print(f"MAE: {loss.item():.6f}") 
