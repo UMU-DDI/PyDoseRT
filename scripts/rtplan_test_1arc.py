@@ -76,6 +76,20 @@ results = []
 
 dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=False)
 
+# Freeze EVERYTHING first
+for param in dose_layer.parameters():
+    param.requires_grad = False
+
+# Then UNFREEZE only the learnable kernel
+for param in dose_layer.fluence_map_layer.learnable_kernel.parameters():
+    param.requires_grad = True
+
+# Verify (should only show learnable_kernel parameters)
+trainable_params = [name for name, p in dose_layer.named_parameters() if p.requires_grad]
+print(f"Trainable parameters: {trainable_params}")
+print(f"Total trainable params: {sum(p.numel() for p in dose_layer.parameters() if p.requires_grad)}")
+
+
 leafs = leafs.to(dose_layer.dtype).to(dose_layer.device)
 mus = mus.to(dose_layer.dtype).to(dose_layer.device)
 jaws = jaws.to(dose_layer.dtype).to(dose_layer.device)
