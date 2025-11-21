@@ -1,5 +1,7 @@
+from comet_ml import Experiment
 from re import M
 import sys
+import os
 import torch.nn.functional as F
 sys.path.append('../')
 sys.path.append('../../')
@@ -20,6 +22,8 @@ from pydose_rt import DoseEngine
 import SimpleITK as sitk
 from pydose_rt.utils.plotting import print_results, make_animation
 import torch
+from dotenv import load_dotenv
+load_dotenv()  # will look for .env in project root
 
 
 
@@ -39,6 +43,9 @@ rtdose_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plan
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+experiment = Experiment(
+    api_key=os.getenv("COMET_API"), project_name="autoplan_static_kernel"
+)
 patient, treatment = loaders.load_dicom(
             ct_folder=ct_folder, 
             dose_path=rtdose_path, 
@@ -95,7 +102,7 @@ mus = mus.to(dose_layer.dtype).to(dose_layer.device)
 jaws = jaws.to(dose_layer.dtype).to(dose_layer.device)
 
 optimizer = torch.optim.Adam([
-    {'params': dose_layer.fluence_map_layer.learnable_kernel.parameters(), 'lr': 1e-2}
+    {'params': dose_layer.fluence_map_layer.learnable_kernel.parameters(), 'lr': 10**np.random.uniform(-4, 0)}
 ])
 dose_tensor = torch.from_numpy(dose_volume).unsqueeze(0).to(dose_layer.device)
 ct_tensor = torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device)
@@ -110,20 +117,35 @@ for epoch in range(100000):
         jaws,
         ct_image=ct_tensor
     )
-    loss = F.l1_loss(dose_pred, dose_tensor)
+    loss = torch.mean(torch.abs(dose_pred - dose_tensor)[masks["External"] > 0])
     
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
 
+    experiment.log_metrics(
+        {
+            "loss": loss.item(),
+        },
+        epoch=epoch,
+    )
+
     if epoch % 1000 == 0:
         print(f"Computing results for epoch {epoch}...")
         res = result_validation(patient, machine_config, treatment, dose_pred.cpu().detach().numpy(), leafs.cpu().detach().numpy(), jaws.cpu().detach().numpy(), mus.cpu().detach().numpy(), compute_gamma=True, compute_clinical_criteria=False)
-        print(f"MAE: {loss.item():.6f}") 
-        print(f"{res['gamma_pass_rate']}\t{res['mean_gamma']}")
         print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
         print(dose_layer.fluence_map_layer.learnable_kernel.scale)
+
+        print_results(experiment, treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs.cpu().detach().numpy(), mus.cpu().detach().numpy(), jaws.cpu().detach().numpy(), None, None, None, [], dose_pred, ct_tensor, [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], loss.item(), dose_max=dose_volume.max())
         print("\n")
+
+        experiment.log_metrics(
+            {
+                "gamma_rate": res['gamma_pass_rate'],
+                "mean_gamma": res['mean_gamma'],
+            },
+            epoch=epoch,
+        )
     del dose_pred, loss
 # dose_pred = dose_pred.cpu().detach().numpy()
 
