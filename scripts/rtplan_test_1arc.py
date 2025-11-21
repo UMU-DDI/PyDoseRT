@@ -116,14 +116,14 @@ for epoch in range(10000):
     optimizer.step()
     optimizer.zero_grad()
 
-    if epoch % 10 == 0:
-
-        print(f"Epoch {epoch}, MAE: {loss.item():.6f}")     
+    if epoch % 100 == 0:
+        print(f"Computing results for epoch {epoch}...")
         res = result_validation(patient, machine_config, treatment, dose_pred.cpu().detach().numpy(), leafs.cpu().detach().numpy(), jaws.cpu().detach().numpy(), mus.cpu().detach().numpy(), compute_gamma=True, compute_clinical_criteria=False)
+        print(f"MAE: {loss.item():.6f}") 
         print(f"{res['gamma_pass_rate']}\t{res['mean_gamma']}")
-        print("\n")
         print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
         print(dose_layer.fluence_map_layer.learnable_kernel.scale)
+        print("\n")
     del dose_pred, loss
 # dose_pred = dose_pred.cpu().detach().numpy()
 
