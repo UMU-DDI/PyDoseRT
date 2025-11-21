@@ -103,7 +103,7 @@ leafs = (leafs[:, :, :-1, :] + leafs[:, :, 1:, :]) / 2
 mus = (mus[:, :-1] + mus[:, 1:]) / 2
 jaws = (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2
 
-for epoch in range(100):
+for epoch in range(10000):
     print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
     dose_pred = dose_layer(
         leafs,
