@@ -12,8 +12,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 do_plot = False
 
-mlc_scatter_amplitudes = [0.06, 0.08,  0.1]
-mlc_scatter_range_mms = [80, 120, 160]
+mlc_scatter_amplitudes = [0.07, 0.075, 0.08]
+mlc_scatter_range_mms = [80, 90, 100, 110]
 field_sizes = [50, 100, 200, 400]
 
 for mlc_scatter_amplitude in mlc_scatter_amplitudes:

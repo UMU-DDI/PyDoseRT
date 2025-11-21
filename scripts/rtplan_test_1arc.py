@@ -64,8 +64,9 @@ jaws = treatment.plan_jaws
 
 dose_volume = dose
 ct_volume = ct_image
-external_mask = masks["External"]
+external_mask = masks["External"] > 0
 ct_volume = np.where(external_mask, ct_volume, -1000.0)
+# ct_volume = np.where(np.logical_not(external_mask), ct_volume, 0.0)
 
 ct_slices = np.array(np.expand_dims(ct_volume, 0))
 results = []
@@ -81,10 +82,10 @@ dose_pred = dose_layer(
     (mus[:, :-1] + mus[:, 1:]) / 2, 
     (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2, 
     ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device), 
-    leaf_x=0.6658, 
-    leaf_y=0.7699,
-    jaw_x=2.3, 
-    jaw_y=-2.3
+    # leaf_x=0.6407, 
+    # leaf_y=0.4029,
+    # jaw_x=1.8646, 
+    # jaw_y=-4.41
 )
 dose_pred = dose_pred.cpu().detach().numpy()
 

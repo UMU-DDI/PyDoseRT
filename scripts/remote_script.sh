@@ -2,7 +2,7 @@
 #SBATCH -A NAISS2025-5-504 -p alvis
 #SBATCH -N 1 --gpus-per-node=A40:1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=00-05:00:00
+#SBATCH --time=01-00:00:00
 #SBATCH --error=/cephyr/users/attilas/Alvis/out/%J_error.out
 #SBATCH --output=/cephyr/users/attilas/Alvis/out/%J_output.out
 

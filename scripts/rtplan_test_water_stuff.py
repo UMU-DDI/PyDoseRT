@@ -48,7 +48,7 @@ treatment.kernel_size = 75
 treatment.device = device
 treatment.dtype = torch.float16
 
-machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_6MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
 # ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 110)
 # if (np.abs(ref_dose - 1.0) > 0.001):
 #     print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
@@ -70,6 +70,7 @@ ct_slices = np.array(np.expand_dims(ct_volume, 0))
 results = []
 
 dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=False)
+dose_layer.eval()
 
 leafs = torch.tensor(np.array(leafs), dtype=dose_layer.dtype, device=dose_layer.device)
 mus = torch.tensor(np.array(mus), dtype=dose_layer.dtype, device=dose_layer.device)
@@ -79,7 +80,9 @@ dose_pred = dose_layer(
     leafs, 
     mus, 
     jaws, 
-    ct_image=torch.tensor(0.0 * ct_slices, dtype=dose_layer.dtype, device=device), 
+    ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device), 
+    leaf_x=0.0, 
+    leaf_y=0.0, 
     jaw_x=0.0, 
     jaw_y=0.0
 )
@@ -93,12 +96,12 @@ dose_pred = dose_pred * scale
 dose_max = max(dose_volume.max(), dose_pred.max())
 
 
-vmax = 0.1
+vmax = 0.04
 mae_map = np.abs(dose_pred[0] - dose_volume)
 mae_loss = np.mean(mae_map[masks["External"] > 0])
 
 plt.figure()
-slice_idx = dose_volume.shape[0] // 2 - 5
+slice_idx = dose_volume.shape[0] // 2
 plt.subplot(331)
 # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
 plt.imshow(dose_volume[slice_idx, :, :], cmap='jet', vmax=dose_max)
@@ -116,7 +119,7 @@ plt.imshow(dose_volume[slice_idx, :, :] - dose_pred[0, slice_idx, :, :], cmap='c
 plt.axis('off')
 plt.colorbar()
 
-slice_idx = dose_volume.shape[1] // 2 - 5
+slice_idx = dose_volume.shape[1] // 2
 plt.subplot(334)
 # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
 plt.imshow(dose_volume[:, slice_idx, :], cmap='jet', vmax=dose_max)
@@ -134,7 +137,7 @@ plt.imshow(dose_volume[:, slice_idx, :] - dose_pred[0, :, slice_idx, :], cmap='c
 plt.axis('off')
 plt.colorbar()
 
-slice_idx = dose_volume.shape[2] // 2 + 5
+slice_idx = dose_volume.shape[2] // 2
 plt.subplot(337)
 # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
 plt.imshow(dose_volume[:, :, slice_idx], cmap='jet', vmax=dose_max)
@@ -154,8 +157,8 @@ plt.colorbar()
 
 plt.show()
 
-print_results(None, treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], torch.from_numpy(dose_pred), torch.from_numpy(np.expand_dims(ct_volume, 0)), [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], mae_loss, dose_max=dose_max)
+# print_results(None, treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], torch.from_numpy(dose_pred), torch.from_numpy(np.expand_dims(ct_volume, 0)), [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], mae_loss, dose_max=dose_max)
 
-res = result_validation(patient, machine_config, treatment, dose_pred, leafs, jaws, mus, compute_gamma=False)
-print(res)
+# res = result_validation(patient, machine_config, treatment, dose_pred, leafs, jaws, mus, compute_gamma=False)
+# print(res)
 # make_animation(None, treatment, machine_config, patient, dose_layer, leafs, mus, jaws, dose_pred.max())
