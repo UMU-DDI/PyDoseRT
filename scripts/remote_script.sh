@@ -13,5 +13,5 @@ source /cephyr/users/attilas/Alvis/data/attila/autoenv/bin/activate
 unset PYTHONPATH
 export PYTHONNOUSERSITE=1
 
-python3 scripts/rtplan_test_1arc.py
+python3 -u scripts/rtplan_test_1arc.py
 wait
