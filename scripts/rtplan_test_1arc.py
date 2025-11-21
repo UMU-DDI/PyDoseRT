@@ -104,6 +104,7 @@ mus = (mus[:, :-1] + mus[:, 1:]) / 2
 jaws = (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2
 
 for epoch in range(100):
+    torch.cuda.empty_cache()
     optimizer.zero_grad()
     print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
     dose_pred = dose_layer(
