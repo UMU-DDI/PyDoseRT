@@ -117,7 +117,7 @@ for epoch in range(100000):
         jaws,
         ct_image=ct_tensor
     )
-    loss = torch.mean(torch.abs(dose_pred - dose_tensor)[masks["External"] > 0])
+    loss = torch.mean(torch.abs(dose_pred - dose_tensor)[0, masks["External"] > 0])
     
     loss.backward()
     optimizer.step()
