@@ -50,7 +50,7 @@ patient, treatment = loaders.load_dicom(
 treatment.kernel_size = 25
 treatment.downsampling_factor = (1, 1, 1)
 treatment.device = device
-treatment.dtype = torch.float32
+treatment.dtype = torch.float16
 
 machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
 # ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 110)
@@ -104,7 +104,6 @@ mus = (mus[:, :-1] + mus[:, 1:]) / 2
 jaws = (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2
 
 for epoch in range(100):
-    torch.cuda.empty_cache()
     optimizer.zero_grad()
     print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
     dose_pred = dose_layer(
