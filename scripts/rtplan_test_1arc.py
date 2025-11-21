@@ -93,6 +93,9 @@ for epoch in range(100):
     optimizer.zero_grad()
     print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
     dose_pred = dose_layer(
+        leafs,
+        mus,
+        jaws,
         ct_image=ct_tensor
     )
     loss = F.l1_loss(dose_pred, dose_tensor)
