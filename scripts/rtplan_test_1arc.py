@@ -135,20 +135,20 @@ for epoch in range(100000):
 
     if epoch % 1000 == 0:
         print(f"Computing results for epoch {epoch}...")
-        # res = result_validation(patient, machine_config, treatment, dose_pred.cpu().detach().numpy(), leafs.cpu().detach().numpy(), jaws.cpu().detach().numpy(), mus.cpu().detach().numpy(), compute_gamma=True, compute_clinical_criteria=False)
+        res = result_validation(patient, machine_config, treatment, dose_pred.cpu().detach().numpy(), leafs.cpu().detach().numpy(), jaws.cpu().detach().numpy(), mus.cpu().detach().numpy(), compute_gamma=True, compute_clinical_criteria=False)
         print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
         print(dose_layer.fluence_map_layer.learnable_kernel.scale)
 
         print_results(experiment, treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], dose_pred, ct_tensor, [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], loss.item(), dose_max=dose_volume.max())
         print("\n")
 
-        # experiment.log_metrics(
-        #     {
-        #         "gamma_rate": res['gamma_pass_rate'],
-        #         "mean_gamma": res['mean_gamma'],
-        #     },
-        #     epoch=epoch,
-        # )
+        experiment.log_metrics(
+            {
+                "gamma_rate": res['gamma_pass_rate'],
+                "mean_gamma": res['mean_gamma'],
+            },
+            epoch=epoch,
+        )
     del dose_pred, loss
 # dose_pred = dose_pred.cpu().detach().numpy()
 
