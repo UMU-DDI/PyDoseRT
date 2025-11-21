@@ -50,7 +50,7 @@ patient, treatment = loaders.load_dicom(
 treatment.kernel_size = 25
 treatment.downsampling_factor = (1, 1, 1)
 treatment.device = device
-treatment.dtype = torch.float16
+treatment.dtype = torch.float32
 
 machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
 # ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 110)
