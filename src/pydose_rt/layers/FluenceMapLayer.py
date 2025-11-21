@@ -101,7 +101,7 @@ class FluenceMapLayer(nn.Module):
         )  # [1, G] in radians
 
         self.learnable_kernel = LearnableFluenceKernel(
-            kernel_size=15
+            kernel_size=7
         )
 
 
