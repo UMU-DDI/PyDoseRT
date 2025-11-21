@@ -22,6 +22,50 @@ import math
 from typing import Any, Optional
 
 
+class ClinicalCriterion(BaseModel):
+    """
+    A single clinical acceptance criterion for dose-volume analysis.
+    Examples:
+    - Bladder V38.5Gy <= 15%: {"criterion_type": "volume_at_dose", "dose_gy": 38.5, "volume_percent": 15, "constraint_type": "at_most"}
+    - PTV D99% >= 38.43 Gy: {"criterion_type": "dose_at_volume", "volume_percent": 99, "dose_gy": 38.43, "constraint_type": "at_least"}
+    - Rectum D0.01cc <= 45 Gy: {"criterion_type": "dose_at_volume_cc", "volume_cc": 0.01, "dose_gy": 45, "constraint_type": "at_most"}
+    """
+
+    criterion_type: str = Field(
+        ...,
+        description="Type of criterion: 'dose_at_volume', 'dose_at_volume_cc', or 'volume_at_dose'"
+    )
+
+    constraint_type: str = Field(
+        ...,
+        description="Constraint direction: 'at_most' or 'at_least'"
+    )
+
+    # Dose parameters
+    dose_gy: Optional[float] = Field(
+        default=None,description="Dose threshold or value in Gy (absolute)"
+    )
+
+    dose_percent: Optional[float] = Field(
+        default=None,
+        description="Dose as percentage of prescription (e.g., 110 for 110% of prescription)"
+    )
+    
+    # Volume parameters
+    volume_percent: Optional[float] = Field(
+        default=None,
+        description="Volume as percentage (0-100)"
+    )
+
+    volume_cc: Optional[float] = Field(
+        default=None,
+        description="Volume in cubic centimeters"
+    )
+
+    description: Optional[str] = Field(
+        default=None,
+        description="Human-readable description of the criterion"
+    )
 
 class StructureConstraints(BaseModel):
     """
@@ -68,6 +112,12 @@ class StructureTemplate(BaseModel):
     constraints: StructureConstraints = Field(
         default_factory=StructureConstraints,
         description="Dose constraints for this structure"
+    )
+
+    # Clinical acceptance criteria (optional list of explicit criteria)
+    clinical_criteria: List[ClinicalCriterion] = Field(
+        default_factory=list,
+        description="List of clinical acceptance criteria for validation"
     )
 
 

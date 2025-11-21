@@ -276,6 +276,7 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
     """
     mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=treatment.dtype, device=treatment.device) > 0
     ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=treatment.dtype, device=treatment.device)
+    dose_layer.eval()
 
     # Get the base colormap (jet)
     alpha_max = 1.0

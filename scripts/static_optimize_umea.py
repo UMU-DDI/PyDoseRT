@@ -38,8 +38,8 @@ if remote:
                 ct_folder=ct_folder, 
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
-                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
-                treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
+                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
+                treatment_preset="src/pydose_rt/data/treatment_presets/vienna.json"
                 )
 
     treatment.kernel_size = 25
@@ -60,7 +60,7 @@ else:
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
                 struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
-                treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
+                treatment_preset="src/pydose_rt/data/treatment_presets/vienna.json"
                 )
 
     treatment.kernel_size = 3
