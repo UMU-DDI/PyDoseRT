@@ -139,7 +139,7 @@ for epoch in range(100000):
         print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
         print(dose_layer.fluence_map_layer.learnable_kernel.scale)
 
-        print_results(experiment, treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs.cpu().detach().numpy(), mus.cpu().detach().numpy(), jaws.cpu().detach().numpy(), None, None, None, [], dose_pred, ct_tensor, [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], loss.item(), dose_max=dose_volume.max())
+        print_results(experiment, treatment, [0.0], torch.from_numpy(np.expand_dims(dose_volume, 0)), leafs, mus, jaws, None, None, None, [], dose_pred, ct_tensor, [torch.from_numpy(np.expand_dims(mask, 0)) for mask in list(masks.values())], loss.item(), dose_max=dose_volume.max())
         print("\n")
 
         # experiment.log_metrics(
