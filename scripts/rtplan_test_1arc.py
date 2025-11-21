@@ -95,7 +95,7 @@ mus = mus.to(dose_layer.dtype).to(dose_layer.device)
 jaws = jaws.to(dose_layer.dtype).to(dose_layer.device)
 
 optimizer = torch.optim.Adam([
-    {'params': dose_layer.fluence_map_layer.learnable_kernel.parameters(), 'lr': 1e-2}
+    {'params': dose_layer.fluence_map_layer.learnable_kernel.parameters(), 'lr': 1e-4}
 ])
 dose_tensor = torch.from_numpy(dose_volume).unsqueeze(0).to(dose_layer.device)
 ct_tensor = torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device)
