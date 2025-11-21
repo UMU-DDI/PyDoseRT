@@ -97,9 +97,10 @@ for epoch in range(100):
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
+    del dose_pred
     
     print(f"Epoch {epoch}, MAE: {loss.item():.6f}")
-dose_pred = dose_pred.cpu().detach().numpy()
+# dose_pred = dose_pred.cpu().detach().numpy()
 
 
 dose_pred = np.where(external_mask, dose_pred, 0.0)
