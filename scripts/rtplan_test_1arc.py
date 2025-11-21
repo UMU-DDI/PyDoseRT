@@ -85,6 +85,7 @@ optimizer = torch.optim.Adam([
 ])
 dose_tensor = torch.from_numpy(dose_volume).unsqueeze(0).to(dose_layer.device)
 for epoch in range(100):
+    optimizer.zero_grad()
     print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
     dose_pred = dose_layer(
         (leafs[:, :, :-1, :] + leafs[:, :, 1:, :]) / 2, 
@@ -96,23 +97,26 @@ for epoch in range(100):
     
     loss.backward()
     optimizer.step()
-    optimizer.zero_grad()
-    del dose_pred
-    
+
     print(f"Epoch {epoch}, MAE: {loss.item():.6f}")
+    # Critical: clean up
+    del dose_pred, loss
+    if epoch % 5 == 0:  # Every 5 epochs
+        torch.cuda.empty_cache()
+    
 # dose_pred = dose_pred.cpu().detach().numpy()
 
 
-dose_pred = np.where(external_mask, dose_pred, 0.0)
-# scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["CTV"] > 0)
-scale = np.quantile(dose_volume[masks["CTV"] > 0], 0.9) / np.quantile(dose_pred[0, masks["CTV"] > 0], 0.9)
-# scale = 5.51 / np.quantile(dose_pred[0, masks["PTVT_42.7"] > 0], 0.01)
-dose_pred = dose_pred * scale
-dose_max = max(dose_volume.max(), dose_pred.max())
+# dose_pred = np.where(external_mask, dose_pred, 0.0)
+# # scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["CTV"] > 0)
+# scale = np.quantile(dose_volume[masks["CTV"] > 0], 0.9) / np.quantile(dose_pred[0, masks["CTV"] > 0], 0.9)
+# # scale = 5.51 / np.quantile(dose_pred[0, masks["PTVT_42.7"] > 0], 0.01)
+# dose_pred = dose_pred * scale
+# dose_max = max(dose_volume.max(), dose_pred.max())
 
-mae_map = np.abs(dose_pred[0] - dose_volume)
-mae_losses = [np.mean(mae_map[mask]) for mask in [masks["CTV"] > 0, masks["PTVT_42.7"] > 0, masks["Bladder"] > 0, masks["FemoralHead_L"] > 0, masks["FemoralHead_R"] > 0]]
-mae_loss = np.mean(mae_losses)
+# mae_map = np.abs(dose_pred[0] - dose_volume)
+# mae_losses = [np.mean(mae_map[mask]) for mask in [masks["CTV"] > 0, masks["PTVT_42.7"] > 0, masks["Bladder"] > 0, masks["FemoralHead_L"] > 0, masks["FemoralHead_R"] > 0]]
+# mae_loss = np.mean(mae_losses)
 
 # vmax = 1
 # plt.figure()
@@ -173,7 +177,7 @@ mae_loss = np.mean(mae_losses)
 # plt.show()
 
 
-print(mae_loss)
+# print(mae_loss)
 # res = result_validation(patient, machine_config, treatment, dose_pred, leafs, jaws, mus, compute_gamma=True, compute_clinical_criteria=True)
 # print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
 # print(f"{res['gamma_pass_rate']}\t{res['mean_gamma']}")
