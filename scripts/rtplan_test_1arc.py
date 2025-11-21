@@ -84,14 +84,16 @@ optimizer = torch.optim.Adam([
     {'params': dose_layer.fluence_map_layer.learnable_kernel.parameters(), 'lr': 1e-3}
 ])
 dose_tensor = torch.from_numpy(dose_volume).unsqueeze(0).to(dose_layer.device)
+ct_tensor = torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device)
+leafs = (leafs[:, :, :-1, :] + leafs[:, :, 1:, :]) / 2
+mus = (mus[:, :-1] + mus[:, 1:]) / 2
+jaws = (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2
+
 for epoch in range(100):
     optimizer.zero_grad()
     print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
     dose_pred = dose_layer(
-        (leafs[:, :, :-1, :] + leafs[:, :, 1:, :]) / 2, 
-        (mus[:, :-1] + mus[:, 1:]) / 2, 
-        (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2, 
-        ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device)
+        ct_image=ct_tensor
     )
     loss = F.l1_loss(dose_pred, dose_tensor)
     
