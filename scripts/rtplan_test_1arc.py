@@ -47,7 +47,7 @@ patient, treatment = loaders.load_dicom(
             treatment_preset="src/pydose_rt/data/treatment_presets/vienna.json"
             )
 
-treatment.kernel_size = 25
+treatment.kernel_size = 55
 treatment.downsampling_factor = (1, 2, 2)
 treatment.device = device
 treatment.dtype = torch.float32
@@ -104,7 +104,6 @@ mus = (mus[:, :-1] + mus[:, 1:]) / 2
 jaws = (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2
 
 for epoch in range(10000):
-    print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
     dose_pred = dose_layer(
         leafs,
         mus,
@@ -117,7 +116,14 @@ for epoch in range(10000):
     optimizer.step()
     optimizer.zero_grad()
 
-    print(f"Epoch {epoch}, MAE: {loss.item():.6f}")
+    if epoch % 10 == 0:
+
+        print(f"Epoch {epoch}, MAE: {loss.item():.6f}")     
+        res = result_validation(patient, machine_config, treatment, dose_pred.cpu().detach().numpy(), leafs.cpu().detach().numpy(), jaws.cpu().detach().numpy(), mus.cpu().detach().numpy(), compute_gamma=True, compute_clinical_criteria=False)
+        print(f"{res['gamma_pass_rate']}\t{res['mean_gamma']}")
+        print("\n")
+        print(dose_layer.fluence_map_layer.learnable_kernel.kernel)
+        print(dose_layer.fluence_map_layer.learnable_kernel.scale)
     del dose_pred, loss
 # dose_pred = dose_pred.cpu().detach().numpy()
 
