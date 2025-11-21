@@ -48,7 +48,7 @@ patient, treatment = loaders.load_dicom(
             )
 
 treatment.kernel_size = 25
-treatment.downsampling_factor = (1, 1, 1)
+treatment.downsampling_factor = (1, 2, 2)
 treatment.device = device
 treatment.dtype = torch.float32
 
