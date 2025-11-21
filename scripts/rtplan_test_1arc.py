@@ -4,7 +4,6 @@ import torch.nn.functional as F
 sys.path.append('../')
 sys.path.append('../../')
 import pydicom
-from IPython.display import clear_output
 import time
 import math
 
