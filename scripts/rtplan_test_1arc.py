@@ -47,8 +47,8 @@ patient, treatment = loaders.load_dicom(
             treatment_preset="src/pydose_rt/data/treatment_presets/vienna.json"
             )
 
-treatment.kernel_size = 15
-treatment.downsampling_factor = (1, 1, 1)
+treatment.kernel_size = 55
+treatment.downsampling_factor = (1, 2, 2)
 treatment.device = device
 treatment.dtype = torch.float32
 
