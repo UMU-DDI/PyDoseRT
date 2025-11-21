@@ -24,9 +24,15 @@ Classes:
 import torch
 import torch.nn as nn
 from pydose_rt.data import MachineConfig, TreatmentConfig
-from pydose_rt.physics.fluence.fluence_modeling import apply_source_penumbra, apply_mlc_scatter
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
 from pydose_rt.geometry.rotations import rotate_2d_images
+from pydose_rt.physics.fluence.fluence_modeling import (
+    apply_source_penumbra,
+    apply_mlc_scatter,
+    apply_head_scatter,
+    apply_tongue_and_groove,
+    LearnableFluenceKernel
+)
 
 
 
@@ -93,6 +99,11 @@ class FluenceMapLayer(nn.Module):
             dtype=self.dtype,
             device=self.device
         )  # [1, G] in radians
+
+        self.learnable_kernel = LearnableFluenceKernel(
+            kernel_size=15
+        )
+
 
     def forward(
         self, leaf_positions: torch.Tensor, 
@@ -165,16 +176,57 @@ class FluenceMapLayer(nn.Module):
         fluence_map = mask.permute(0, 3, 2, 1)
 
         # Apply MLC scatter tail (distance-dependent scatter from field edges)
-        fluence_map = apply_mlc_scatter(
-            fluence_map,
-            scatter_amplitude=self.machine_config.mlc_scatter_amplitude,
-            scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
-            pixel_size_mm=self.resolution[2]
-        )
+        # if self.machine_config.mlc_scatter_amplitude > 0:
+        #     fluence_map = apply_mlc_scatter(
+        #         fluence_map,
+        #         scatter_amplitude=self.machine_config.mlc_scatter_amplitude,
+        #         scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
+        #         pixel_size_mm=self.resolution[2]
+        #     )
 
-        # Apply source penumbra (geometric blur from finite source size)
-        fluence_map = apply_source_penumbra(fluence_map, source_size_mm=1.5, pixel_size_mm=self.resolution[2])
+        # # Apply tongue-and-groove effect at leaf boundaries
+        # if self.machine_config.tongue_groove_reduction > 0:
+        #     # Calculate leaf boundary positions in mm
+        #     leaf_boundaries_mm = []
+        #     if self.machine_config.leaf_widths is not None:
+        #         cumulative_pos = -self.treatment_config.field_size[0] / 2.0
+        #         for width in self.machine_config.leaf_widths[:-1]:  # Skip last boundary
+        #             cumulative_pos += width
+        #             leaf_boundaries_mm.append(cumulative_pos)
+        #     else:
+        #         # Uniform leaf widths
+        #         n_leaves = self.machine_config.number_of_leaf_pairs
+        #         leaf_width = self.treatment_config.field_size[0] / n_leaves
+        #         for i in range(1, n_leaves):
+        #             boundary_pos = -self.treatment_config.field_size[0] / 2.0 + i * leaf_width
+        #             leaf_boundaries_mm.append(boundary_pos)
+
+        #     fluence_map = apply_tongue_and_groove(
+        #         fluence_map,
+        #         leaf_boundaries_mm=leaf_boundaries_mm,
+        #         field_size_mm=self.treatment_config.field_size[0],
+        #         tg_reduction=self.machine_config.tongue_groove_reduction,
+        #         tg_width_mm=self.machine_config.tongue_groove_width_mm,
+        #         pixel_size_mm=self.resolution[0]
+        #     ).to(self.dtype)
+
+        # # Apply source penumbra (geometric blur from finite source size)
+        # fluence_map = apply_source_penumbra(
+        #     fluence_map, 
+        #     source_size_mm=self.machine_config.source_size_mm, 
+        #     pixel_size_mm=self.resolution[2]
+        # ).to(self.dtype)
+
+        # # Apply head scatter (long-range scatter from linac head)
+        # if self.machine_config.head_scatter_amplitude > 0:
+        #     fluence_map = apply_head_scatter(
+        #         fluence_map,
+        #         scatter_amplitude=self.machine_config.head_scatter_amplitude,
+        #         scatter_range_mm=self.machine_config.head_scatter_range_mm,
+        #         pixel_size_mm=self.resolution[2]
+        #     ).to(self.dtype)
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
+        fluence_map = self.learnable_kernel(fluence_map)
 
         # Apply collimator rotation (beam limiting device angle)
         # This rotates the fluence map in-plane before projection to 3D

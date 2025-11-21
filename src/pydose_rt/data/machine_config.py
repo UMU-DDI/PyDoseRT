@@ -82,6 +82,26 @@ class MachineConfig(BaseSettings):
         default=0.7,
         description="Linear attenuation coefficient (1/cm) for the MLC material",
     )
+    source_size_mm: float = Field(
+        default=1.5,
+        description="Source size for penumbra calculations (in mm)",
+    )
+    head_scatter_amplitude: float = Field(
+        default=0.05,
+        description="Head scatter amplitude (unitless, typical: 0.03-0.05)",
+    )
+    head_scatter_range_mm: float = Field(
+        default=150.0,
+        description="Head scatter characteristic decay distance in mm (typical: 100-200)",
+    )
+    tongue_groove_reduction: float = Field(
+        default=0.08,
+        description="Tongue-and-groove fractional reduction at leaf boundaries (typical: 0.05-0.10)",
+    )
+    tongue_groove_width_mm: float = Field(
+        default=1.0,
+        description="Width of tongue-and-groove region in mm (typical: 1-2)",
+    )
 
     tpr_20_10: float = Field(description="The tissue phantom ratio TPR20/10")
     mean_photon_energy_MeV: float = Field(
