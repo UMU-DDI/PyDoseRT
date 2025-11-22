@@ -71,16 +71,13 @@ class MachineConfig(BaseSettings):
         default=30.0,
         description="Characteristic decay distance for MLC scatter tail in mm (typical: 20-50)",
     )
+    mlc_transmission: float = Field(
+        default=0.015,
+        description="MLC transmission that leaks into closed areas.",
+    )
     oar_coeffs: tuple[float, float, float] = Field(
         default=(1.0, -1e-4, 2.5e-7),
         description="Off-axis ratio polynomial coefficients (c0, c2, c4)",
-    )
-    mlc_thickness: float = Field(
-        default=6.8, description="MLC physical thickness along beam axis in cm"
-    )
-    mlc_mu: float = Field(
-        default=0.0,
-        description="Linear attenuation coefficient (1/cm) for the MLC material",
     )
     source_size_mm: float = Field(
         default=1.5,
@@ -157,10 +154,6 @@ class MachineConfig(BaseSettings):
         merged = {**preset_values, **data}
         return merged
 
-    @computed_field(repr=False)
-    @property
-    def mlc_transmission(self) -> float:
-        return math.exp(-self.mlc_mu * self.mlc_thickness)
 
     @computed_field(repr=False)
     @property
