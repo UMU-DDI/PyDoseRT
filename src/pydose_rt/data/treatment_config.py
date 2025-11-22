@@ -147,7 +147,7 @@ class TreatmentConfig(BaseModel):
         description="Kernel size to use during convolution",
     )
     fluence_kernel_size: int = Field(
-        default=15,
+        default=0,
         description="Kernel size for trainable fluence map",
     )
     field_size: tuple[int, int] = Field(
