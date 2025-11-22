@@ -45,15 +45,13 @@ class Phantom(Patient):
     def __init__(
         self,
         ct_array: np.array,
-        voxel_spacing_mm: tuple[float, float, float],
-        patient_id: Optional[str] = "Phantom"
+        voxel_spacing_mm: tuple[float, float, float]
     ):
         super().__init__(
             ct_array=ct_array,
             structures={},
             dose=None,
-            voxel_spacing_mm=voxel_spacing_mm,
-            patient_id=patient_id
+            voxel_spacing_mm=voxel_spacing_mm
         )
     
     @classmethod
@@ -69,8 +67,7 @@ class Phantom(Patient):
 
         return cls(
             ct_array=ct_array,
-            voxel_spacing_mm=spacing,
-            patient_id="",
+            voxel_spacing_mm=spacing
         )
 
 
@@ -102,6 +99,5 @@ class Phantom(Patient):
 
         return cls(
             ct_array=ct_array,
-            voxel_spacing_mm=spacing,
-            patient_id="",
+            voxel_spacing_mm=spacing
         )

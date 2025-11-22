@@ -10,7 +10,7 @@ from pydose_rt.utils.utils import sample_tensor_nearest
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-do_plot = False
+do_plot = True
 
 mlc_scatter_amplitudes = [0.07, 0.075, 0.08]
 mlc_scatter_range_mms = [80, 90, 100, 110]
