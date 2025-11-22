@@ -175,20 +175,14 @@ class FluenceMapLayer(nn.Module):
             mask *= jaw_mask
 
         fluence_map = mask.permute(0, 3, 2, 1)
+        if self.machine_config.mlc_transmission > 0.0:
+            fluence_map = torch.maximum(fluence_map, 
+                                        torch.tensor(self.machine_config.mlc_transmission))
 
         if self.treatment_config.fluence_kernel_size > 0:
             fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
             fluence_map = self.learnable_kernel(fluence_map)
         else:
-            # Apply MLC scatter tail (distance-dependent scatter from field edges)
-            if self.machine_config.mlc_scatter_amplitude > 0:
-                fluence_map = apply_mlc_scatter(
-                    fluence_map,
-                    scatter_amplitude=self.machine_config.mlc_scatter_amplitude,
-                    scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
-                    pixel_size_mm=1.0
-                )
-
             # Apply tongue-and-groove effect at leaf boundaries
             if self.machine_config.tongue_groove_reduction > 0:
                 # Calculate leaf boundary positions in mm
@@ -221,6 +215,15 @@ class FluenceMapLayer(nn.Module):
                 source_size_mm=self.machine_config.source_size_mm, 
                 pixel_size_mm=1.0
             ).to(self.dtype)
+
+            # Apply MLC scatter tail (distance-dependent scatter from field edges)
+            if self.machine_config.mlc_scatter_amplitude > 0:
+                fluence_map = apply_mlc_scatter(
+                    fluence_map,
+                    scatter_amplitude=self.machine_config.mlc_scatter_amplitude,
+                    scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
+                    pixel_size_mm=1.0
+                )
 
             # Apply head scatter (long-range scatter from linac head)
             if self.machine_config.head_scatter_amplitude > 0:
