@@ -221,11 +221,7 @@ class DoseEngine(nn.Module):
         mus: torch.Tensor,
         jaw_positions: torch.Tensor = None,
         ct_image: torch.Tensor = None,
-        single_cp: int = None,
-        leaf_x: float = 0.0,
-        leaf_y: float = 0.0,
-        jaw_x: float = 0.0,
-        jaw_y: float = 0.0,
+        single_cp: int = None
     ) -> torch.Tensor:
         """
         Runs the full dose calculation pipeline for a batch of CT images and beam parameters.
@@ -273,7 +269,7 @@ class DoseEngine(nn.Module):
                 leaf_positions, mus, jaw_positions
             )
 
-            batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions, leaf_x, leaf_y, jaw_x, jaw_y)
+            batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
 
             if self.crop_volume:
                 h_min_idx, h_max_idx, w_min_idx, w_max_idx = self._compute_crop_indices(
