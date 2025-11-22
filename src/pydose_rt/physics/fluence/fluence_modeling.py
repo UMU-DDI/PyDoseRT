@@ -129,7 +129,8 @@ def apply_mlc_scatter(fluence, scatter_amplitude=0.02, scatter_range_mm=30.0, pi
     # Only add scatter to blocked regions (not open regions)
     # Use (1 - fluence) as mask: ~0 in open (no addition), ~1 in blocked (full scatter)
     # This ensures open field stays at 100%, while blocked regions get scatter tail
-    fluence_with_scatter = fluence + scatter_amplitude * scatter_contribution
+    blocked_region_mask = 1.0 - fluence
+    fluence_with_scatter = fluence + scatter_amplitude * scatter_contribution * blocked_region_mask
 
 
     return fluence_with_scatter
