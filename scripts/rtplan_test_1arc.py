@@ -102,7 +102,7 @@ leafs = leafs.to(dose_layer.dtype).to(dose_layer.device)
 mus = mus.to(dose_layer.dtype).to(dose_layer.device)
 jaws = jaws.to(dose_layer.dtype).to(dose_layer.device)
 
-lr = 10**np.random.uniform(-1, 0)
+lr = 0.3
 experiment.log_parameter("lr", lr)
 experiment.log_parameter("fluence_kernel_size", treatment.fluence_kernel_size)
 optimizer = torch.optim.Adam([
@@ -122,7 +122,7 @@ for epoch in range(100000):
         jaws,
         ct_image=ct_tensor
     )
-    loss = torch.mean(torch.square(dose_pred - dose_tensor)[0, masks["External"] > 0]) + torch.mean(torch.square(dose_pred - dose_tensor)[0, masks["CTV"] > 0]) + torch.mean(torch.square(dose_pred - dose_tensor)[0, masks["PTVT_42.7"] > 0])
+    loss = torch.mean(torch.abs(dose_pred - dose_tensor)[0, masks["External"] > 0]) + torch.mean(torch.abs(dose_pred - dose_tensor)[0, masks["CTV"] > 0]) + torch.mean(torch.abs(dose_pred - dose_tensor)[0, masks["PTVT_42.7"] > 0])
     
     loss.backward()
     optimizer.step()
