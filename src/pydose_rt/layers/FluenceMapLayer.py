@@ -186,7 +186,7 @@ class FluenceMapLayer(nn.Module):
                     fluence_map,
                     scatter_amplitude=self.machine_config.mlc_scatter_amplitude,
                     scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
-                    pixel_size_mm=self.resolution[2]
+                    pixel_size_mm=1.0
                 )
 
             # Apply tongue-and-groove effect at leaf boundaries
@@ -212,14 +212,14 @@ class FluenceMapLayer(nn.Module):
                     field_size_mm=self.treatment_config.field_size[0],
                     tg_reduction=self.machine_config.tongue_groove_reduction,
                     tg_width_mm=self.machine_config.tongue_groove_width_mm,
-                    pixel_size_mm=self.resolution[0]
+                    pixel_size_mm=1.0
                 ).to(self.dtype)
 
             # Apply source penumbra (geometric blur from finite source size)
             fluence_map = apply_source_penumbra(
                 fluence_map, 
                 source_size_mm=self.machine_config.source_size_mm, 
-                pixel_size_mm=self.resolution[2]
+                pixel_size_mm=1.0
             ).to(self.dtype)
 
             # Apply head scatter (long-range scatter from linac head)
@@ -228,7 +228,7 @@ class FluenceMapLayer(nn.Module):
                     fluence_map,
                     scatter_amplitude=self.machine_config.head_scatter_amplitude,
                     scatter_range_mm=self.machine_config.head_scatter_range_mm,
-                    pixel_size_mm=self.resolution[2]
+                    pixel_size_mm=1.0
                 ).to(self.dtype)
             fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 
