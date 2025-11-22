@@ -51,18 +51,6 @@ class MachineConfig(BaseSettings):
         default=600.0,
         description="The maximum dynamic arc dose rate defined in MU/min.",
     )
-    is_fff: bool = Field(
-        default=True,
-        description="Boolean to define if the setup is flattening filter free. (Flattening filters not yet implemented)",
-    )
-    focal_spot_sigma: float = Field(
-        default=0.15,
-        description="Effective sigma of the focal spot (source blur) in cm",
-    )
-    focus_to_collimator: float = Field(
-        default=49.7,
-        description="Distance from source to collimator (or isocenter) in cm",
-    )
     mlc_scatter_amplitude: float = Field(
         default=0.0,
         description="Relative MLC scatter contribution at field edge (unitless, typical: 0.01-0.03)",
@@ -70,14 +58,6 @@ class MachineConfig(BaseSettings):
     mlc_scatter_range_mm: float = Field(
         default=30.0,
         description="Characteristic decay distance for MLC scatter tail in mm (typical: 20-50)",
-    )
-    mlc_transmission: float = Field(
-        default=0.015,
-        description="MLC transmission that leaks into closed areas.",
-    )
-    oar_coeffs: tuple[float, float, float] = Field(
-        default=(1.0, -1e-4, 2.5e-7),
-        description="Off-axis ratio polynomial coefficients (c0, c2, c4)",
     )
     source_size_mm: float = Field(
         default=1.5,

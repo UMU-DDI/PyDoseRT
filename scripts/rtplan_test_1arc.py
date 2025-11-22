@@ -48,7 +48,6 @@ patient, treatment = loaders.load_dicom(
             )
 
 treatment.kernel_size = 151
-
 treatment.downsampling_factor = (1, 1, 1)
 treatment.device = device
 treatment.dtype = torch.float16
@@ -71,7 +70,6 @@ ct_volume = ct_image
 external_mask = masks["External"] > 0
 ct_volume = np.where(external_mask, ct_volume, -1000.0)
 dose_volume = np.where(external_mask, dose_volume, 0.0)
-# ct_volume = np.where(np.logical_not(external_mask), ct_volume, 0.0)
 
 ct_slices = np.array(np.expand_dims(ct_volume, 0))
 results = []
@@ -171,6 +169,7 @@ mae_loss = np.mean(mae_losses)
 # plt.colorbar()
 # plt.show()
 
+print(scale)
 print(mae_loss)
 res = result_validation(patient, machine_config, treatment, dose_pred, leafs, jaws, mus, compute_gamma=True, compute_clinical_criteria=True)
 print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
