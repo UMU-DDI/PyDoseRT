@@ -20,7 +20,7 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
     for mlc_scatter_range_mm in mlc_scatter_range_mms:
         results =  []
         for field_size in field_sizes:
-            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_6MV.json", ct_array_shape=(500, 500, 500), resolution=(1.0, 1.0, 1.0), number_of_leaf_pairs=60, mlc_scatter_amplitude=mlc_scatter_amplitude, mlc_scatter_range_mm=mlc_scatter_range_mm)
+            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", ct_array_shape=(500, 500, 500), resolution=(1.0, 1.0, 1.0), number_of_leaf_pairs=60, mlc_scatter_amplitude=mlc_scatter_amplitude, mlc_scatter_range_mm=mlc_scatter_range_mm)
             treatment_config = TreatmentConfig(field_size=(400, 400), number_of_cps=1, starting_angle=0, iso_center=(0.0, 150.0, 0.0), kernel_size=501)
             phantom = Phantom.from_uniform_water(shape=machine_config.ct_array_shape, spacing=machine_config.resolution)
             dose_engine = DoseEngine(
@@ -40,7 +40,7 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
                 ct_image=phantom.ct_array.to(treatment_config.dtype).to(treatment_config.device))
             dose = dose
 
-            measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/6 MV Photons/TrueBeam X6 squares OK.asc", coord_map=("X", "Z", "Y"))
+            measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
             measurements = [measurement for measurement in measurements if measurement["header_dict"]["FSZ"] == [str(field_size), str(field_size)]]
             # measurements = [measurement for measurement in measurements if (measurement["header_dict"]["STS"][2], measurement["header_dict"]["EDS"][2]) == ('100.0', '100.0')]
 
