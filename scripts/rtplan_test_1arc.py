@@ -98,8 +98,8 @@ dose_pred = dose_pred.cpu().detach().numpy()
 
 
 dose_pred = np.where(external_mask, dose_pred, 0.0)
-# scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["CTV"] > 0)
-scale = np.quantile(dose_volume[masks["CTV"] > 0], 0.5) / np.quantile(dose_pred[0, masks["CTV"] > 0], 0.5)
+# scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["PTVT_42.7"] > 0)
+scale = np.quantile(dose_volume[masks["PTVT_42.7"] > 0], 0.5) / np.quantile(dose_pred[0, masks["PTVT_42.7"] > 0], 0.5)
 # scale = 5.51 / np.quantile(dose_pred[0, masks["PTVT_42.7"] > 0], 0.01)
 dose_pred = dose_pred * scale
 dose_max = max(dose_volume.max(), dose_pred.max())
@@ -111,7 +111,7 @@ img = nib.Nifti1Image(dose_pred[0], affine)
 nib.save(img, "out/dose_pred.nii.gz")   # or "output.nii"
 
 mae_map = np.abs(dose_pred[0] - dose_volume)
-mae_losses = [np.mean(mae_map[mask]) for mask in [masks["CTV"] > 0, masks["PTVT_42.7"] > 0, masks["Bladder"] > 0, masks["FemoralHead_L"] > 0, masks["FemoralHead_R"] > 0]]
+mae_losses = [np.mean(mae_map[mask]) for mask in [masks["PTVT_42.7"] > 0, masks["Bladder"] > 0, masks["FemoralHead_L"] > 0, masks["FemoralHead_R"] > 0]]
 mae_loss = np.mean(mae_losses)
 
 # vmax = 1
