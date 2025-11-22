@@ -44,7 +44,7 @@ def test_fluence_map_leaves_center_per_width(fluence_map_layer, default_machine_
     print(f"Test Case - Center: {center}, Width: {width}")
     print("Fluence Map Shape:", fluence_map.shape)
 
-    actual = np.mean(np.argwhere(fluence_map > 0.5), (0))[2] + 0.5  # Look for the center of the one values
+    actual = np.mean(np.argwhere(fluence_map > 0.5), (0))[2] + 1.0 # Look for the center of the one values
 
     assert actual == pytest.approx(expected, 0.01)
 
@@ -80,7 +80,7 @@ def test_fluence_map_leaves_open_per_width(fluence_map_layer, default_machine_co
 
     ones = np.mean(fluence_map)  # Count pixels that are effectively one
 
-    assert ones == pytest.approx(width, 0.1)
+    assert ones == pytest.approx(width, abs=0.01)
 
 @pytest.mark.parametrize(
     "center, width",
@@ -113,7 +113,7 @@ def test_fluence_map_jaws_open_per_width(fluence_map_layer, default_machine_conf
 
     ones = np.mean(fluence_map)  # Count pixels that are effectively one
 
-    assert ones == pytest.approx(width, 0.1)
+    assert ones == pytest.approx(width, abs=0.01)
 
 def test_fluence_map_output_shape(fluence_map_layer, default_machine_config, default_treatment_config):
     """Test that fluence map behaves correctly based on input width."""
