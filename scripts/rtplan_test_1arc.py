@@ -104,11 +104,10 @@ jaws = jaws.to(dose_layer.dtype).to(dose_layer.device)
 
 lr = 10**np.random.uniform(-1, 0)
 experiment.log_parameter("lr", lr)
+experiment.log_parameter("fluence_kernel_size", treatment.fluence_kernel_size)
 optimizer = torch.optim.Adam([
     {'params': dose_layer.fluence_map_layer.learnable_kernel.parameters(),
-     'lr': lr,
-     "fluence_kernel_size": treatment.fluence_kernel_size}
-])
+     'lr': lr}])
 
 dose_tensor = torch.from_numpy(dose_volume).unsqueeze(0).to(dose_layer.device)
 ct_tensor = torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device)
