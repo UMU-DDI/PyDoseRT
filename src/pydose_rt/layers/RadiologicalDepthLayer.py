@@ -179,10 +179,15 @@ class RadiologicalDepthLayer(nn.Module):
                     dtype=self.dtype
                 ).view(1, 1, 1)
 
+
             # Integrate density along each line (cumulative sum) and scale by step size
             # Each angle gets its own physically correct step size
-            # This accumulates radiological depth from source (entrance) toward patient interior
+            # This accumulates radiological depth from source (entrance) toward patient interior            #
+            # cumsum gives depth at EXIT of each voxel: sum(density[0:i+1]) * step
+            # For dose calculation at voxel CENTER, we need: sum(density[0:i]) * step + density[i] * step/2
+            # This equals: cumsum[i] - density[i] * step/2
             cumsum = torch.cumsum(density, dim=-1) * step_sizes  # shape: [B, G, P]
+            cumsum = cumsum + density * step_sizes * 0.5 # Adjust to voxel center
 
             # If we extracted from full-sized CT, downsample the radiological depths
             if self.downsample_depths:
