@@ -79,7 +79,7 @@ class MachineConfig(BaseSettings):
         default=6.8, description="MLC physical thickness along beam axis in cm"
     )
     mlc_mu: float = Field(
-        default=0.7,
+        default=0.0,
         description="Linear attenuation coefficient (1/cm) for the MLC material",
     )
     source_size_mm: float = Field(
@@ -87,7 +87,7 @@ class MachineConfig(BaseSettings):
         description="Source size for penumbra calculations (in mm)",
     )
     head_scatter_amplitude: float = Field(
-        default=0.05,
+        default=0.0,
         description="Head scatter amplitude (unitless, typical: 0.03-0.05)",
     )
     head_scatter_range_mm: float = Field(
@@ -95,7 +95,7 @@ class MachineConfig(BaseSettings):
         description="Head scatter characteristic decay distance in mm (typical: 100-200)",
     )
     tongue_groove_reduction: float = Field(
-        default=0.08,
+        default=0.0,
         description="Tongue-and-groove fractional reduction at leaf boundaries (typical: 0.05-0.10)",
     )
     tongue_groove_width_mm: float = Field(
