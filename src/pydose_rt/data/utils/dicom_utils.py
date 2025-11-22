@@ -209,7 +209,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
             starting_angle = beams[0]["angle"]
             final_angle = beams[-1]["angle"]
         else:
-            starting_angle = (beams[0]["angle"] + beams[0]["angle"]) / 2
+            starting_angle = (beams[0]["angle"] + beams[1]["angle"]) / 2
             final_angle = (beams[-1]["angle"] + beams[-2]["angle"]) / 2
 
         parameters[beam_index] = (leafs, jaws, mus, clockwise, starting_angle, final_angle, bld_angle, number_of_fractions)
