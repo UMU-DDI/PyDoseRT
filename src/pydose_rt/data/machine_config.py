@@ -64,7 +64,7 @@ class MachineConfig(BaseSettings):
         description="Distance from source to collimator (or isocenter) in cm",
     )
     mlc_scatter_amplitude: float = Field(
-        default=0.1,
+        default=0.0,
         description="Relative MLC scatter contribution at field edge (unitless, typical: 0.01-0.03)",
     )
     mlc_scatter_range_mm: float = Field(
