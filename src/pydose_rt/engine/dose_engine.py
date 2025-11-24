@@ -391,6 +391,8 @@ class DoseEngine(nn.Module):
             Dose tensor [1, H, D, W]
         """
         # Add batching dimension to parameters
+        if ct_image.dim() == 3:
+            ct_image = ct_image.unsqueeze(0)
         leaf_positions = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaw_positions = beam_sequence.jaw_positions.unsqueeze(0)
@@ -405,7 +407,8 @@ class DoseEngine(nn.Module):
     def compute_single_beam(
         self,
         beam: Beam,
-        ct_image: torch.Tensor
+        ct_image: torch.Tensor,
+        return_intermediates: bool = False
     ) -> torch.Tensor:
         """
         Compute dose from a single Beam.
@@ -421,19 +424,21 @@ class DoseEngine(nn.Module):
 
         # Convert from Beam format to forward() format:
         # [N, 2] -> [2, N] -> [2, 1, N] -> [1, 2, 1, N]
+        if ct_image.dim() == 3:
+            ct_image = ct_image.unsqueeze(0)
         leaf_positions = beam.leaf_positions.unsqueeze(0).unsqueeze(0)
         jaw_positions = beam.jaw_positions.unsqueeze(0).unsqueeze(0)
         mus = beam.mu.unsqueeze(0).unsqueeze(0)
 
-        intermediate_data = self.forward(
+        data = self.forward(
             leaf_positions=leaf_positions,
             mus=mus,
             jaw_positions=jaw_positions,
             ct_image=ct_image,
-            return_intermediates=True
+            return_intermediates=return_intermediates
         )
 
-        return intermediate_data
+        return data
 
     def compute_sequential(
         self,

@@ -19,7 +19,6 @@ dist/
 models/Output/
 Plangenerator/videos
 Plangenerator/checkpoints
-*.npz
 *.mat
 *.zip
 *.zip*
