@@ -3,6 +3,8 @@ from re import M
 import sys
 import os
 import torch.nn.functional as F
+
+from pydose_rt.data.optimization_config import OptimizationConfig
 sys.path.append('../')
 sys.path.append('../../')
 import pydicom
@@ -12,7 +14,7 @@ import math
 import nibabel as nib
 
 from pydicom.data import get_testdata_file
-from pydose_rt.data import MachineConfig, Patient, TreatmentConfig, loaders
+from pydose_rt.data import MachineConfig, Patient, OptimizationConfig, loaders
 # from pydose_rt.data import MachineConfig
 from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
 from pydose_rt.utils.utils import mae_optimal_scale
@@ -61,13 +63,8 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
                     use_delivery=True
                     )
 
-        treatment = TreatmentConfig(
-            preset="src/pydose_rt/data/treatment_presets/umea.json",
-            iso_center=(0, 0, 0),
-            kernel_size=25,
-            downsampling_factor=(1, 1, 1),
-            device=device,
-            dtype=torch.float16
+        treatment = OptimizationConfig(
+            preset="src/pydose_rt/data/treatment_presets/umea.json"
         )
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
