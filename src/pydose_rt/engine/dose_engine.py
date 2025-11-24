@@ -375,7 +375,7 @@ class DoseEngine(nn.Module):
             else:
                 return batched_accumulated_dose
 
-    def compute_beam_sequnce(
+    def compute_beam_sequence(
         self,
         beam_sequence: BeamSequence,
         ct_image: torch.Tensor,

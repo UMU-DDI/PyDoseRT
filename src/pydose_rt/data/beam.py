@@ -334,6 +334,99 @@ class BeamSequence:
         )
 
     @classmethod
+    def prepare_for_engine(
+        cls,
+        leaf_positions: torch.Tensor,
+        mus: torch.Tensor,
+        jaw_positions: torch.Tensor,
+        dose_engine: 'DoseEngine',
+    ) -> BeamSequence:
+        """
+        Create a BeamSequence from tensors, filling metadata from the dose engine.
+        This is useful for deep learning applications where you have predicted or
+        optimized tensors but don't have the original beam specifications. The dose
+        engine provides all necessary geometric and machine parameters.
+        Args:
+            leaf_positions: MLC positions [CP, N, 2] where N is number of leaf pairs
+            mus: Monitor units [CP] where CP is number of control points
+            jaw_positions: Jaw positions [CP, 2] where 2=(lower, upper)
+            dose_engine: DoseEngine instance to extract metadata from
+        Returns:
+            BeamSequence ready to use with the dose engine (gradients flow through)
+        Raises:
+            ValueError: If tensor shapes don't match dose engine expectations
+        Example:
+            >>> # After training a model that predicts beam parameters
+            >>> predicted_leafs = model(input)  # [CP, N, 2]
+            >>> predicted_mus = mu_model(input)  # [CP]
+            >>> predicted_jaws = jaw_model(input)  # [CP, 2]
+            >>>
+            >>> beam_seq = BeamSequence.prepare_for_engine(
+            ...     leaf_positions=predicted_leafs,
+            ...     mus=predicted_mus,
+            ...     jaw_positions=predicted_jaws,
+            ...     dose_engine=engine
+            ... )
+            >>> dose = engine.compute_beam_sequence(beam_seq, ct_image)
+        """
+        # Validate shapes
+        expected_cp = dose_engine.number_of_cps
+        expected_leafs = dose_engine.machine_config.number_of_leaf_pairs
+
+        # Check leaf_positions shape [CP, N, 2]
+        if leaf_positions.dim() != 3:
+            raise ValueError(
+                f"leaf_positions must be 3D [CP, N, 2], got {leaf_positions.dim()}D: {leaf_positions.shape}"
+            )
+        if leaf_positions.shape[0] != expected_cp:
+            raise ValueError(
+                f"leaf_positions CP count mismatch: expected {expected_cp}, got {leaf_positions.shape[0]}"
+            )
+        if leaf_positions.shape[1] != expected_leafs:
+            raise ValueError(
+                f"leaf_positions leaf pair count mismatch: expected {expected_leafs}, got {leaf_positions.shape[1]}"
+            )
+        if leaf_positions.shape[2] != 2:
+            raise ValueError(
+                f"leaf_positions last dimension must be 2 (left, right), got {leaf_positions.shape[2]}"
+            )
+
+        # Check mus shape [CP]
+        if mus.dim() != 1:
+            raise ValueError(
+                f"mus must be 1D [CP], got {mus.dim()}D: {mus.shape}"
+            )
+        if mus.shape[0] != expected_cp:
+            raise ValueError(
+                f"mus CP count mismatch: expected {expected_cp}, got {mus.shape[0]}"
+            )
+
+        # Check jaw_positions shape [CP, 2]
+        if jaw_positions.dim() != 2:
+            raise ValueError(
+                f"jaw_positions must be 2D [CP, 2], got {jaw_positions.dim()}D: {jaw_positions.shape}"
+            )
+        if jaw_positions.shape[0] != expected_cp:
+            raise ValueError(
+                f"jaw_positions CP count mismatch: expected {expected_cp}, got {jaw_positions.shape[0]}"
+            )
+        if jaw_positions.shape[1] != 2:
+            raise ValueError(
+                f"jaw_positions last dimension must be 2 (lower, upper), got {jaw_positions.shape[1]}"
+            )
+
+        return cls.from_tensors(
+            leaf_positions=leaf_positions,
+            mus=mus,
+            jaw_positions=jaw_positions,
+            gantry_angles=dose_engine.gantry_angles,
+            beam_limiting_device_angles=dose_engine.collimator_angles,
+            iso_center=dose_engine.iso_center,
+            sid=dose_engine.SID,
+            field_size=dose_engine.field_size,
+        )
+    
+    @classmethod
     def from_tensors(
         cls,
         leaf_positions: torch.Tensor,

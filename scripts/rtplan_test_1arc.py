@@ -64,14 +64,14 @@ for beam_sequence in beam_sequences:
         device=device, 
         downsampling_factor=(1, 1, 1),
         kernel_size=25,
-        beam_sequence=beam_sequence
+        beam_input=beam_sequence
     )
     dose_layer.eval()
     patient = patient.to(dose_layer.device).to(dose_layer.dtype)
     ct_volume = patient.get_masked_ct("External").unsqueeze(0)
     dose_volume = patient.get_masked_dose("External").unsqueeze(0)
     beam_sequence = beam_sequence.to(dose_layer.device).to(dose_layer.dtype)
-    dose_pred = dose_layer.forward_beam_sequence(beam_sequence, ct_volume)
+    dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_volume)
     doses.append(dose_pred.detach())
 dose_pred = sum(doses)
 dose_pred = torch.where(patient.structures["External"], dose_pred, 0.0)
