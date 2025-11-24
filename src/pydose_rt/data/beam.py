@@ -57,9 +57,10 @@ class Beam:
         Create a single beam at a specific gantry angle.
 
         Args:
-            gantry_angle_deg: Gantry angle in degrees
-            machine_config: Machine configuration with leaf pair count
+            gantry_angle_deg: Gantry angle in degrees            
+            number_of_leaf_pairs: Number of MLC leaf pairs
             field_size_mm: Field size (width, height) in mm. Default (400, 400)
+            iso_center: Isocenter position (x, y, z) in mm. Default (0, 0, 0)0)
             device: PyTorch device
             dtype: Data type for tensors
             requires_grad: Whether tensors require gradients (for optimization)
@@ -67,9 +68,9 @@ class Beam:
         Returns:
             Beam with initialized parameters (fully open field)
 
-        Example:
-            >>> beam = Beam.create(90.0, machine_config, requires_grad=True)
-            >>> dose = dose_engine.forward_single_beam(beam, ct_image)
+        Example:            
+            >>> beam = Beam.create(90.0, number_of_leaf_pairs=60, requires_grad=True)
+            >>> dose = dose_engine.compute_single_beam(beam, ct_image)
             >>> loss.backward()  # Gradients flow to beam parameters
         """
         field_w, field_h = field_size_mm
@@ -266,7 +267,7 @@ class BeamSequence:
             iso_center: Isocenter position (x, y, z) in mm
             beam_limiting_device_angles: BLD angles in degrees, or None for all zeros
             sid: Source to isocenter distance in mm
-            field_openness: How open the field is (0.0=closed, 1.0=fully open)
+            open_field_size: Size of the open field in mm (0.0=closed)
             device: PyTorch device
             dtype: Data type for tensors
             requires_grad: Whether tensors require gradients
@@ -280,8 +281,8 @@ class BeamSequence:
             ...     gantry_angles=angles,
             ...     number_of_leaf_pairs=60,
             ...     field_size=(400, 400),
-            ...     iso_center=(0, 0, 0),
-            ...     field_openness=0.5,  # Half open
+            ...     iso_center=(0, 0, 0),            
+            ...     open_field_size=200.0,  # 200mm open field
             ... )
         """
         # Convert gantry angles to tensor in radians
