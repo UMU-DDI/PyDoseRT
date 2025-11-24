@@ -54,7 +54,7 @@ if remote:
     downsampling_factor = (1, 2, 2)
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
-    max_iter = 5
+    max_iter = 1000
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/{patient_name}")
 
