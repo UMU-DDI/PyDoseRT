@@ -402,7 +402,7 @@ def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_
 def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, beam_sequence, weights):
     losses = []
     relevant_masks = [
-        patient.structures["CTV"], 
+        patient.structures["CTVT"], 
         patient.structures["PTVT_42.7"], 
         patient.structures["External"]
     ]

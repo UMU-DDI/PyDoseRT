@@ -182,6 +182,15 @@ def print_results(
         coronal_zend = 124
         coronal_ystart = 64
         coronal_yend = 124
+    elif (preset == "gold-atlas"):
+        axial_z = 53
+        axial_xstart = 32
+        axial_xend = 162
+        coronal_x = 97
+        coronal_zstart = 32
+        coronal_zend = 162
+        coronal_ystart = 32
+        coronal_yend = 162
     else:
         raise Exception("Preset missing")
 

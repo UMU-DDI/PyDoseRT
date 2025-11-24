@@ -29,21 +29,24 @@ if (os.path.exists("/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/")):
 else:
     remote = False
 
+patient_name = "P01"
 if remote:
-    ct_folder = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21/"
-    rtstruct_path = next((f for f in Path(ct_folder).iterdir() if "RS" in f.name.upper() or "RTSTRUCT" in f.name.upper()), None)
-    rtplan_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
-    rtdose_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
+    base = Path(f"/mimer/NOBACKUP/groups/naiss2023-6-64/attila/GoldAtlasPlans/{patient_name}")
+
+    ct_folder = base / "[CT] Deformed CT"
+    rtplan_path = next((base / "[RP] CT").iterdir())
+    rtdose_path = next((base / "[RD] CT Dose").iterdir())
+    rtstruct_path = next((base / "[RS] RayStation").iterdir())
 
     patient, beam_sequence = loaders.load_dicom(
                 ct_folder=ct_folder, 
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
                 struct_path=rtstruct_path,
-                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"]
+                struct_names=["CTVT", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"]
                 )
     beam_sequence = beam_sequence[0].clone()
-    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/vienna.json")
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/gold-atlas.json")
 
     kernel_size = 25
     device = device
@@ -53,27 +56,29 @@ if remote:
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 1000
 else:
-    ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
-    rtstruct_path = next((f for f in Path(ct_folder).iterdir() if "RS" in f.name.upper() or "RTSTRUCT" in f.name.upper()), None)
-    rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
-    rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
+    base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/{patient_name}")
+
+    ct_folder = base / "[CT] Deformed CT"
+    rtplan_path = next((base / "[RP] CT").iterdir())
+    rtdose_path = next((base / "[RD] CT Dose").iterdir())
+    rtstruct_path = next((base / "[RS] RayStation").iterdir())
 
     patient, beam_sequence = loaders.load_dicom(
                 ct_folder=ct_folder, 
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
                 struct_path=rtstruct_path,
-                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"]
+                struct_names=["CTVT", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"]
                 )
     beam_sequence: BeamSequence = beam_sequence[0]
     beam_sequence = beam_sequence[::16].clone()
 
-    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/vienna.json")
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/gold-atlas.json")
 
     kernel_size = 3
     device = device
     dtype = torch.float32
-    downsampling_factor = (1, 4, 4)
+    downsampling_factor = (1, 2, 2)
 
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
@@ -255,7 +260,7 @@ for test_i in range(n_tests):
 
         experiment.log_asset_data(beam_sequence.leaf_positions.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
-        print_results(experiment, optimization, raw_losses, dose_target, beam_sequence, None, None, None, best_results, dose_pred, ct_volume, [mask.unsqueeze(0) for mask in list(patient.structures.values())], mae_loss, dose_max=7.0)
+        print_results(experiment, optimization, raw_losses, dose_target, beam_sequence, None, None, None, best_results, dose_pred, ct_volume, [mask.unsqueeze(0) for mask in list(patient.structures.values())], mae_loss, preset="gold-atlas", dose_max=7.0)
         make_animation(experiment, machine_config, patient, engine, beam_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
