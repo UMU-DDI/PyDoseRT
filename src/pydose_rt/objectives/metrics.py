@@ -203,6 +203,7 @@ def validate_clinical_criteria(patient: Patient,
         dose = pred_dose[0, ...]
     else:
         dose = pred_dose
+    dose = dose.cpu().detach().numpy()
 
     # Calculate voxel volume in cc
     voxel_spacing_mm = patient.voxel_spacing_mm
@@ -218,7 +219,7 @@ def validate_clinical_criteria(patient: Patient,
         if structure_name not in patient.structures:
             continue
 
-        structure_mask = patient.structures[structure_name]
+        structure_mask = patient.structures[structure_name].cpu().detach().numpy() > 0
 
         structure_results = {
             'criteria': []
@@ -447,7 +448,7 @@ def result_validation(patient: Patient,
         
         # Compute dose cutoff value (10% of max dose)
         gamma_dose_ref = patient.dose.cpu().detach().numpy()
-        gamma_dose_eval = pred_dose[0, ...].cpu().detach().numpy()
+        gamma_dose_eval = pred_dose.cpu().detach().numpy()
         dose_cutoff = 10.0
         if global_normalisation is None:
             global_normalisation = gamma_dose_ref.max()

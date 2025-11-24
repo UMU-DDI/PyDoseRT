@@ -150,14 +150,6 @@ class MachineConfig(BaseSettings):
 
     @computed_field(repr=False)
     @property
-    def physical_size_ct(self) -> np.ndarray:
-        return np.multiply(
-            np.array(self.ct_array_shape, dtype=np.float32),
-            np.array(self.resolution, dtype=np.float32),
-        )
-
-    @computed_field(repr=False)
-    @property
     def fluence_profile(self) -> tuple[np.ndarray, np.ndarray]:
         return (
             np.array(

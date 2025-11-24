@@ -399,19 +399,24 @@ def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_
     ]
     return all_losses
 
-def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
+def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, beam_sequence, weights):
     losses = []
-    for index, mask in enumerate([_masks[0], _masks[1], _masks[-1]]):
-        losses.append(torch.mean(torch.abs((dose_true - dose_pred)[mask > 0])**2))
+    relevant_masks = [
+        patient.structures["CTV"], 
+        patient.structures["PTVT_42.7"], 
+        patient.structures["External"]
+    ]
+    for mask in relevant_masks:
+        losses.append(torch.mean(torch.abs((dose_true - dose_pred)[0, mask > 0])**2))
 
-    jaw_loss = torch.mean((torch.abs(leafs[:, :, 1:, :] - leafs[:, :, :-1, :]))**2)
-    bank_loss = leaf_range_loss(leafs, treatment)
+    jaw_loss = torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))**2)
+    bank_loss = leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap)
     losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
     losses.append(scale_loss(bank_loss, weights["leaf_reg_loss"]))
 
     return losses
 
-def leaf_range_loss(leafs, config, threshold_mm=150.0):
+def leaf_range_loss(leafs, field_size=400, threshold_mm=150.0):
     """
     Penalize leaf tip differences (max - min) that exceed threshold.
     
@@ -421,11 +426,11 @@ def leaf_range_loss(leafs, config, threshold_mm=150.0):
         threshold_mm: maximum allowed range in mm (default 150.0)
     """
     # Convert threshold from mm to normalized units
-    threshold_normalized = threshold_mm / config.field_size[0]
+    threshold_normalized = threshold_mm / field_size
     
     # Compute range (max - min) for each leaf bank
-    bank0_range = leafs[:, 0, :, :].max() - leafs[:, 0, :, :].min()
-    bank1_range = leafs[:, 1, :, :].max() - leafs[:, 1, :, :].min()
+    bank0_range = leafs[..., 0].max() - leafs[..., 0].min()
+    bank1_range = leafs[..., 1].max() - leafs[..., 1].min()
     
     # Penalize when range exceeds threshold
     # Using ReLU so we only penalize violations, and squaring for smooth gradients

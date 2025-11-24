@@ -269,23 +269,28 @@ def print_results(
     fig.tight_layout(rect=[0, 0, 1, 0.97])  # keep space for the suptitle
     
     if (out_path is None):
-        plt.show()
         if (experiment is not None):
             save_path = "out/exp.png"
             plt.savefig(save_path, dpi=150)
             experiment.log_figure(save_path, overwrite=True)
+        else:
+            plt.show()
     else:
         plt.savefig(out_path)
         if (experiment is not None):
             experiment.log_figure(out_path, overwrite=True)
         plt.close()
 
-def make_animation(experiment, optimization: OptimizationConfig, machine_config: MachineConfig, patient_data: Patient, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):
+def make_animation(experiment, 
+                   patient_data: Patient, 
+                   dose_layer: DoseEngine, 
+                   beam_sequence: BeamSequence, 
+                   dose_max=50.0):
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=dose_layer.dtype, device=dose_layer.device) > 0
-    ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=dose_layer.dtype, device=dose_layer.device)
+    mask_external = list(patient_data.structures.values())[-1]
+    ct_volume = patient_data.ct_array.unsqueeze(0)
     dose_layer.eval()
 
     # Get the base colormap (jet)
@@ -315,15 +320,12 @@ def make_animation(experiment, optimization: OptimizationConfig, machine_config:
         ax_depth = fig.add_subplot(gs[0, :])  # Depth profile spans both columns
         ax1 = fig.add_subplot(gs[1, 0])  # Fluence map
         ax2 = fig.add_subplot(gs[1, 1])  # CT with dose overlay
-        
+        beam = beam_sequence[cp_idx]
         # Get dose and map for current control point
         with torch.no_grad():
-            pred_dose, pred_map, pred_depths = dose_layer(
-                pred_mlc, 
-                pred_mus, 
-                jaw_positions=pred_jaws, 
-                ct_image=ct_volume,
-                single_cp=cp_idx
+            pred_dose, pred_map, pred_depths = dose_layer.compute_single_beam(
+                beam, 
+                ct_image=ct_volume
             )
         # pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))
         

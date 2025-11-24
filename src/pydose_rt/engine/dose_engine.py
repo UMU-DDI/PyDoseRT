@@ -72,7 +72,7 @@ class DoseEngine(nn.Module):
         super().__init__()
         self.machine_config = machine_config
         self.downsampling_factor = downsampling_factor
-        self.ct_array_shape = ct_array_shape
+        self.ct_input_shape = ct_array_shape
         self.ct_resolution = resolution
         self.verbose = verbose
         self.debug = debug
@@ -110,7 +110,7 @@ class DoseEngine(nn.Module):
         ])
         self.ct_array_shape = tuple([
             int(x / y) for x, y in zip(
-                self.ct_array_shape,
+                self.ct_input_shape,
                 self.downsampling_factor
             )
         ])
@@ -149,7 +149,7 @@ class DoseEngine(nn.Module):
             device = self.device,
             dtype=self.dtype,
             resolution=self.resolution,
-            ct_array_shape=self.ct_array_shape,
+            ct_array_shape=self.ct_input_shape,
             gantry_angles=self.gantry_angles,
             downsampling_factor=self.downsampling_factor,
             lookup_table=torch.from_numpy(self.machine_config.lookup_table),
@@ -218,7 +218,7 @@ class DoseEngine(nn.Module):
         assert leaf_positions.shape[0] == B and mus.shape[0] == B and jaw_positions.shape[0] == B, \
             f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, jaw_positions={jaw_positions.shape[0]}, mus={mus.shape[0]}"
 
-        expected_ct = (B, *self.ct_array_shape)
+        expected_ct = (B, *self.ct_input_shape)
         assert ct_image.shape == expected_ct, \
             f"CT shape mismatch: expected {expected_ct}, got {ct_image.shape}"
 
@@ -380,7 +380,7 @@ class DoseEngine(nn.Module):
             else:
                 return batched_accumulated_dose, single_fluence_map, single_radiological_depth
 
-    def forward_beam_sequence(
+    def compute_beam_sequnce(
         self,
         beam_sequence: BeamSequence,
         ct_image: torch.Tensor,
@@ -407,7 +407,7 @@ class DoseEngine(nn.Module):
             ct_image=ct_image,
         )
 
-    def forward_single_beam(
+    def compute_single_beam(
         self,
         beam: Beam,
         ct_image: torch.Tensor
@@ -439,7 +439,7 @@ class DoseEngine(nn.Module):
 
         return dose
 
-    def forward_sequential(
+    def compute_sequential(
         self,
         beam_sequence: BeamSequence,
         ct_image: torch.Tensor,

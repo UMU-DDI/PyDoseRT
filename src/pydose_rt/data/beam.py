@@ -240,6 +240,98 @@ class BeamSequence:
         jaw_positions = torch.stack([s.jaw_positions for s in sequences], dim=0)  # [B, CP, 2]
 
         return leaf_positions, mus, jaw_positions
+    
+    @classmethod
+    def create(
+        cls,
+        gantry_angles: list[float] | torch.Tensor,
+        number_of_leaf_pairs: int,
+        field_size: tuple[float, float],
+        iso_center: tuple[float, float, float],
+        beam_limiting_device_angles: list[float] | torch.Tensor | None = None,
+        sid: float = 1000.0,
+        open_field_size: float = 0.0,
+        device: torch.device | str = 'cuda',
+        dtype: torch.dtype = torch.float32,
+        requires_grad: bool = True,
+    ) -> BeamSequence:
+        """
+        Create a BeamSequence with initialized parameters.
+        
+        Args:
+            gantry_angles: Gantry angles in degrees (list or tensor)
+            number_of_leaf_pairs: Number of MLC leaf pairs
+            field_size: Field size (width, height) in mm
+            iso_center: Isocenter position (x, y, z) in mm
+            beam_limiting_device_angles: BLD angles in degrees, or None for all zeros
+            sid: Source to isocenter distance in mm
+            field_openness: How open the field is (0.0=closed, 1.0=fully open)
+            device: PyTorch device
+            dtype: Data type for tensors
+            requires_grad: Whether tensors require gradients
+            
+        Returns:
+            BeamSequence with initialized parameters
+            
+        Example:
+            >>> angles = [0, 90, 180, 270]
+            >>> beam_seq = BeamSequence.create(
+            ...     gantry_angles=angles,
+            ...     number_of_leaf_pairs=60,
+            ...     field_size=(400, 400),
+            ...     iso_center=(0, 0, 0),
+            ...     field_openness=0.5,  # Half open
+            ... )
+        """
+        # Convert gantry angles to tensor in radians
+        if isinstance(gantry_angles, list):
+            gantry_angles = torch.tensor(gantry_angles, dtype=dtype, device=device)
+            gantry_angles = torch.deg2rad(gantry_angles)
+        else:
+            gantry_angles = gantry_angles.to(dtype=dtype, device=device)
+            # Assume already in radians if tensor
+        
+        num_cps = len(gantry_angles)
+        field_w, field_h = field_size
+        
+        # Initialize leaf positions [CP, N, 2]
+        leaf_positions = torch.zeros(num_cps, number_of_leaf_pairs, 2, device=device, dtype=dtype)
+        leaf_positions[:, :, 0] = -open_field_size / 2  # Left leaves
+        leaf_positions[:, :, 1] = open_field_size / 2   # Right leaves
+        
+        # Initialize jaw positions [CP, 2]
+        jaw_positions = torch.zeros(num_cps, 2, device=device, dtype=dtype)
+        jaw_positions[:, 0] = -open_field_size / 2  # Lower jaw
+        jaw_positions[:, 1] = open_field_size / 2   # Upper jaw
+        
+        # Initialize MUs [CP]
+        mus = torch.ones(num_cps, device=device, dtype=dtype)
+        
+        # Handle beam limiting device angles
+        if beam_limiting_device_angles is None:
+            beam_limiting_device_angles = torch.zeros(num_cps, device=device, dtype=dtype)
+        elif isinstance(beam_limiting_device_angles, list):
+            beam_limiting_device_angles = torch.tensor(beam_limiting_device_angles, dtype=dtype, device=device)
+            beam_limiting_device_angles = torch.deg2rad(beam_limiting_device_angles)
+        else:
+            beam_limiting_device_angles = beam_limiting_device_angles.to(dtype=dtype, device=device)
+        
+        # Set requires_grad
+        if requires_grad:
+            leaf_positions.requires_grad_(True)
+            jaw_positions.requires_grad_(True)
+            mus.requires_grad_(True)
+        
+        return cls(
+            mus=mus,
+            leaf_positions=leaf_positions,
+            jaw_positions=jaw_positions,
+            gantry_angles=gantry_angles,
+            beam_limiting_device_angles=beam_limiting_device_angles,
+            field_size=field_size,
+            iso_center=iso_center,
+            sid=sid,
+        )
 
     @classmethod
     def from_tensors(
@@ -247,7 +339,12 @@ class BeamSequence:
         leaf_positions: torch.Tensor,
         mus: torch.Tensor,
         jaw_positions: torch.Tensor,
-        gantry_angles: torch.Tensor | np.ndarray | list[float] | None = None,
+        gantry_angles: torch.Tensor,
+        beam_limiting_device_angles: torch.Tensor,
+        iso_center: float,
+        sid: float,
+        field_size: tuple[float, float]
+
     ) -> BeamSequence:
         """
         Create a BeamSequence from raw tensors.
@@ -261,17 +358,15 @@ class BeamSequence:
         Returns:
             BeamSequence wrapping the provided tensors (no copy, gradients flow through)
         """
-        if gantry_angles is not None:
-            if isinstance(gantry_angles, np.ndarray):
-                gantry_angles = torch.from_numpy(gantry_angles).float()
-            elif isinstance(gantry_angles, list):
-                gantry_angles = torch.tensor(gantry_angles, dtype=torch.float32)
-
         return cls(
             mus=mus,
             leaf_positions=leaf_positions,
             jaw_positions=jaw_positions,
             gantry_angles=gantry_angles,
+            beam_limiting_device_angles=beam_limiting_device_angles,
+            iso_center=iso_center,
+            sid=sid,
+            field_size=field_size
         )
 
     @classmethod
@@ -449,7 +544,7 @@ class BeamSequence:
         """Number of control points in the sequence."""
         return self.leaf_positions.shape[0]  # [CP, N, 2] -> CP is dim 0
 
-    def __getitem__(self, idx: int) -> Beam:
+    def __getitem__(self, idx: int | slice) -> Beam:
         """
         Get a single Beam at the specified index.
 
@@ -465,27 +560,39 @@ class BeamSequence:
         Raises:
             ValueError: If gantry_angles is None (use engine's angles instead)
         """
-        if idx < 0:
-            idx = len(self) + idx
-        if idx < 0 or idx >= len(self):
-            raise IndexError(f"Index {idx} out of range for BeamSequence of length {len(self)}")
-
-        if self.gantry_angles is None:
-            raise ValueError(
-                "Cannot index into BeamSequence without gantry_angles. "
-                "This BeamSequence relies on the engine's gantry angles."
+        if isinstance(idx, slice):
+            return BeamSequence(
+                mus=self.mus[idx],
+                leaf_positions=self.leaf_positions[idx, :, :],
+                jaw_positions=self.jaw_positions[idx, :],
+                gantry_angles=self.gantry_angles[idx] if self.gantry_angles is not None else None,
+                beam_limiting_device_angles=self.beam_limiting_device_angles[idx] if self.beam_limiting_device_angles is not None else None,
+                field_size=self.field_size,
+                iso_center=self.iso_center,
+                sid=self.sid,
             )
+        else:
+            if idx < 0:
+                idx = len(self) + idx
+            if idx < 0 or idx >= len(self):
+                raise IndexError(f"Index {idx} out of range for BeamSequence of length {len(self)}")
 
-        return Beam(
-            gantry_angle=self.gantry_angles[idx].item(),
-            beam_limiting_device_angle=self.beam_limiting_device_angles[idx].item(),
-            mu=self.mus[idx],                    # scalar
-            leaf_positions=self.leaf_positions[idx, :, :],  # [N, 2]
-            jaw_positions=self.jaw_positions[idx, :],       # [2]
-            field_size=self.field_size,
-            iso_center=self.iso_center,
-            sid=self.sid
-        )
+            if self.gantry_angles is None:
+                raise ValueError(
+                    "Cannot index into BeamSequence without gantry_angles. "
+                    "This BeamSequence relies on the engine's gantry angles."
+                )
+
+            return Beam(
+                gantry_angle=self.gantry_angles[idx].item(),
+                beam_limiting_device_angle=self.beam_limiting_device_angles[idx].item(),
+                mu=self.mus[idx],                    # scalar
+                leaf_positions=self.leaf_positions[idx, :, :],  # [N, 2]
+                jaw_positions=self.jaw_positions[idx, :],       # [2]
+                field_size=self.field_size,
+                iso_center=self.iso_center,
+                sid=self.sid
+            )
 
     def __iter__(self) -> Iterator[Beam]:
         """Iterate over all beams in the sequence."""
@@ -658,3 +765,13 @@ class BeamSequence:
             dose = engine.forward_beam_sequence(beam_seq.delivery)
         """
         return self.to_delivery()
+    def parameters(self) -> list[torch.Tensor]:
+        """Return list of optimizable parameters."""
+        return [self.leaf_positions, self.jaw_positions, self.mus]
+
+    def requires_grad_(self, requires_grad: bool = True) -> BeamSequence:
+        """Set requires_grad on all tensors."""
+        self.leaf_positions.requires_grad_(requires_grad)
+        self.jaw_positions.requires_grad_(requires_grad)
+        self.mus.requires_grad_(requires_grad)
+        return self

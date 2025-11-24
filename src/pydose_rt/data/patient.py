@@ -45,6 +45,12 @@ class Patient:
             plan_starting_angle=self.plan_starting_angle,
         )
     
+    def get_physical_size(self) -> np.ndarray:
+        return np.multiply(
+            np.array(self.ct_array.shape, dtype=np.float32),
+            np.array(self.voxel_spacing_mm, dtype=np.float32),
+        )
+
     def get_masked_dose(self, mask_name=None) -> torch.Tensor:
         """Returns the dose where the provided mask is true."""
         if mask_name is None:
@@ -95,7 +101,7 @@ class Phantom(Patient):
         """
         Alternate constructor: create a Phantom directly from a spherical phantom.
         """
-        ct_array = torch.from_numpy(np.expand_dims(np.ones(shape), 0))
+        ct_array = torch.ones(shape)
 
         return cls(
             ct_array=ct_array,
