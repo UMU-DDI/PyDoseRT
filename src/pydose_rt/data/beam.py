@@ -15,6 +15,7 @@ import torch
 
 if TYPE_CHECKING:
     from pydose_rt.data import MachineConfig
+    from pydose_rt.engine.dose_engine import DoseEngine
 
 
 @dataclass

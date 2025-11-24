@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
+from typing import Optional, Tuple
 
 class LearnableFluenceKernel(nn.Module):
     """
@@ -268,3 +269,222 @@ def apply_tongue_and_groove(fluence, leaf_boundaries_mm, field_size_mm,
 
 
     return fluence_with_tg
+
+
+# ============================================================================
+# Precomputation functions for efficient forward passes
+# ============================================================================
+
+def precompute_source_penumbra_kernel(source_size_mm: float, pixel_size_mm: float,
+                                      device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """
+    Precompute the source penumbra convolution kernel.
+
+    Args:
+        source_size_mm: Effective source diameter (typical: 2-5mm)
+        pixel_size_mm: Pixel size in fluence map
+        device: Device to create kernel on
+        dtype: Data type for kernel
+
+    Returns:
+        kernel: [1, 1, K, K] convolution kernel
+    """
+    sigma_pixels = (source_size_mm / pixel_size_mm) / 2.355
+
+    kernel_size = int(6 * sigma_pixels) + 1
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+
+    x = torch.linspace(-(kernel_size//2), kernel_size//2, kernel_size, device=device, dtype=dtype)
+    kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
+    kernel_1d = kernel_1d / kernel_1d.sum()
+
+    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
+    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
+
+    return kernel_2d
+
+
+def precompute_mlc_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
+                                  device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """
+    Precompute the MLC scatter convolution kernel.
+
+    Args:
+        scatter_range_mm: Characteristic decay distance (mm)
+        pixel_size_mm: Pixel size in fluence map
+        device: Device to create kernel on
+        dtype: Data type for kernel
+
+    Returns:
+        kernel: [1, 1, K, K] convolution kernel
+    """
+    sigma_pixels = (scatter_range_mm / pixel_size_mm) / 2.0
+
+    kernel_size = int(6 * sigma_pixels) + 1
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+
+    kernel_size = min(kernel_size, 201)
+
+    x = torch.linspace(-(kernel_size//2), kernel_size//2, kernel_size, device=device, dtype=dtype)
+    kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
+    kernel_1d = kernel_1d / kernel_1d.sum()
+
+    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
+    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
+
+    return kernel_2d
+
+
+def precompute_head_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
+                                   device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """
+    Precompute the head scatter convolution kernel.
+
+    Args:
+        scatter_range_mm: Characteristic decay distance (mm, typical: 100-200)
+        pixel_size_mm: Pixel size in fluence map
+        device: Device to create kernel on
+        dtype: Data type for kernel
+
+    Returns:
+        kernel: [1, 1, K, K] convolution kernel
+    """
+    sigma_pixels = (scatter_range_mm / pixel_size_mm) / 2.0
+
+    kernel_size = int(6 * sigma_pixels) + 1
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+
+    kernel_size = min(kernel_size, 401)
+
+    x = torch.linspace(-(kernel_size//2), kernel_size//2, kernel_size, device=device, dtype=dtype)
+    kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
+    kernel_1d = kernel_1d / kernel_1d.sum()
+
+    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
+    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
+
+    return kernel_2d
+
+
+def precompute_tongue_and_groove_mask(leaf_boundaries_mm: list, field_size_mm: float,
+                                      tg_reduction: float, tg_width_mm: float,
+                                      pixel_size_mm: float, H: int,
+                                      device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """
+    Precompute the tongue-and-groove reduction mask.
+
+    Args:
+        leaf_boundaries_mm: List of leaf boundary positions in mm
+        field_size_mm: Total field size in H direction (mm)
+        tg_reduction: Fractional reduction at leaf boundary
+        tg_width_mm: Width of tongue-and-groove region (mm)
+        pixel_size_mm: Pixel size in fluence map
+        H: Height of fluence map in pixels
+        device: Device to create mask on
+        dtype: Data type for mask
+
+    Returns:
+        tg_mask: [1, 1, H, 1] reduction mask
+    """
+    tg_mask = torch.ones((1, 1, H, 1), device=device, dtype=dtype)
+
+    pixel_per_mm = 1.0 / pixel_size_mm
+    field_center_pixel = H / 2.0
+
+    for boundary_mm in leaf_boundaries_mm:
+        boundary_pixel = field_center_pixel + boundary_mm * pixel_per_mm
+
+        h_coords = torch.arange(H, device=device, dtype=dtype)
+        dist_from_boundary = torch.abs(h_coords - boundary_pixel)
+
+        sigma_pixels = (tg_width_mm * pixel_per_mm) / 2.355
+        reduction_profile = tg_reduction * torch.exp(-dist_from_boundary**2 / (2 * sigma_pixels**2))
+        reduction_profile = reduction_profile.view(1, 1, H, 1)
+
+        tg_mask = tg_mask - reduction_profile
+
+    tg_mask = torch.clamp(tg_mask, min=0.0, max=1.0)
+
+    return tg_mask
+
+
+# ============================================================================
+# Fast application functions using precomputed kernels/masks
+# ============================================================================
+
+def apply_precomputed_kernel(fluence: torch.Tensor, kernel: torch.Tensor,
+                            padding_mode: str = 'replicate') -> torch.Tensor:
+    """
+    Apply a precomputed convolution kernel to fluence map.
+
+    Args:
+        fluence: [B, 1, H, W] fluence map
+        kernel: [1, 1, K, K] convolution kernel
+        padding_mode: Padding mode for convolution
+
+    Returns:
+        fluence_convolved: [B, 1, H, W] convolved fluence map
+    """
+    pad = kernel.shape[-1] // 2
+    fluence_padded = F.pad(fluence, (pad, pad, pad, pad), mode=padding_mode)
+    fluence_convolved = F.conv2d(fluence_padded, kernel)
+    return fluence_convolved
+
+
+def apply_precomputed_mlc_scatter(fluence: torch.Tensor, kernel: torch.Tensor,
+                                  scatter_amplitude: float) -> torch.Tensor:
+    """
+    Apply MLC scatter using precomputed kernel.
+
+    Args:
+        fluence: [B, 1, H, W] fluence map
+        kernel: [1, 1, K, K] precomputed scatter kernel
+        scatter_amplitude: Relative scatter contribution
+
+    Returns:
+        fluence_with_scatter: [B, 1, H, W] fluence map with scatter
+    """
+    scatter_contribution = apply_precomputed_kernel(fluence, kernel, padding_mode='replicate')
+    fluence_with_scatter = fluence + scatter_amplitude * scatter_contribution * (1 - fluence)
+    return fluence_with_scatter
+
+
+def apply_precomputed_head_scatter(fluence: torch.Tensor, kernel: torch.Tensor,
+                                   scatter_amplitude: float) -> torch.Tensor:
+    """
+    Apply head scatter using precomputed kernel.
+
+    Args:
+        fluence: [B, 1, H, W] fluence map
+        kernel: [1, 1, K, K] precomputed scatter kernel
+        scatter_amplitude: Relative scatter contribution
+
+    Returns:
+        fluence_with_head_scatter: [B, 1, H, W] fluence map with head scatter
+    """
+    scatter_contribution = apply_precomputed_kernel(fluence, kernel, padding_mode='constant')
+
+    # Calculate field size scaling factor
+    open_area = torch.sum(fluence, dim=(2, 3), keepdim=True)
+    total_area = fluence.shape[2] * fluence.shape[3]
+    field_size_factor = open_area / total_area
+
+    fluence_with_head_scatter = fluence + scatter_amplitude * scatter_contribution * field_size_factor
+    return fluence_with_head_scatter
+
+
+def apply_precomputed_tongue_and_groove(fluence: torch.Tensor, tg_mask: torch.Tensor) -> torch.Tensor:
+    """
+    Apply tongue-and-groove effect using precomputed mask.
+
+    Args:
+        fluence: [B, 1, H, W] fluence map
+        tg_mask: [1, 1, H, 1] precomputed T&G mask
+
+    Returns:
+        fluence_with_tg: [B, 1, H, W] fluence map with T&G effect
+    """
+    return fluence * tg_mask

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 import math
 import nibabel as nib
+import time
 
 from pydicom.data import get_testdata_file
 from pydose_rt.data import MachineConfig, Patient, OptimizationConfig, loaders
@@ -71,10 +72,14 @@ for beam_sequence in beam_sequences:
     ct_volume = patient.get_masked_ct("External").unsqueeze(0)
     dose_volume = patient.get_masked_dose("External").unsqueeze(0)
     beam_sequence = beam_sequence.to(dose_layer.device).to(dose_layer.dtype)
+
+    start_time = time.time()
     dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_volume)
+    elapsed_time = time.time() - start_time
     doses.append(dose_pred.detach())
 dose_pred = sum(doses)
 dose_pred = torch.where(patient.structures["External"], dose_pred, 0.0)
+print(f"Inference time is {len(doses) * elapsed_time}")
 
 # scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["PTVT_42.7"] > 0)
 scale = torch.mean(dose_volume[0, patient.structures[ptv_struct_name]]) / torch.mean(dose_pred[0, patient.structures[ptv_struct_name]])
@@ -93,7 +98,7 @@ mae_map = torch.abs(dose_pred[0] - dose_volume[0])
 mae_loss = np.mean(torch.mean(mae_map[patient.structures["External"]]).item())
 
 
-res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=False)
+res = result_validation(patient, machine_config, beam_sequence, dose_pred[0], optimization, compute_gamma=True, compute_clinical_criteria=False)
 # print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
 print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']}")
 

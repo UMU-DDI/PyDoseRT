@@ -23,10 +23,14 @@ import torch.nn as nn
 from pydose_rt.data import MachineConfig
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
 from pydose_rt.physics.fluence.fluence_modeling import (
-    apply_source_penumbra,
-    apply_mlc_scatter,
-    apply_head_scatter,
-    apply_tongue_and_groove
+    precompute_source_penumbra_kernel,
+    precompute_mlc_scatter_kernel,
+    precompute_head_scatter_kernel,
+    precompute_tongue_and_groove_mask,
+    apply_precomputed_kernel,
+    apply_precomputed_mlc_scatter,
+    apply_precomputed_head_scatter,
+    apply_precomputed_tongue_and_groove
 )
 
 
@@ -90,6 +94,74 @@ class FluenceMapLayer(nn.Module):
         centers = (torch.arange(H, dtype=self.dtype) + 0.5) - (H / 2)  # [W]
         jaw_indices = centers.view(1, H).repeat(1, 1)
         self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
+
+        # ============================================================================
+        # Precompute physics augmentation kernels/masks for efficient forward pass
+        # ============================================================================
+
+        # Precompute source penumbra kernel (always applied)
+        source_penumbra_kernel = precompute_source_penumbra_kernel(
+            source_size_mm=self.machine_config.source_size_mm,
+            pixel_size_mm=1.0,
+            device=self.device,
+            dtype=self.dtype
+        )
+        self.register_buffer("source_penumbra_kernel", source_penumbra_kernel)
+
+        # Precompute MLC scatter kernel if amplitude > 0
+        if self.machine_config.mlc_scatter_amplitude > 0:
+            mlc_scatter_kernel = precompute_mlc_scatter_kernel(
+                scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
+                pixel_size_mm=1.0,
+                device=self.device,
+                dtype=self.dtype
+            )
+            self.register_buffer("mlc_scatter_kernel", mlc_scatter_kernel)
+        else:
+            self.mlc_scatter_kernel = None
+
+        # Precompute head scatter kernel if amplitude > 0
+        if self.machine_config.head_scatter_amplitude > 0:
+            head_scatter_kernel = precompute_head_scatter_kernel(
+                scatter_range_mm=self.machine_config.head_scatter_range_mm,
+                pixel_size_mm=1.0,
+                device=self.device,
+                dtype=self.dtype
+            )
+            self.register_buffer("head_scatter_kernel", head_scatter_kernel)
+        else:
+            self.head_scatter_kernel = None
+
+        # Precompute tongue-and-groove mask if reduction > 0
+        if self.machine_config.tongue_groove_reduction > 0:
+            # Calculate leaf boundary positions
+            leaf_boundaries_mm = []
+            if self.machine_config.leaf_widths is not None:
+                cumulative_pos = -self.field_size[0] / 2.0
+                for width in self.machine_config.leaf_widths[:-1]:
+                    cumulative_pos += width
+                    leaf_boundaries_mm.append(cumulative_pos)
+            else:
+                # Uniform leaf widths
+                n_leaves = self.machine_config.number_of_leaf_pairs
+                leaf_width = self.field_size[0] / n_leaves
+                for i in range(1, n_leaves):
+                    boundary_pos = -self.field_size[0] / 2.0 + i * leaf_width
+                    leaf_boundaries_mm.append(boundary_pos)
+
+            tg_mask = precompute_tongue_and_groove_mask(
+                leaf_boundaries_mm=leaf_boundaries_mm,
+                field_size_mm=self.field_size[0],
+                tg_reduction=self.machine_config.tongue_groove_reduction,
+                tg_width_mm=self.machine_config.tongue_groove_width_mm,
+                pixel_size_mm=1.0,
+                H=self.field_size[0],
+                device=self.device,
+                dtype=self.dtype
+            )
+            self.register_buffer("tg_mask", tg_mask)
+        else:
+            self.tg_mask = None
 
 
     def forward(
@@ -158,56 +230,40 @@ class FluenceMapLayer(nn.Module):
 
         fluence_map = mask.permute(0, 3, 2, 1)
 
-        # Apply tongue-and-groove effect at leaf boundaries
-        if self.machine_config.tongue_groove_reduction > 0:
-            # Calculate leaf boundary positions in mm
-            leaf_boundaries_mm = []
-            if self.machine_config.leaf_widths is not None:
-                cumulative_pos = -self.field_size[0] / 2.0
-                for width in self.machine_config.leaf_widths[:-1]:  # Skip last boundary
-                    cumulative_pos += width
-                    leaf_boundaries_mm.append(cumulative_pos)
-            else:
-                # Uniform leaf widths
-                n_leaves = self.machine_config.number_of_leaf_pairs
-                leaf_width = self.field_size[0] / n_leaves
-                for i in range(1, n_leaves):
-                    boundary_pos = -self.field_size[0] / 2.0 + i * leaf_width
-                    leaf_boundaries_mm.append(boundary_pos)
+        # ============================================================================
+        # Apply precomputed physics augmentation effects
+        # ============================================================================
 
-            fluence_map = apply_tongue_and_groove(
+        # Apply tongue-and-groove effect using precomputed mask
+        if self.tg_mask is not None:
+            fluence_map = apply_precomputed_tongue_and_groove(
                 fluence_map,
-                leaf_boundaries_mm=leaf_boundaries_mm,
-                field_size_mm=self.field_size[0],
-                tg_reduction=self.machine_config.tongue_groove_reduction,
-                tg_width_mm=self.machine_config.tongue_groove_width_mm,
-                pixel_size_mm=1.0
+                tg_mask=self.tg_mask
             ).to(self.dtype)
 
-        # Apply source penumbra (geometric blur from finite source size)
-        fluence_map = apply_source_penumbra(
-            fluence_map, 
-            source_size_mm=self.machine_config.source_size_mm, 
-            pixel_size_mm=1.0
+        # Apply source penumbra using precomputed kernel
+        fluence_map = apply_precomputed_kernel(
+            fluence_map,
+            kernel=self.source_penumbra_kernel,
+            padding_mode='replicate'
         ).to(self.dtype)
 
-        # Apply MLC scatter tail (distance-dependent scatter from field edges)
-        if self.machine_config.mlc_scatter_amplitude > 0:
-            fluence_map = apply_mlc_scatter(
+        # Apply MLC scatter using precomputed kernel
+        if self.mlc_scatter_kernel is not None:
+            fluence_map = apply_precomputed_mlc_scatter(
                 fluence_map,
-                scatter_amplitude=self.machine_config.mlc_scatter_amplitude,
-                scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
-                pixel_size_mm=1.0
-            )
-
-        # Apply head scatter (long-range scatter from linac head)
-        if self.machine_config.head_scatter_amplitude > 0:
-            fluence_map = apply_head_scatter(
-                fluence_map,
-                scatter_amplitude=self.machine_config.head_scatter_amplitude,
-                scatter_range_mm=self.machine_config.head_scatter_range_mm,
-                pixel_size_mm=1.0
+                kernel=self.mlc_scatter_kernel,
+                scatter_amplitude=self.machine_config.mlc_scatter_amplitude
             ).to(self.dtype)
+
+        # Apply head scatter using precomputed kernel
+        if self.head_scatter_kernel is not None:
+            fluence_map = apply_precomputed_head_scatter(
+                fluence_map,
+                kernel=self.head_scatter_kernel,
+                scatter_amplitude=self.machine_config.head_scatter_amplitude
+            ).to(self.dtype)
+
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 
         return fluence_map

@@ -33,6 +33,7 @@ class CPRotationLayer(nn.Module):
                  machine_config: MachineConfig,
                  device: torch.device, 
                  dtype: type,
+                 ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float] | torch.Tensor = None,
                  verbose: bool = False,
                 ):
@@ -47,9 +48,11 @@ class CPRotationLayer(nn.Module):
         self.device = device
         self.dtype = dtype
         self.machine_config = machine_config
+        self.ct_array_shape = ct_array_shape
         self.verbose = verbose
 
         self.rot_angles_rad = gantry_angles.to(dtype=self.dtype, device=self.device)
+        self.rot_grid = build_rotation_grids((1, self.rot_angles_rad.shape[0], self.ct_array_shape[1], self.ct_array_shape[0], self.ct_array_shape[2]), self.rot_angles_rad, self.device, self.dtype)
 
     def forward(self, accumulated_dose: torch.Tensor, center: tuple = None) -> torch.Tensor:
         """
@@ -64,20 +67,19 @@ class CPRotationLayer(nn.Module):
 
         # TODO: Implement iso center functionality
         B, G, D, H, W = accumulated_dose.shape
-        grid2d = build_rotation_grids(accumulated_dose.shape, self.rot_angles_rad, self.device, self.dtype)
         accumulated_dose = accumulated_dose.permute(0, 1, 3, 2, 4)   # [B, G, H, D, W]
         accumulated_dose = accumulated_dose.reshape(B*G*H, 1, D, W)   # [B*G*H, 1, D, W]
+        rot_grid = self.rot_grid
+        rot_grid = rot_grid.repeat(B, 1, H, 1, 1, 1)               # [B, G, H, D, W, 2]
+        rot_grid = rot_grid.reshape(B*G*H, D, W, 2)                # [B*G*H, D, W, 2]
+        
         
         # Rotate
-        accumulated_dose = F.grid_sample(accumulated_dose, grid2d,
+        accumulated_dose = F.grid_sample(accumulated_dose, rot_grid,
                                     mode="bilinear",
                                     padding_mode="zeros",
                                     align_corners=False)    # [B*G*H, 1, D, W]
 
-        # Free Memory (TODO: Does this still work when using autograd?)
-        del grid2d
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         # Reshape back
         accumulated_dose = accumulated_dose.reshape(B, G, H, D, W)
 

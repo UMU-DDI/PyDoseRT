@@ -142,7 +142,5 @@ def build_rotation_grids(input_shape, angles_rad, device, dtype):
     
     # Expand for batch and height dimensions
     grid2d = grid2d.unsqueeze(1).unsqueeze(0)              # [1, G, 1, D, W, 2]
-    grid2d = grid2d.repeat(B, 1, H, 1, 1, 1)               # [B, G, H, D, W, 2]
-    grid2d = grid2d.reshape(B*G*H, D, W, 2)                # [B*G*H, D, W, 2]
 
     return grid2d
