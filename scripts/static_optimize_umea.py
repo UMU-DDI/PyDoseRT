@@ -182,7 +182,7 @@ for test_i in range(n_tests):
             latest["raw_losses"] = [v.detach().item() for v in raw_losses]
             latest["loss_val"]   = loss.detach().item()
             latest["dose_pred"]  = dose_pred.detach()
-            latest["beam_sequence"]   = beam_sequence.clone()
+            latest["beam_sequence"]   = beam_sequence
 
             return loss
 
@@ -206,7 +206,7 @@ for test_i in range(n_tests):
                 current_res = {
                     "loss": loss, 
                     "weights": weights, 
-                    "beam_sequence": beam_sequence,
+                    "beam_sequence": beam_sequence.clone(),
                     "mae_loss": mae_loss
                 }
                 
