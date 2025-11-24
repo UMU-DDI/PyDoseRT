@@ -88,7 +88,7 @@ class DoseEngine(nn.Module):
         if isinstance(beam_input, Beam):
             self.number_of_cps = 1
             self.gantry_angles = torch.tensor([beam_input.gantry_angle]).to(self.dtype).to(self.device)
-            self.collimator_angles = torch.tensor(beam_input.beam_limiting_device_angle).to(self.dtype).to(self.device)
+            self.collimator_angles = torch.tensor([beam_input.beam_limiting_device_angle]).to(self.dtype).to(self.device)
         else:
             self.number_of_cps = len(beam_input)
             self.gantry_angles = beam_input.gantry_angles
@@ -279,7 +279,7 @@ class DoseEngine(nn.Module):
         mus: torch.Tensor,
         jaw_positions: torch.Tensor,
         ct_image: torch.Tensor,
-        single_cp: int = None
+        return_intermediates: bool = False
     ) -> torch.Tensor:
         """
         Runs the full dose calculation pipeline.
@@ -307,9 +307,8 @@ class DoseEngine(nn.Module):
                     dtype=self.dtype,
                 ).detach()
 
-            if single_cp is not None:
-                single_radiological_depth = batched_radiological_depths[single_cp:single_cp+1, ...]
-            del batched_radiological_depths
+            if not(return_intermediates):
+                del batched_radiological_depths
 
             leaf_positions, jaw_positions, mus = self.valid_parameters_layer(
                 leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
@@ -345,9 +344,8 @@ class DoseEngine(nn.Module):
             )
             batched_accumulated_dose.mul_(self.machine_config.mean_photon_energy_MeV)
 
-            if single_cp is not None:
-                single_fluence_map = batched_fluence_maps[single_cp:single_cp+1, ...]
-            del batched_fluence_volumes, batched_fluence_maps, batched_kernels
+            if not(return_intermediates):
+                del batched_fluence_volumes, batched_fluence_maps, batched_kernels
 
             B = leaf_positions.shape[0]
             G = self.number_of_cps
@@ -357,10 +355,7 @@ class DoseEngine(nn.Module):
 
             batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)
 
-            if single_cp is None:
-                batched_accumulated_dose = batched_accumulated_dose.sum(dim=1)
-            else:
-                batched_accumulated_dose = batched_accumulated_dose[:, single_cp, ...]
+            batched_accumulated_dose = batched_accumulated_dose.sum(dim=1)
 
             if self.downsampling_factor != (1, 1, 1):
                 batched_accumulated_dose = F.interpolate(
@@ -375,10 +370,10 @@ class DoseEngine(nn.Module):
                     batched_accumulated_dose, (0, 2, 3, 1)
                 )
 
-            if single_cp is None:
-                return batched_accumulated_dose
+            if return_intermediates:
+                return batched_radiological_depths, batched_fluence_maps, batched_fluence_volumes, batched_accumulated_dose
             else:
-                return batched_accumulated_dose, single_fluence_map, single_radiological_depth
+                return batched_accumulated_dose
 
     def compute_beam_sequnce(
         self,
@@ -430,14 +425,15 @@ class DoseEngine(nn.Module):
         jaw_positions = beam.jaw_positions.unsqueeze(0).unsqueeze(0)
         mus = beam.mu.unsqueeze(0).unsqueeze(0)
 
-        dose = self.forward(
+        intermediate_data = self.forward(
             leaf_positions=leaf_positions,
             mus=mus,
             jaw_positions=jaw_positions,
             ct_image=ct_image,
+            return_intermediates=True
         )
 
-        return dose
+        return intermediate_data
 
     def compute_sequential(
         self,

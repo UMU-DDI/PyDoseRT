@@ -282,6 +282,7 @@ def print_results(
         plt.close()
 
 def make_animation(experiment, 
+                   machine_config: MachineConfig,
                    patient_data: Patient, 
                    dose_layer: DoseEngine, 
                    beam_sequence: BeamSequence, 
@@ -306,7 +307,7 @@ def make_animation(experiment,
     slice_idx = patient_data.ct_array.shape[0] // 2
     ct_data = ct_volume.cpu().detach().numpy()[0, slice_idx, :, :]
     dose_data = np.zeros(patient_data.ct_array.shape[1:])
-    
+    beam_sequence = beam_sequence.to_delivery()
     # Create output directory if needed
     os.makedirs("out", exist_ok=True)
     
@@ -321,9 +322,21 @@ def make_animation(experiment,
         ax1 = fig.add_subplot(gs[1, 0])  # Fluence map
         ax2 = fig.add_subplot(gs[1, 1])  # CT with dose overlay
         beam = beam_sequence[cp_idx]
+
         # Get dose and map for current control point
         with torch.no_grad():
-            pred_dose, pred_map, pred_depths = dose_layer.compute_single_beam(
+            engine = DoseEngine(
+                ct_array_shape=patient_data.ct_array.shape, 
+                resolution=patient_data.voxel_spacing_mm, 
+                machine_config=machine_config,
+                beam_input=beam, 
+                downsampling_factor=(1, 1, 1),
+                kernel_size=31, 
+                dtype=torch.float32, 
+                device=dose_layer.device
+            )
+            engine.eval()
+            pred_depths, pred_map, _, pred_dose  = engine.compute_single_beam(
                 beam, 
                 ct_image=ct_volume
             )
@@ -356,7 +369,7 @@ def make_animation(experiment,
         for idx, struct_name in enumerate(patient_data.structures):
             if (struct_name == "FemoralHead_R"):
                 continue
-            roi = patient_data.structures[struct_name]
+            roi = patient_data.structures[struct_name].cpu().detach().numpy()
             overlay_mask_outline(roi[slice_idx, :, :], 
                                color='white')
         

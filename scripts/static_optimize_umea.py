@@ -256,7 +256,7 @@ for test_i in range(n_tests):
         experiment.log_asset_data(beam_sequence.leaf_positions.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
         print_results(experiment, optimization, raw_losses, dose_target, beam_sequence, None, None, None, best_results, dose_pred, ct_volume, [mask.unsqueeze(0) for mask in list(patient.structures.values())], mae_loss, dose_max=7.0)
-        make_animation(experiment, patient, engine, beam_sequence, dose_max=7.0)
+        make_animation(experiment, machine_config, patient, engine, beam_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
         
