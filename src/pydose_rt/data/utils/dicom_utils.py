@@ -4,6 +4,9 @@ import numpy as np
 import SimpleITK as sitk
 from rt_utils import RTStructBuilder
 from typing import Any, Optional, List
+import math
+from pydose_rt.data.beam import Beam
+import torch
 
 def resample_based_on_dose(ct_series, structures, dose):
     
@@ -129,12 +132,18 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
             beam_metersets[str(ref_seq.ReferencedBeamNumber)] = ref_seq.BeamMeterset
             number_of_fractions = int(ds.FractionGroupSequence[0].NumberOfFractionsPlanned)
             
+    parameters = dict()
     for beam in ds.BeamSequence:
         beam_data = []
-        jaw_data = []
         bld_angle = 0.0
-        for index, cps in enumerate(beam.ControlPointSequence):
+        old_mu_value = 0.0
+        for cps in beam.ControlPointSequence:
             if "BeamLimitingDevicePositionSequence" in cps:
+                asymy_seqs = [seq for seq in cps.BeamLimitingDevicePositionSequence if seq.RTBeamLimitingDeviceType == "ASYMY"]
+                if (len(asymy_seqs) > 0):
+                    jaw_positions = np.stack([float(asymy_seqs[0].LeafJawPositions[0]), 
+                                              float(asymy_seqs[0].LeafJawPositions[1])], 0)
+                    
                 for sequence in cps.BeamLimitingDevicePositionSequence:
                     if sequence.RTBeamLimitingDeviceType == "MLCX":
                         beam_meterset = beam_metersets[str(beam.BeamNumber)]
@@ -145,92 +154,49 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
                                 mu_value = beam_meterset
                             else:
                                 mu_value = beam_meterset * cps.CumulativeMetersetWeight
-                        seq_data = {
-                            "bld_angle": bld_angle,
-                            "clockwise": cps.GantryRotationDirection,
-                            "angle": cps.GantryAngle,
-                            "ssd": cps.SourceToSurfaceDistance,
-                            "mu": mu_value,
-                            "lower": sequence.LeafJawPositions[int(len(sequence.LeafJawPositions) / 2):],
-                            "higher": sequence.LeafJawPositions[:int(len(sequence.LeafJawPositions) / 2)],
-                            }
-                        
-                        beam_data.append(seq_data)
-                    elif sequence.RTBeamLimitingDeviceType == "ASYMY":
-                        jaw = {
-                            "lower": sequence.LeafJawPositions[0],
-                            "higher": sequence.LeafJawPositions[1],
-                        }
-                        jaw_data.append(jaw)
-        if (len(beam_data) > 0):
-            for _beam in beam_data:
-                _beam["jaw_lower"] = jaw_data[0]["lower"]
-                _beam["jaw_higher"] = jaw_data[0]["higher"]
-            data[str(beam.BeamNumber)] = beam_data
-    
-    parameters = dict()
-    for index, beam_index in enumerate(data):
-        beams = data[beam_index]
-
-        if ((len(beams) == 0)):
-            continue
-
-        multi_cp = len(beams) > 1
-        if (multi_cp and beams[0]['angle'] == 0):
-            continue
-
-        mus =  np.array([beam["mu"] for beam in beams])
-        if (multi_cp):
-            mus = np.abs(np.diff(mus, prepend=0.0))
-        mus = np.expand_dims(mus, axis=0)
-
-        beam_higher = np.array([beam["higher"] for beam in beams])
-        beam_lower = np.array([beam["lower"] for beam in beams])
-        jaw_higher = np.array([beam["jaw_higher"] for beam in beams])
-        jaw_lower = np.array([beam["jaw_lower"] for beam in beams])
-
-        # beam_higher_start = np.array([beam["higher"] for beam in beams[:-1]])
-        # beam_higher_end = np.array([beam["higher"] for beam in beams[1:]])
-        # beam_higher = (beam_higher_start + beam_higher_end) / 2.0
-
-        # beam_lower_start = np.array([beam["lower"] for beam in beams[:-1]])
-        # beam_lower_end = np.array([beam["lower"] for beam in beams[1:]])
-        # beam_lower = (beam_lower_start + beam_lower_end) / 2.0
-
-        leafs = np.stack([beam_higher, beam_lower], axis=0)
-        leafs = np.expand_dims(leafs, axis=0)
-
-        jaws = np.stack([jaw_lower, jaw_higher], axis=0)
-        jaws = np.expand_dims(jaws, axis=0)
-
-        clockwise = beams[0]["clockwise"] != "CC"
-        bld_angle = beams[0]["bld_angle"]
-        if (len(beams) == 1):
-            starting_angle = beams[0]["angle"]
-            final_angle = beams[-1]["angle"]
-        else:
-            starting_angle = (beams[0]["angle"] + beams[1]["angle"]) / 2
-            final_angle = (beams[-1]["angle"] + beams[-2]["angle"]) / 2
-
-        parameters[beam_index] = (leafs, jaws, mus, clockwise, starting_angle, final_angle, bld_angle, number_of_fractions)
+                        beam_data.append(Beam(gantry_angle=math.radians(cps.GantryAngle), 
+                            beam_limiting_device_angle=math.radians(bld_angle), 
+                            ssd=cps.SourceToSurfaceDistance,
+                            mu=torch.from_numpy(np.array(mu_value - old_mu_value)),
+                            leaf_positions=torch.from_numpy(np.stack(
+                                [np.array(sequence.LeafJawPositions[:int(len(sequence.LeafJawPositions) / 2)]), 
+                                 sequence.LeafJawPositions[int(len(sequence.LeafJawPositions) / 2):]], 1)),
+                            jaw_positions=torch.from_numpy(jaw_positions)))
+                        old_mu_value = mu_value
+        
+        if len(beam_data) > 0:
+            parameters[str(beam.BeamNumber)] = (beam_data, number_of_fractions)
 
     return parameters
 
-
-def load_structures(ct_series, folder_path, struct_names: List[str] | None = None):
-    struct_path = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if ("RTSTRUCT" in path or "RS" in path)]
+def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[str] | None = None):
     
     masks = dict()
-    if (len(struct_path) > 0):
+    if struct_path is not None:
         rtstruct = RTStructBuilder.create_from(
-        dicom_series_path=folder_path, 
-        rt_struct_path=struct_path[0]
+            dicom_series_path=ct_folder_path, 
+            rt_struct_path=struct_path
         )
+        
+        available_names = rtstruct.get_roi_names()
+        available_names = [name for name in available_names if not(name.startswith("z")) and not(name.startswith("_"))]
+        
         if struct_names is None:
-            struct_names = rtstruct.get_roi_names()
+            matched_names = available_names
+        else:
+            matched_names = []
+            for pattern in struct_names:
+                matches = [name for name in available_names if pattern.upper() in name.upper()]
+                
+                if len(matches) == 0:
+                    print(f"Warning: No ROI matching '{pattern}' found. Available: {available_names}")
+                else:
+                    if len(matches) > 1:
+                        print(f"Ambiguous pattern '{pattern}' matches multiple ROIs: {matches}. Adding first one")
+                    matched_names.append(matches[0])
 
         masks = dict()
-        for struct_name in struct_names:
+        for struct_name in matched_names:
             mask_np = rtstruct.get_roi_mask_by_name(struct_name)
             mask = sitk.GetImageFromArray(np.transpose(mask_np.astype(np.float32), (2, 0, 1)))
             mask.SetOrigin(ct_series.GetOrigin())
@@ -238,7 +204,6 @@ def load_structures(ct_series, folder_path, struct_names: List[str] | None = Non
             mask.SetSpacing(ct_series.GetSpacing())
             masks[struct_name] = mask
     return masks
-
 def load_dose(path):
     # Load dose volumes
     doses = dict()

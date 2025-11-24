@@ -48,7 +48,13 @@ class FluenceVolumeLayer(nn.Module):
     """
 
     def __init__(self, machine_config: MachineConfig, 
-                 treatment_config: TreatmentConfig, 
+                 device: torch.device, 
+                 dtype: type,
+                 sid: float,
+                 resolution: tuple[float, float, float],
+                 ct_array_shape: tuple[float, float, float],
+                 iso_center: tuple[float, float, float],
+                 field_size: tuple[float, float],
                  verbose: bool = False):
         """
         Initializes the FluenceVolumeLayer and precomputes profile corrections and sampling grids.
@@ -59,35 +65,34 @@ class FluenceVolumeLayer(nn.Module):
         """
         super().__init__()
 
-        self.device=treatment_config.device
-        self.dtype=treatment_config.dtype
+        self.device=device
+        self.dtype=dtype
         self.machine_config = machine_config
-        self.treatment_config = treatment_config
         self.verbose = verbose
         # Configuration & Constants
-        self.SID = float(treatment_config.SID)
+        self.SID = sid
         self.profile_radius = torch.tensor(
             machine_config.fluence_profile[0], dtype=self.dtype
         )
         self.profile_factors = torch.tensor(
             machine_config.fluence_profile[1], dtype=self.dtype
         )
-        self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
-        self.ct_array_shape = tuple([int(x / y) for x, y in zip(machine_config.ct_array_shape,  treatment_config.downsampling_factor)])
+        self.resolution = resolution
+        self.ct_array_shape = ct_array_shape
         H, D, W = self.ct_array_shape
         self.D = D
 
 
         # Precompute the physical depth (distance from source for each depth slice)
         depths = (
-            self.treatment_config.iso_center[1]
-            + self.treatment_config.SID
+            iso_center[1]
+            + self.SID
             - ((self.D - 1) / 2) * self.resolution[1]
             + torch.arange(D, dtype=self.dtype) * self.resolution[1]
         )  # mm
 
         # Compute the physical coordinates for each pixel in the depth slice (center is (0,0))
-        H_field, W_field = self.treatment_config.field_size
+        H_field, W_field = field_size
         hs = (
         torch.arange(H, dtype=self.dtype) - (H - 1) / 2
         ) * self.resolution[0]
@@ -104,7 +109,7 @@ class FluenceVolumeLayer(nn.Module):
         corrections = []
         sample_grids = []
         for d in depths:
-            scale = self.treatment_config.SID / d
+            scale = self.SID / d
             inv_square = scale**2
             corrections.append(inv_square)
 

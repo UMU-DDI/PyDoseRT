@@ -32,7 +32,39 @@ class Patient:
     plan_iso_center: Optional[tuple[float, float, float]] = None
     plan_clockwise: Optional[bool] = None
     plan_starting_angle: Optional[float] = None
+
+    def to(self, target: torch.device | str | torch.dtype) -> 'Patient':
+        """Move all tensors to a different device or dtype."""
+        return Patient(
+            ct_array=self.ct_array.to(target),
+            structures={k: v.to(target) > 0 for k, v in self.structures.items()} if self.structures else {},
+            dose=self.dose.to(target) if self.dose is not None else None,
+            voxel_spacing_mm=self.voxel_spacing_mm,
+            plan_iso_center=self.plan_iso_center,
+            plan_clockwise=self.plan_clockwise,
+            plan_starting_angle=self.plan_starting_angle,
+        )
     
+    def get_masked_dose(self, mask_name=None) -> torch.Tensor:
+        """Returns the dose where the provided mask is true."""
+        if mask_name is None:
+            raise Exception("Mask name not provided")
+        
+        if mask_name not in self.structures:
+            raise Exception(f"Mask {mask_name} does not exist in structures ({list(self.structures.keys())})")
+        
+        return torch.where(self.structures[mask_name], self.dose, 0.0)
+    
+    def get_masked_ct(self, mask_name=None) -> torch.Tensor:
+        """Returns the dose where the provided mask is true."""
+        if mask_name is None:
+            raise Exception("Mask name not provided")
+        
+        if mask_name not in self.structures:
+            raise Exception(f"Mask {mask_name} does not exist in structures ({list(self.structures.keys())})")
+        
+        return torch.where(self.structures[mask_name], self.ct_array, -1000.0)
+
 
 @dataclass
 class Phantom(Patient):

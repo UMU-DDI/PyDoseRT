@@ -29,26 +29,27 @@ class CPRotationLayer(nn.Module):
         device (torch.device): Device on which computations are performed.
         rot_angles_rad (torch.Tensor): Tensor of gantry angles in radians.
     """
-    def __init__(self, 
-                 machine_config: MachineConfig, 
-                 treatment_config: TreatmentConfig,
-                 verbose: bool = False
+    def __init__(self,
+                 machine_config: MachineConfig,
+                 device: torch.device, 
+                 dtype: type,
+                 gantry_angles: list[float] | torch.Tensor = None,
+                 verbose: bool = False,
                 ):
         """
-        Initializes the CPPRotationLayer.
-
+        Initializes the CPRotationLayer.
         Args:
-            config (MachineConfig): Configuration parameters for the layer.
-            verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
-        """        
+            machine_config: Configuration parameters for the layer.
+            verbose: If True, enables verbose output for debugging.
+            gantry_angles: Gantry angles in radians. If None, uses treatment_config.gantry_angles.
+        """
         super().__init__()
-        self.device=treatment_config.device
-        self.dtype=treatment_config.dtype
+        self.device = device
+        self.dtype = dtype
         self.machine_config = machine_config
-        self.treatment_config = treatment_config
         self.verbose = verbose
-        self.device = treatment_config.device
-        self.rot_angles_rad = torch.tensor(self.treatment_config.gantry_angles, dtype=treatment_config.dtype, device=treatment_config.device)
+
+        self.rot_angles_rad = gantry_angles.to(dtype=self.dtype, device=self.device)
 
     def forward(self, accumulated_dose: torch.Tensor, center: tuple = None) -> torch.Tensor:
         """

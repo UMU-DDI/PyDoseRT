@@ -84,9 +84,11 @@ def rotate_2d_images(images, angles_rad, device, dtype):
     # Flatten angles to [1, G] if needed
     if angles_rad.dim() == 2:
         angles_rad = angles_rad.view(-1)  # [G]
+    G = angles_rad.shape[0]
+    B = BG // G
 
     # Expand angles for batch dimension: [B*G]
-    angles_expanded = angles_rad.unsqueeze(0).repeat(BG, 1).view(BG)  # [B*G]
+    angles_expanded = angles_rad.unsqueeze(0).repeat(B, 1).view(BG)  # [B*G]
 
     cos_a = torch.cos(angles_expanded)
     sin_a = torch.sin(angles_expanded)

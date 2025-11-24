@@ -1,6 +1,6 @@
 import torch
 
-def convert_HU_to_density(hu_tensor, lut_table):
+def convert_HU_to_density(hu_tensor: torch.Tensor, lut_table: torch.Tensor):
     """
     Interpolates HU values to densities using a lookup table (LUT).
 
@@ -9,10 +9,7 @@ def convert_HU_to_density(hu_tensor, lut_table):
     Returns:
         torch.Tensor: Tensor of the same shape as hu_tensor.
     """
-    if not torch.is_tensor(lut_table):
-        lut_table = torch.tensor(
-            lut_table, dtype=torch.float32, device=hu_tensor.device
-        )
+    lut_table = lut_table.to(hu_tensor.dtype).to(hu_tensor.device)
 
     x = lut_table[:, 0].contiguous()  # HU values
     y = lut_table[:, 1].contiguous()  # Densities

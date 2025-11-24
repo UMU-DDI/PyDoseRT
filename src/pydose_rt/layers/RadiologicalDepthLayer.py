@@ -44,7 +44,13 @@ class RadiologicalDepthLayer(nn.Module):
 
     def __init__(self, 
                  machine_config: MachineConfig, 
-                 treatment_config: TreatmentConfig, 
+                 device: torch.device, 
+                 dtype: type,
+                 resolution: tuple[float, float, float],
+                 ct_array_shape: tuple[float, float, float],
+                 gantry_angles: list[float],
+                 downsampling_factor: tuple[int, int, int],
+                 lookup_table: torch.Tensor,
                  verbose: bool = False):
         """
         Initializes the RadiologicalDepthLayer and precomputes sampling indices for each gantry angle.
@@ -55,24 +61,25 @@ class RadiologicalDepthLayer(nn.Module):
         """
         super(RadiologicalDepthLayer, self).__init__()
 
-        self.device=treatment_config.device
-        self.dtype=treatment_config.dtype
+        self.device=device
+        self.dtype=dtype
         self.machine_config = machine_config
-        self.treatment_config = treatment_config
         self.verbose = verbose
+        self.downsampling_factor = downsampling_factor
+        self.lookup_table = lookup_table
 
         # Determine if we should use full-sized CT for depth extraction
-        self.downsample_depths = self.treatment_config.downsampling_factor != (1, 1, 1)
+        self.downsample_depths = self.downsampling_factor != (1, 1, 1)
 
         # Store the target (downsampled) CT shape
-        self.ct_array_shape = tuple([int(x / y) for x, y in zip(machine_config.ct_array_shape,  treatment_config.downsampling_factor)])
+        self.ct_array_shape = ct_array_shape
         self.target_ct_shape = self.ct_array_shape
-        self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
+        self.resolution = resolution
 
         # If using full CT, compute indices for full-sized CT
         self.full_ct_shape = self.machine_config.ct_array_shape
         stacked_indices = get_radiological_depth_indices(
-            self.full_ct_shape, self.treatment_config.gantry_angles, self.dtype
+            self.full_ct_shape, gantry_angles, self.dtype
         ).to(self.device)
 
         # Final shape: [1, G, P, 3]
@@ -152,7 +159,7 @@ class RadiologicalDepthLayer(nn.Module):
 
             # Convert HU to density using lookup table
             density = convert_HU_to_density(
-                gathered, self.treatment_config.lookup_table
+                gathered, self.lookup_table
             )  # shape: [B, G, P]
 
             # Calculate physical step size per angle (accounts for anisotropic voxels)
@@ -195,7 +202,7 @@ class RadiologicalDepthLayer(nn.Module):
                 cumsum = cumsum.view(B * G, 1, P)
 
                 # Calculate target size based on downsampling factor
-                downsample_factor = max(self.treatment_config.downsampling_factor)
+                downsample_factor = max(self.downsampling_factor)
                 P_target = P // downsample_factor
 
                 # Downsample using linear interpolation

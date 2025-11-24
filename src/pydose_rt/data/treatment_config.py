@@ -135,18 +135,11 @@ class TreatmentConfig(BaseModel):
     prescription_gy: Optional[float] = None
     structures: Optional[List[StructureTemplate]] = []
 
-    plan_iso_center: Optional[tuple[float, float, float]] = None
-    plan_mlcs: Optional[np.array] = None
-    plan_mus: Optional[np.array] = None
-    plan_jaws: Optional[np.array] = None
-    plan_clockwise: Optional[bool] = None
-    plan_starting_angle: Optional[float] = None
-
-    kernel_size: int = Field(
+    kernel_size: Optional[int] = Field(
         default=15,
         description="Kernel size to use during convolution",
     )
-    field_size: tuple[int, int] = Field(
+    field_size: Optional[tuple[int, int]] = Field(
         default=(400, 400), description="The field size in the plane given in mm (H,W)"
     )
     downsampling_factor: tuple[int, int, int] = Field(
@@ -184,8 +177,14 @@ class TreatmentConfig(BaseModel):
             dtype=np.float32,
         )
 
-    number_of_cps: int = Field(
+    number_of_cps: Optional[int] = Field(
+        default=None,
         description="The number of beams for the plan"
+    )
+    
+    gantry_angles: Optional[np.ndarray] = Field(
+        default = np.array([]),
+        description = "Gantry angles of the plan"
     )
     starting_angle: Optional[float] = Field(
         default=0.0,
@@ -205,24 +204,6 @@ class TreatmentConfig(BaseModel):
     )
     SID: float = Field(default=1000, description="Source-to-isocenter distance in mm")
 
-    @computed_field(repr=False)
-    @property
-    def gantry_angles(self) -> np.ndarray:
-        start = math.radians(self.starting_angle)
-        if self.number_of_cps == 1:
-            return [ start ]
-        
-        if self.clockwise:
-            end = math.radians(self.starting_angle) + math.radians(360)  
-        else:
-            end = math.radians(self.starting_angle) - math.radians(360)
-
-        return np.linspace(
-            start, 
-            end,
-            self.number_of_cps + 2,
-            endpoint=False,
-        )[:-2] % (2 * math.pi)
 
     @computed_field(repr=False)
     @property

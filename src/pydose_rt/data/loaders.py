@@ -4,69 +4,88 @@ Patient configuration - CT dimensions and geometric parameters.
 # from pydantic import BaseModel, Field, model_validator
 from dataclasses import dataclass
 from token import OP
-from typing import Optional, TYPE_CHECKING, List
+from typing import Optional, TYPE_CHECKING, List, overload
 import torch
 import math
 import numpy as np
 from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
-from pydose_rt.data import TreatmentConfig, Patient
+from pydose_rt.data import TreatmentConfig, Patient, BeamSequence, Beam
 from .utils.nifti_utils import load_files
 import SimpleITK as sitk
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Literal
 
 def load_dicom(
-    ct_folder: str, 
-    dose_path: str | None, 
-    plan_path: str | None, 
-    struct_names: List[str] | None = None, 
-    treatment_preset: str | None = None,
-    recenter: bool = True) -> tuple['Patient', "TreatmentConfig"]:
+    ct_folder: str,
+    dose_path: str | None,
+    plan_path: str | None,
+    struct_path: str | None,
+    struct_names: List[str] | None = None,
+    recenter: bool = True,
+    use_delivery: bool = False,
+    device: torch.device | str = 'cuda',
+    dtype: torch.dtype = torch.float32,
+) -> tuple['Patient', 'TreatmentConfig'] | tuple['Patient', 'TreatmentConfig', 'BeamSequence']:
     """
-    Create PatientCoPatientnfig from Patient.
-    
+    Load DICOM data and create Patient and TreatmentConfig.
     Args:
-        patient: Patient instance
-        
+        ct_folder: Path to folder containing CT DICOM files
+        dose_path: Path to RTDOSE file
+        plan_path: Path to RTPLAN file
+        struct_names: List of structure names to load (None = all)
+        treatment_preset: Path to treatment preset JSON
+        recenter: Whether to recenter to isocenter
+        use_delivery: If True (default), configure for delivery positions (N averaged).
+                      If False, configure for raw control points (N+1 from DICOM).
+                      Only affects return when return_beam_sequence=True.
+        device: Device for BeamSequence tensors (only used if return_beam_sequence=True)
+        dtype: Data type for BeamSequence tensors (only used if return_beam_sequence=True)
     Returns:
-        Patient with CT dimensions from patient
+        (Patient, TreatmentConfig, BeamSequence)
+    Note:
+        When use_delivery=True:
+        - BeamSequence contains N delivery positions (averaged from N+1 control points)
+        - TreatmentConfig.number_of_cps = N (matches BeamSequence)
+        - DoseEngine can be created directly with this config
+        When use_delivery=False:
+        - BeamSequence contains N+1 raw control points from DICOM
+        - TreatmentConfig.number_of_cps = N+1 (matches BeamSequence)
+        - Call beam_seq.to_delivery() before dose calculation
     """
     ct_series, ref = load_ct_series(ct_folder)
-    structures = load_structures(ct_series, ct_folder, struct_names=struct_names)
+    structures = load_structures(ct_series, ct_folder, struct_path, struct_names=struct_names)
     dose = load_dose(dose_path)
     scaling = 400
 
     # If RTPLAN is available, use it to determine isocenter
-    clockwise = True
-    starting_angle = 0.0
     if plan_path is not None:
         plans = fetch_plan_data(plan_path, scaling)
-        mlcs, jaws, mus, clockwise, starting_angle, final_angle, bld_angle, num_fractions = list(plans.values())[0]
+        beams, num_fractions = list(plans.values())[0]
         # Use the first dose as reference
         ct_series, structures, dose, iso_center = resample_based_on_plan(ct_series, structures, dose, recenter, plan_path)
 
     else:
         # No plan, just match to first dose
-        mlcs = None
         ct_series, structures = resample_based_on_dose(ct_series, dose)
 
-    num_of_cps = max(mus.shape[1] - 1, 1)
-    patient = Patient(ct_array=sitk.GetArrayFromImage(ct_series),
-        structures={k: sitk.GetArrayFromImage(v) for k, v in structures.items()},            voxel_spacing_mm=ct_series.GetSpacing(),
-        dose=sitk.GetArrayFromImage(dose) / num_fractions)
-    
-    treatment = TreatmentConfig(
-        preset=treatment_preset,
-        number_of_cps=num_of_cps,
-        iso_center=(0, 0, 0) if recenter else iso_center,
-        plan_mlcs=mlcs,
-        plan_jaws=jaws,
-        plan_mus=mus,
-        clockwise=clockwise,
-        starting_angle=starting_angle,
-        beam_limiting_device_angle=math.radians(bld_angle),
+    patient = Patient(
+        ct_array=torch.from_numpy(sitk.GetArrayFromImage(ct_series)),        
+        structures={k: torch.from_numpy(sitk.GetArrayFromImage(v)) > 0 for k, v in structures.items()},
+        voxel_spacing_mm=ct_series.GetSpacing(),
+        dose=torch.from_numpy(sitk.GetArrayFromImage(dose) / num_fractions)
     )
+    
 
-    return patient, treatment
+    # Create BeamSequence from raw control points
+    beam_sequences = []
+    for seq, _ in plans.values():
+        beam_sequence = BeamSequence.from_beams(seq).to(device).to(dtype)
+
+        if use_delivery:
+            # Convert to delivery positions and update treatment config
+            beam_sequence = beam_sequence.to_delivery()
+        beam_sequences.append(beam_sequence)
+
+    return patient, beam_sequences
 
 def load_nifti(
     folder_path

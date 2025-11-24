@@ -33,7 +33,8 @@ def print_results(
     mae_loss,
     plot_ct=True,
     dose_max=10.0,
-    preset="umea"
+    preset="umea",
+    out_path=None
 ):
     def _hide_ticks(ax):
         ax.set_xticks([])
@@ -91,13 +92,13 @@ def print_results(
     ax.set_title('Jaws (lower)')
     _imshow_fullwidth(
         ax,
-        pred_jaws.cpu().detach().numpy()[0, 0:1, :],
+        pred_jaws.cpu().detach().numpy()[0, :, 0:1],
         cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_jaws_grads is not None):
         _imshow_fullwidth(
             ax,
-            pred_jaws_grads[0, 0:1, :],
+            pred_jaws_grads[0, :, 0:1],
             cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
         )
 
@@ -106,13 +107,13 @@ def print_results(
     ax.set_title('Jaws (higher)')
     _imshow_fullwidth(
         ax,
-        pred_jaws.cpu().detach().numpy()[0, 1:2, :],
+        pred_jaws.cpu().detach().numpy()[0, :, 1:2],
         cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_jaws_grads is not None):
         _imshow_fullwidth(
             ax,
-            pred_jaws_grads[0, 1:2, :],
+            pred_jaws_grads[0, :, 1:2],
             cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
         )
 
@@ -121,13 +122,13 @@ def print_results(
     ax.set_title('MLCs (left)')
     _imshow_fullwidth(
         ax,
-        np.transpose(pred_mlc.cpu().detach().numpy()[0, 0, :, :]),
+        np.transpose(pred_mlc.cpu().detach().numpy()[0, :, :, 0]),
         cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_mlc_grads is not None):
         _imshow_fullwidth(
             ax,
-            np.transpose(pred_mlc_grads[0, 0, :, :]),
+            np.transpose(pred_mlc_grads[0, :, :, 0]),
             cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
         )
 
@@ -136,13 +137,13 @@ def print_results(
     ax.set_title('MLCs (right)')
     _imshow_fullwidth(
         ax,
-        np.transpose(pred_mlc.cpu().detach().numpy()[0, 1, :, :]),
+        np.transpose(pred_mlc.cpu().detach().numpy()[0, :, :, 1]),
         cmap='gray', vmin=-200.0, vmax=200.0
     )
     if (pred_mlc_grads is not None):
         _imshow_fullwidth(
             ax,
-            np.transpose(pred_mlc_grads[0, 1, :, :]),
+            np.transpose(pred_mlc_grads[0, :, :, 1]),
             cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
         )
 
@@ -264,11 +265,18 @@ def print_results(
 
     # Layout & save
     fig.tight_layout(rect=[0, 0, 1, 0.97])  # keep space for the suptitle
-    save_path = "out/figure.png"
-    plt.savefig(save_path, dpi=150)
-    if (experiment is not None):
-        experiment.log_figure(save_path, overwrite=True)
-    plt.close()
+    
+    if (out_path is None):
+        plt.show()
+        if (experiment is not None):
+            save_path = "out/exp.png"
+            plt.savefig(save_path, dpi=150)
+            experiment.log_figure(save_path, overwrite=True)
+    else:
+        plt.savefig(out_path)
+        if (experiment is not None):
+            experiment.log_figure(out_path, overwrite=True)
+        plt.close()
 
 def make_animation(experiment, treatment: TreatmentConfig, machine_config: MachineConfig, patient_data: Patient, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):
     """
@@ -396,3 +404,66 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
     if experiment is not None:
         experiment.log_video(video_path, overwrite=True)
     return
+
+def quick_plot(dose_volume, dose_pred, ct_volume, title, dose_max, out_path = None):
+    vmax = 1
+    plt.figure()
+    slice_idx = dose_volume.shape[1] // 2 - 5
+    plt.subplot(331)
+    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+    plt.imshow(dose_volume[0, slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.axis('off')
+    plt.colorbar()
+    plt.subplot(332)
+    plt.title(title)
+    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+    plt.imshow(dose_pred[0, slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.axis('off')
+    plt.colorbar()
+    plt.subplot(333)
+    plt.imshow(ct_volume[0, slice_idx, :, :].cpu().detach().numpy(), cmap='gray')
+    plt.imshow(dose_volume[0, slice_idx, :, :].cpu().detach().numpy() - dose_pred[0, slice_idx, :, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+    plt.axis('off')
+    plt.colorbar()
+
+    slice_idx = dose_volume.shape[2] // 2 - 5
+    plt.subplot(334)
+    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+    plt.imshow(dose_volume[0, :, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.axis('off')
+    plt.colorbar()
+    plt.subplot(335)
+    # plt.title(f"MAE {mae_loss}")
+    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+    plt.imshow(dose_pred[0, :, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.axis('off')
+    plt.colorbar()
+    plt.subplot(336)
+    plt.imshow(ct_volume[0, :, slice_idx, :].cpu().detach().numpy(), cmap='gray')
+    plt.imshow(dose_volume[0, :, slice_idx, :].cpu().detach().numpy() - dose_pred[0, :, slice_idx, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+    plt.axis('off')
+    plt.colorbar()
+
+    slice_idx = dose_volume.shape[3] // 2 + 5
+    plt.subplot(337)
+    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+    plt.imshow(dose_volume[0, :, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.axis('off')
+    plt.colorbar()
+    plt.subplot(338)
+    # plt.title(f"MAE {mae_loss}")
+    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
+    plt.imshow(dose_pred[0, :, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.axis('off')
+    plt.colorbar()
+    plt.subplot(339)
+    plt.imshow(ct_volume[0, :, :, slice_idx].cpu().detach().numpy(), cmap='gray')
+    plt.imshow(dose_volume[0, :, :, slice_idx].cpu().detach().numpy() - dose_pred[0, :, :, slice_idx].cpu().detach().numpy(), cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+    plt.axis('off')
+    plt.colorbar()
+
+    if out_path is None:
+        plt.show()
+    else:
+        plt.savefig(out_path)
+        plt.close()

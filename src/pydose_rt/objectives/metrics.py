@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import trapezoid
-from pydose_rt.data import MachineConfig, TreatmentConfig, Patient
+from pydose_rt.data import MachineConfig, TreatmentConfig, Patient, Beam
+from pydose_rt.data.treatment_config import ClinicalCriterion
 from pydose_rt import DoseEngine
 import copy
 import pymedphys
@@ -446,11 +447,13 @@ def result_validation(patient: Patient,
         )
         
         # Compute dose cutoff value (10% of max dose)
-        
+        gamma_dose_ref = patient.dose.cpu().detach().numpy()
+        gamma_dose_eval = pred_dose[0, ...].cpu().detach().numpy()
         dose_cutoff = 10.0
         if global_normalisation is None:
-            global_normalisation = patient.dose.max()
+            global_normalisation = gamma_dose_ref.max()
         dose_cutoff_value = dose_cutoff / 100 * global_normalisation
+        gamma_mask = gamma_dose_ref > dose_cutoff_value
         dose_threshold = 3.0
         distance_threshold = 3.0
         max_gamma = 2.0
@@ -460,9 +463,9 @@ def result_validation(patient: Patient,
         # Compute gamma
         gamma_map = pymedphys.gamma(
             axes_reference=axes,
-            dose_reference=patient.dose,
+            dose_reference=gamma_dose_ref,
             axes_evaluation=axes,
-            dose_evaluation=pred_dose[0, ...],
+            dose_evaluation=gamma_dose_eval,
             dose_percent_threshold=dose_threshold,
             distance_mm_threshold=distance_threshold,
             lower_percent_dose_cutoff=dose_cutoff,
@@ -474,9 +477,7 @@ def result_validation(patient: Patient,
         )
         
         # Calculate pass rate
-        mask = patient.dose > dose_cutoff_value
-        # mask = config.patient.structures["External"] > 0
-        gamma_valid = gamma_map[mask]
+        gamma_valid = gamma_map[gamma_mask]
         gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
         pass_rate = np.sum(gamma_valid <= 1.0) / len(gamma_valid) * 100
         mean_gamma = np.mean(gamma_valid)
@@ -526,40 +527,24 @@ def validate_unit_dose(machine: MachineConfig, treatment: TreatmentConfig, targe
     device = treatment.device
     # config.machine.ct_array_shape = tuple(np.divide((200, 200, 200), config.machine.resolution).astype(np.int32))
     treatment.number_of_cps = 1
-    treatment.starting_angle = 0
+    treatment.gantry_angles = np.array([0.0])
+    treatment.beam_limiting_device_angle = np.array([0.0])
     
     # config.machine.downsampling_factor = (1,1,1)
     center_x, center_y, center_z = np.divide(machine.ct_array_shape, 2).astype(np.int32)
     iso_y = - (100 - center_y * machine.resolution[1])
     center_y_iso = center_y - int(iso_y / machine.resolution[1])
     treatment.iso_center = (0.0, iso_y, 0.0)
- 
-    # Create water phantom (HU = 0 for water)
-    x_ct = 0.0 * np.expand_dims(np.ones(machine.ct_array_shape), 0)
- 
-    # Set up MLC positions for full 10x10 field
-    # Positions are normalized: 0.5 and 1.0 create a centered field
-    y_mlc = np.zeros((1, 2, treatment.number_of_cps, machine.number_of_leaf_pairs))
-    y_mlc[:, 0, :, :] = - 100.0
-    y_mlc[:, 1, :, :] = 100.0
- 
-    # Set up jaw positions for 10x10 field
-    y_jaws = np.zeros((1, 2, treatment.number_of_cps))
-    y_jaws[:, 0, :] = - 100.0
-    y_jaws[:, 1, :] = 100.0
- 
-    # Set monitor units
-    mus = target_mu * np.ones((1, treatment.number_of_cps), dtype=np.float32)
- 
+    beam = Beam.create(0.0, machine.number_of_leaf_pairs, (100.0, 100.0), treatment.device, treatment.dtype)
+    beam.mu = target_mu * beam.mu
+    
     # Create dose engine
     dose_layer = DoseEngine(machine, treatment, permute_ct=False, leafs_centered=False)
  
     # Calculate dose
-    dose = dose_layer(
-        torch.tensor(y_mlc, dtype=treatment.dtype, device=device),
-        torch.tensor(mus, dtype=treatment.dtype, device=device),
-        jaw_positions=torch.tensor(y_jaws, dtype=treatment.dtype, device=device),
-        ct_image=torch.tensor(x_ct, dtype=treatment.dtype, device=device)
+    dose = dose_layer.forward_single_beam(
+        beam,
+        ct_image=torch.ones(machine.ct_array_shape, dtype=treatment.dtype, device=device).unsqueeze(0),
     )
 
     # Get center dose (at 10cm depth - index 50 for 100 voxels)

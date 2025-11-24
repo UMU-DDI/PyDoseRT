@@ -20,15 +20,13 @@ Classes:
 
 import torch
 import torch.nn as nn
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
-from pydose_rt.geometry.rotations import rotate_2d_images
 from pydose_rt.physics.fluence.fluence_modeling import (
     apply_source_penumbra,
     apply_mlc_scatter,
     apply_head_scatter,
-    apply_tongue_and_groove,
-    LearnableFluenceKernel
+    apply_tongue_and_groove
 )
 
 
@@ -50,7 +48,10 @@ class FluenceMapLayer(nn.Module):
     def __init__(
         self,
         machine_config: MachineConfig,
-        treatment_config: TreatmentConfig,
+        device: torch.device,
+        dtype: type,
+        resolution: tuple[float, float, float],
+        field_size: tuple[float, float],
         verbose: bool = False,
         training_sharpness: float = 10.0,
     ):
@@ -65,37 +66,31 @@ class FluenceMapLayer(nn.Module):
         """
         super().__init__()
 
-        self.device=treatment_config.device
-        self.dtype=treatment_config.dtype
+        self.device=device
+        self.dtype=dtype
         self.machine_config = machine_config
-        self.treatment_config = treatment_config
-        self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
+        self.resolution = resolution
         self.verbose = verbose
         self.training_sharpness = training_sharpness
+        self.field_size = field_size
 
         if self.machine_config.leaf_widths is None:
-            self.leaf_widths = torch.ones((self.machine_config.number_of_leaf_pairs, ), dtype=self.dtype) * self.treatment_config.field_size[1] / self.machine_config.number_of_leaf_pairs
+            self.leaf_widths = torch.ones((self.machine_config.number_of_leaf_pairs, ), dtype=self.dtype) * self.field_size[1] / self.machine_config.number_of_leaf_pairs
         else:
             self.leaf_widths = self.machine_config.leaf_widths
 
         # Precompute depth indices
-        W = treatment_config.field_size[1]
+        W = self.field_size[1]
         N = machine_config.number_of_leaf_pairs
         centers = (torch.arange(W, dtype=self.dtype) + 0.5) - (W / 2)  # [H]
         depth_indices = centers.view(W, 1).repeat(1, N)  # [H, N]
         self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.dtype))  # [1, H, N]
 
-        H = treatment_config.field_size[0]
+        H = self.field_size[0]
         centers = (torch.arange(H, dtype=self.dtype) + 0.5) - (H / 2)  # [W]
         jaw_indices = centers.view(1, H).repeat(1, 1)
         self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
 
-        # Store collimator angles (beam limiting device angles) for rotating fluence maps
-        self.collimator_angles = torch.tensor(
-            treatment_config.beam_limiting_device_angle,
-            dtype=self.dtype,
-            device=self.device
-        )  # [1, G] in radians
 
     def forward(
         self, leaf_positions: torch.Tensor, 
@@ -112,15 +107,15 @@ class FluenceMapLayer(nn.Module):
         Returns:
             torch.Tensor: Fluence map tensor of shape [B*G, W, H, 1].
         """
-        B, _, G, N = leaf_positions.shape  # [B, G, 2, N]
-        leaf_positions = leaf_positions.permute(0, 2, 1, 3).reshape(
-            B * G, 2, N
-        )  # [B*G, 2, N]
+        B, G, N, _ = leaf_positions.shape  # [B, G, N, 2]
+        leaf_positions = leaf_positions.reshape(
+            B * G, N, 2
+        )  # [B*G, N, 2]
 
-        left_positions = leaf_positions[:, 0, :]   # [B*G, N]
-        right_positions = leaf_positions[:, 1, :]   # [B*G, N]
+        left_positions = leaf_positions[..., 0]   # [B*G, N]
+        right_positions = leaf_positions[..., 1]   # [B*G, N]
 
-        W = self.treatment_config.field_size[1]
+        W = self.field_size[1]
 
         left_positions = left_positions.unsqueeze(1).repeat(1, W, 1)  # [B*G, H, N]
         right_positions = right_positions.unsqueeze(1).repeat(1, W, 1)  # [B*G, H, N]
@@ -140,13 +135,13 @@ class FluenceMapLayer(nn.Module):
         mask = mask.view(B, G, W, N)
         mask = mask.view(B * G, W, N, 1)
 
-        mask = resample_fluence_map(mask, self.leaf_widths, self.treatment_config.field_size[0], self.dtype)  # [B*G, H, M, 1]
+        mask = resample_fluence_map(mask, self.leaf_widths, self.field_size[0], self.dtype)  # [B*G, H, M, 1]
 
         if jaw_positions is not None:
-            jaw_positions = jaw_positions.permute(0, 2, 1).reshape(B * G, 2)  # [B*G, 2]
+            jaw_positions = jaw_positions.reshape(B * G, 2)  # [B*G, 2]
             bottom_positions = jaw_positions[:, 0].unsqueeze(1)  # [B*G]
             top_positions = jaw_positions[:, 1].unsqueeze(1)  # [B*G]
-            H = self.treatment_config.field_size[0]
+            H = self.field_size[0]
             bottom_positions = bottom_positions.unsqueeze(2).repeat(1, 1, H)  # [B*G, H]
             top_positions = top_positions.unsqueeze(2).repeat(1, 1, H)
 
@@ -168,22 +163,22 @@ class FluenceMapLayer(nn.Module):
             # Calculate leaf boundary positions in mm
             leaf_boundaries_mm = []
             if self.machine_config.leaf_widths is not None:
-                cumulative_pos = -self.treatment_config.field_size[0] / 2.0
+                cumulative_pos = -self.field_size[0] / 2.0
                 for width in self.machine_config.leaf_widths[:-1]:  # Skip last boundary
                     cumulative_pos += width
                     leaf_boundaries_mm.append(cumulative_pos)
             else:
                 # Uniform leaf widths
                 n_leaves = self.machine_config.number_of_leaf_pairs
-                leaf_width = self.treatment_config.field_size[0] / n_leaves
+                leaf_width = self.field_size[0] / n_leaves
                 for i in range(1, n_leaves):
-                    boundary_pos = -self.treatment_config.field_size[0] / 2.0 + i * leaf_width
+                    boundary_pos = -self.field_size[0] / 2.0 + i * leaf_width
                     leaf_boundaries_mm.append(boundary_pos)
 
             fluence_map = apply_tongue_and_groove(
                 fluence_map,
                 leaf_boundaries_mm=leaf_boundaries_mm,
-                field_size_mm=self.treatment_config.field_size[0],
+                field_size_mm=self.field_size[0],
                 tg_reduction=self.machine_config.tongue_groove_reduction,
                 tg_width_mm=self.machine_config.tongue_groove_width_mm,
                 pixel_size_mm=1.0
@@ -215,13 +210,4 @@ class FluenceMapLayer(nn.Module):
             ).to(self.dtype)
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 
-        # Apply collimator rotation (beam limiting device angle)
-        # This rotates the fluence map in-plane before projection to 3D
-        fluence_map = rotate_2d_images(
-            fluence_map,
-            self.collimator_angles,
-            device=self.device,
-            dtype=self.dtype
-        )  # [B*G, H, W]
-        
         return fluence_map

@@ -44,7 +44,10 @@ class PencilBeamKernelLayer(nn.Module):
     """
     def __init__(self, 
                  machine_config: MachineConfig, 
-                 treatment_config: TreatmentConfig, 
+                 device: torch.device, 
+                 dtype: type,
+                 resolution: tuple[float, float, float],
+                 kernel_size: tuple[int, int],
                  verbose: bool = False):
         """
         Initializes the PencilBeamKernelLayer and creates the pencil beam model.
@@ -56,14 +59,14 @@ class PencilBeamKernelLayer(nn.Module):
         """
         super().__init__()
 
-        self.device=treatment_config.device
-        self.dtype=treatment_config.dtype
+        self.device=device
+        self.dtype=dtype
         self.machine_config = machine_config
-        self.kernel_size = treatment_config.kernel_size
+        self.kernel_size = kernel_size
         self.verbose = verbose
-        self.resolution = tuple([x * y for x, y in zip(machine_config.resolution,  treatment_config.downsampling_factor)])
+        self.resolution = resolution
 
-        self.pbm = PencilBeamModel(self.resolution, self.machine_config.tpr_20_10, treatment_config.kernel_size)
+        self.pbm = PencilBeamModel(self.resolution, self.machine_config.tpr_20_10, kernel_size)
 
     def forward(self, radiological_depth: torch.Tensor) -> np.ndarray:
         """
