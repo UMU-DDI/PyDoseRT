@@ -7,8 +7,9 @@ from skimage import measure
 from matplotlib.colors import ListedColormap
 import os
 import cv2
+from pydose_rt.data.beam import BeamSequence
 from pydose_rt.engine.dose_engine import DoseEngine
-from pydose_rt.data import MachineConfig, TreatmentConfig, Patient
+from pydose_rt.data import MachineConfig, OptimizationConfig, Patient
 
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1):
@@ -20,9 +21,7 @@ def print_results(
     treatment,
     raw_losses,
     y_dose,
-    pred_mlc,
-    pred_mus,
-    pred_jaws,
+    beam_sequence: BeamSequence,
     pred_mlc_grads,
     pred_jaws_grads,
     pred_mus_grads,
@@ -61,6 +60,9 @@ def print_results(
     scale_mlc  = float(np.max(np.abs(pred_mlc_grads)))  if np.any(pred_mlc_grads)  else 1.0
     scale_jaws = float(np.max(np.abs(pred_jaws_grads))) if np.any(pred_jaws_grads) else 1.0
     scale_mus  = float(np.max(np.abs(pred_mus_grads)))  if np.any(pred_mus_grads)  else 1.0
+    pred_mlc = beam_sequence.leaf_positions.unsqueeze(0)
+    pred_mus = beam_sequence.mus.unsqueeze(0)
+    pred_jaws = beam_sequence.jaw_positions.unsqueeze(0)
 
     # Visual parameters
     
@@ -278,12 +280,12 @@ def print_results(
             experiment.log_figure(out_path, overwrite=True)
         plt.close()
 
-def make_animation(experiment, treatment: TreatmentConfig, machine_config: MachineConfig, patient_data: Patient, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):
+def make_animation(experiment, optimization: OptimizationConfig, machine_config: MachineConfig, patient_data: Patient, dose_layer: DoseEngine, pred_mlc, pred_mus, pred_jaws, dose_max=50.0):
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=treatment.dtype, device=treatment.device) > 0
-    ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=treatment.dtype, device=treatment.device)
+    mask_external = torch.tensor(np.expand_dims(list(patient_data.structures.values())[-1], 0), dtype=dose_layer.dtype, device=dose_layer.device) > 0
+    ct_volume = torch.tensor(np.expand_dims(patient_data.ct_array, 0), dtype=dose_layer.dtype, device=dose_layer.device)
     dose_layer.eval()
 
     # Get the base colormap (jet)
@@ -295,7 +297,7 @@ def make_animation(experiment, treatment: TreatmentConfig, machine_config: Machi
     colors[:, -1] = alpha
     jet_alpha = ListedColormap(colors)
     dose_layer.eval()
-    num_cps = treatment.number_of_cps
+    num_cps = dose_layer.number_of_cps
     slice_idx = patient_data.ct_array.shape[0] // 2
     ct_data = ct_volume.cpu().detach().numpy()[0, slice_idx, :, :]
     dose_data = np.zeros(patient_data.ct_array.shape[1:])

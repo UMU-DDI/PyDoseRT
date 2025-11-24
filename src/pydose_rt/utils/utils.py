@@ -8,7 +8,7 @@ import torch
 import os
 import time
 import pydicom
-from pydose_rt.data import TreatmentConfig
+from pydose_rt.data import OptimizationConfig
 
 def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
     """
@@ -41,7 +41,7 @@ def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
     c = sorted_ratios[median_idx]
     return c
 
-def get_shapes(machine: MachineConfig, treatment: TreatmentConfig):
+def get_shapes(machine: MachineConfig, treatment: OptimizationConfig):
     shapes = dict()
     shapes["MLCs"] = (1, 2, treatment.number_of_cps, machine.number_of_leaf_pairs)
     shapes["jaws"] = (1, 2, treatment.number_of_cps)
@@ -85,7 +85,7 @@ def sample_tensor_nearest(dose_calc, voxel_size, iso_center, xyz_mm):
     # sample
     return dose_calc[iz, iy, ix].cpu().detach().numpy()
 
-def export_plan(treatment: TreatmentConfig, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
+def export_plan(treatment: OptimizationConfig, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
 
     """
     Writes MLC positions and MU values to a new RTPLAN DICOM file.

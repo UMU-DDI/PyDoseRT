@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig, OptimizationConfig
 
 
 class BeamWiseConvolutionalLayer(nn.Module):

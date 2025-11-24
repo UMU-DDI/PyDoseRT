@@ -5,9 +5,10 @@ import numpy as np
 import os
 import torch
 import time
+from pathlib import Path
 import math
 import torch
-from pydose_rt.data import Patient, TreatmentConfig, MachineConfig, loaders
+from pydose_rt.data import Patient, OptimizationConfig, MachineConfig, loaders
 from pydose_rt import DoseEngine
 from pydose_rt.layers import ValidParametersLayer
 from pydose_rt.utils.plotting import *
@@ -30,43 +31,45 @@ else:
 
 if remote:
     ct_folder = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21/"
+    rtstruct_path = next((f for f in Path(ct_folder).iterdir() if "RS" in f.name.upper() or "RTSTRUCT" in f.name.upper()), None)
     rtplan_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
     rtdose_path = "/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-    dtype = torch.float32
 
-    patient, treatment = loaders.load_dicom(
+    patient, beam_sequence = loaders.load_dicom(
                 ct_folder=ct_folder, 
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
-                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
-                treatment_preset="src/pydose_rt/data/treatment_presets/vienna.json"
+                rtstruct_path=rtstruct_path,
+                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"]
                 )
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/vienna.json")
 
-    treatment.kernel_size = 25
-    treatment.device = device
-    treatment.downsampling_factor = (1, 2, 2)
-    treatment.dtype = dtype
+    kernel_size = 25
+    device = device
+    dtype = torch.float32
+    downsampling_factor = (1, 2, 2)
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 3000
 else:
     ct_folder = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21/"
+    rtstruct_path = next((f for f in Path(ct_folder).iterdir() if "RS" in f.name.upper() or "RTSTRUCT" in f.name.upper()), None)
     rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
     rtdose_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-    dtype = torch.float32
 
-    patient, treatment = loaders.load_dicom(
+    patient, beam_sequence = loaders.load_dicom(
                 ct_folder=ct_folder, 
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
-                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
-                treatment_preset="src/pydose_rt/data/treatment_presets/vienna.json"
+                rtstruct_path=rtstruct_path,
+                struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"]
                 )
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/vienna.json")
 
-    treatment.kernel_size = 3
-    treatment.device = device
-    treatment.dtype = dtype
-    treatment.downsampling_factor = (1, 4, 4)
+    kernel_size = 3
+    device = device
+    dtype = torch.float32
+    downsampling_factor = (1, 4, 4)
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 10

@@ -161,7 +161,10 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
                             leaf_positions=torch.from_numpy(np.stack(
                                 [np.array(sequence.LeafJawPositions[:int(len(sequence.LeafJawPositions) / 2)]), 
                                  sequence.LeafJawPositions[int(len(sequence.LeafJawPositions) / 2):]], 1)),
-                            jaw_positions=torch.from_numpy(jaw_positions)))
+                            jaw_positions=torch.from_numpy(jaw_positions),
+                            field_size=(400, 400),
+                            sid=1000.0,
+                            iso_center=(0, 0, 0)))
                         old_mu_value = mu_value
         
         if len(beam_data) > 0:

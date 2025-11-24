@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig, OptimizationConfig
 from pydose_rt.physics.attenuation.hu_density_conversion import convert_HU_to_density
 from pydose_rt.geometry.rotations import get_radiological_depth_indices
 
@@ -77,9 +77,8 @@ class RadiologicalDepthLayer(nn.Module):
         self.resolution = resolution
 
         # If using full CT, compute indices for full-sized CT
-        self.full_ct_shape = self.machine_config.ct_array_shape
         stacked_indices = get_radiological_depth_indices(
-            self.full_ct_shape, gantry_angles, self.dtype
+            ct_array_shape, gantry_angles, self.dtype
         ).to(self.device)
 
         # Final shape: [1, G, P, 3]

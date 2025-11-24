@@ -9,7 +9,7 @@ import torch
 import math
 import numpy as np
 from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
-from pydose_rt.data import TreatmentConfig, Patient, BeamSequence, Beam
+from pydose_rt.data import OptimizationConfig, Patient, BeamSequence, Beam
 from .utils.nifti_utils import load_files
 import SimpleITK as sitk
 from typing import List, Dict, Any, Tuple, Literal
@@ -24,7 +24,7 @@ def load_dicom(
     use_delivery: bool = False,
     device: torch.device | str = 'cuda',
     dtype: torch.dtype = torch.float32,
-) -> tuple['Patient', 'TreatmentConfig'] | tuple['Patient', 'TreatmentConfig', 'BeamSequence']:
+) -> tuple['Patient', 'BeamSequence']:
     """
     Load DICOM data and create Patient and TreatmentConfig.
     Args:

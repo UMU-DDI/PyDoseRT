@@ -1,8 +1,5 @@
 {
   "prescription_gy": 6.1,
-  "iso_center": [0.0, 0.0, 0.0],
-  "field_size": [400, 400],
-  "number_of_cps": 240,
   "structures": [
 
     {

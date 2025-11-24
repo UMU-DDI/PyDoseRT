@@ -10,18 +10,10 @@ class MachineConfig(BaseSettings):
         default=None,
         description="Optional preset name whose values are merged before validation.",
     )
-    ct_array_shape: tuple[int, int, int] = Field(
-        default=(320, 128, 128),
-        description="Shape of the CT array defining the array voxels",
-    )
-    resolution: tuple[float, float, float] = Field(
-        default=(1.25, 3.125, 3.125),
-        description="The resolution in mm of the CT array in the order z,y,x",
-    )
-    minimum_leaf_overlap: float = Field(
+    minimum_leaf_opening: float = Field(
         default=5.0, description="The minimum opening of the leafs, given in mm."
     )
-    minimum_jaw_overlap: float = Field(
+    minimum_jaw_opening: float = Field(
         default=5.0, description="The minimum opening of the jaws, given in mm."
     )
     maximum_leaf_tip_overlap: float = Field(
@@ -88,6 +80,29 @@ class MachineConfig(BaseSettings):
         
     number_of_leaf_pairs: int = Field(description="The number of leafs")
 
+    @property
+    def lookup_table(self) -> np.ndarray:
+        return np.array(
+            [
+                [-1000, 0.0],  # SAT: Added for safety
+                [-992, 0.00109],
+                [-960, 0.00109],
+                [-500, 0.5],
+                [-75, 0.95],
+                [42, 1.04],
+                [85, 1.08],
+                [490, 1.29],
+                [890, 1.52],
+                [1240, 1.72],
+                [1670, 1.95],
+                [2155, 2.15],
+                [2640, 2.34],
+                [2832, 2.46],
+                [2840, 6.6],
+            ],
+            dtype=np.float32,
+        )
+    
     @staticmethod
     def _load_preset_json(path_str: str) -> dict[str, Any]:
         """

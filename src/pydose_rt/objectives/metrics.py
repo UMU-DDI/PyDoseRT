@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import trapezoid
-from pydose_rt.data import MachineConfig, TreatmentConfig, Patient, Beam
-from pydose_rt.data.treatment_config import ClinicalCriterion
+from pydose_rt.data import MachineConfig, OptimizationConfig, Patient, Beam
+from pydose_rt.data.beam import BeamSequence
+from pydose_rt.data.optimization_config import ClinicalCriterion
 from pydose_rt import DoseEngine
 import copy
 import pymedphys
@@ -174,7 +175,7 @@ def volume_at_dose(dose_array: np.ndarray,
 
 
 def validate_clinical_criteria(patient: Patient,
-                               treatment_config: TreatmentConfig,
+                               treatment_config: OptimizationConfig,
                                pred_dose: np.ndarray) -> Dict[str, Dict[str, float]]:
     """
     Validate predicted dose against clinical criteria defined in treatment_config.
@@ -423,20 +424,18 @@ def _evaluate_clinical_criterion(dose: np.ndarray,
 
 def result_validation(patient: Patient,
                       machine_config: MachineConfig,
-                      treatment_config: TreatmentConfig,
-                      pred_dose: np.array,
-                      pred_mlc: np.array,
-                      pred_jaws: np.array,
-                      pred_mus: np.array,
+                      beam_sequence: BeamSequence,
+                      pred_dose: torch.Tensor,
+                      optimization_config: OptimizationConfig = None,
                       compute_gamma: bool = False,                      
                       compute_clinical_criteria: bool = True,
                       global_normalisation = None):
     results = {}
     
     # Validate clinical criteria if requested
-    if compute_clinical_criteria:
+    if compute_clinical_criteria and (optimization_config is not None):
         clinical_results = validate_clinical_criteria(
-            patient, treatment_config, pred_dose
+            patient, optimization_config, pred_dose
         )
         results['clinical_criteria'] = clinical_results
         
@@ -485,6 +484,9 @@ def result_validation(patient: Patient,
         results["gamma_pass_rate"] = pass_rate
         results["mean_gamma"] = mean_gamma
 
+    pred_mlc = beam_sequence.leaf_positions.unsqueeze(0)
+    pred_mus = beam_sequence.mus.unsqueeze(0)
+    pred_jaws = beam_sequence.jaw_positions.unsqueeze(0)
     # Start with values in the predictions
     if (pred_dose.min() < 0):
         results["check_min_dose_pass"] = 0
@@ -506,13 +508,13 @@ def result_validation(patient: Patient,
     else:
         results["check_mus_bounds_pass"] = 1
 
-    if (((pred_mlc[0, 1, :, :] - pred_mlc[0, 0, :, :]).min() * treatment_config.field_size[0]).item() < machine_config.minimum_leaf_overlap):
+    if (((pred_mlc[0, 1, :, :] - pred_mlc[0, 0, :, :]).min() * beam_sequence.field_size[0]).item() < machine_config.minimum_leaf_opening):
         results["check_mlc_collision_pass"] = 0
     else:
         results["check_mlc_collision_pass"] = 1
 
-    if (((pred_mlc[0, 0, :, :].max() - pred_mlc[0, 0, :, :].min()) * treatment_config.field_size[0]).item() > 150.0 or \
-        ((pred_mlc[0, 1, :, :].max() - pred_mlc[0, 1, :, :].min()) * treatment_config.field_size[0]).item() > 150.0):
+    if (((pred_mlc[0, 0, :, :].max() - pred_mlc[0, 0, :, :].min()) * beam_sequence.field_size[0]).item() > 150.0 or \
+        ((pred_mlc[0, 1, :, :].max() - pred_mlc[0, 1, :, :].min()) * beam_sequence.field_size[0]).item() > 150.0):
         results["maximum_leaf_tip_difference"] = 0
     else:
         results["maximum_leaf_tip_difference"] = 1
@@ -520,7 +522,7 @@ def result_validation(patient: Patient,
 
     return results
 
-def validate_unit_dose(machine: MachineConfig, treatment: TreatmentConfig, target_mu: int):
+def validate_unit_dose(machine: MachineConfig, target_mu: int):
     # Create config for 20x20x20 cm phantom with 2mm resolution
     # 200mm / 2mm = 100 voxels per dimension
     treatment = copy.deepcopy(treatment)

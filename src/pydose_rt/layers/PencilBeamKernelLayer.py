@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 from pydose_rt.physics.kernels.pencil_beam_model import PencilBeamModel
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig, OptimizationConfig
 
         
 

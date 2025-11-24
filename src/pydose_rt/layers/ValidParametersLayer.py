@@ -75,7 +75,7 @@ class ValidParametersLayer(nn.Module):
         Initializes the ValidParametersLayer.
 
         Args:
-            config (MachineConfig): Configuration object with mu_scaling, minimum_leaf_overlap, and field_size attributes.
+            config (MachineConfig): Configuration object with mu_scaling, minimum_leaf_opening, and field_size attributes.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()
@@ -86,8 +86,8 @@ class ValidParametersLayer(nn.Module):
         self.verbose = verbose
         self.leafs_centered = leafs_centered
         self.adjust_values = adjust_values
-        self.min_leaf_opening = machine_config.minimum_leaf_overlap
-        self.min_jaw_opening = machine_config.minimum_jaw_overlap
+        self.min_leaf_opening = machine_config.minimum_leaf_opening
+        self.min_jaw_opening = machine_config.minimum_jaw_opening
         self.half_field_width = field_size[1] / 2.0
 
     @staticmethod

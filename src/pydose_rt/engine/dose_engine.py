@@ -19,7 +19,7 @@ from pydose_rt.layers.RadiologicalDepthLayer import RadiologicalDepthLayer
 from pydose_rt.layers.PencilBeamKernelLayer import PencilBeamKernelLayer
 from pydose_rt.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
 from pydose_rt.layers.CPRotationLayer import CPRotationLayer
-from pydose_rt.data import MachineConfig, TreatmentConfig, Beam, BeamSequence
+from pydose_rt.data import MachineConfig, Beam, BeamSequence
 from pydose_rt.geometry.rotations import rotate_2d_images
 
 
@@ -28,7 +28,7 @@ class DoseEngine(nn.Module):
     Implements the full dose calculation pipeline for radiotherapy.
 
     Usage:
-        engine = DoseEngine(machine_config, treatment_config)
+        engine = DoseEngine(machine_config)
         dose = engine.forward(leaf_positions, mus, jaw_positions, ct_image)
 
     Or with BeamSequence:
@@ -36,15 +36,19 @@ class DoseEngine(nn.Module):
 
     Attributes:
         machine_config (MachineConfig): Machine physics parameters.
-        treatment_config (TreatmentConfig): Treatment settings.
         device (torch.device): PyTorch device for computation.
     """
 
     def __init__(
         self,
+        ct_array_shape: tuple[int, int, int],
+        resolution: tuple[float, float, float],
         machine_config: MachineConfig,
-        treatment_config: TreatmentConfig,
-        beam_sequence: BeamSequence = None,
+        beam_input: BeamSequence | Beam,
+        device: torch.device, 
+        dtype: type,
+        kernel_size: int,
+        downsampling_factor: tuple[int, int, int] = (1, 1, 1),
         leafs_centered: bool = False,
         crop_volume: bool = False,
         permute_ct: bool = False,
@@ -67,29 +71,32 @@ class DoseEngine(nn.Module):
         """
         super().__init__()
         self.machine_config = machine_config
-        self.treatment_config = treatment_config
+        self.downsampling_factor = downsampling_factor
+        self.ct_array_shape = ct_array_shape
+        self.ct_resolution = resolution
         self.verbose = verbose
         self.debug = debug
         self.crop_volume = crop_volume
         self.permute_ct = permute_ct
         self._leafs_centered = leafs_centered
         self._adjust_values = adjust_values
+        self.kernel_size = kernel_size
 
-        self.device = treatment_config.device
-        self.dtype = treatment_config.dtype
+        self.device = device
+        self.dtype = dtype
 
-        if len(treatment_config.gantry_angles) != 0:
-            self.number_of_cps = treatment_config.number_of_cps
-            self.gantry_angles = torch.from_numpy(treatment_config.gantry_angles)
-            self.collimator_angles = torch.tensor(
-                self.treatment_config.beam_limiting_device_angle,
-                dtype=self.dtype,
-                device=self.device
-            )
-        elif beam_sequence is not None:
-            self.number_of_cps = len(beam_sequence)
-            self.gantry_angles = beam_sequence.gantry_angles
-            self.collimator_angles = beam_sequence.beam_limiting_device_angles.to(self.dtype).to(self.device)
+        if isinstance(beam_input, Beam):
+            self.number_of_cps = 1
+            self.gantry_angles = torch.tensor([beam_input.gantry_angle]).to(self.dtype).to(self.device)
+            self.collimator_angles = torch.tensor(beam_input.beam_limiting_device_angle).to(self.dtype).to(self.device)
+        else:
+            self.number_of_cps = len(beam_input)
+            self.gantry_angles = beam_input.gantry_angles
+            self.collimator_angles = beam_input.beam_limiting_device_angles.to(self.dtype).to(self.device)
+
+        self.field_size = beam_input.field_size
+        self.SID = beam_input.sid
+        self.iso_center = beam_input.iso_center
 
         self._initialize_layers()
 
@@ -97,14 +104,14 @@ class DoseEngine(nn.Module):
         """Initialize all processing layers."""
         self.resolution = tuple([
             x * y for x, y in zip(
-                self.machine_config.resolution,
-                self.treatment_config.downsampling_factor
+                self.ct_resolution,
+                self.downsampling_factor
             )
         ])
         self.ct_array_shape = tuple([
             int(x / y) for x, y in zip(
-                self.machine_config.ct_array_shape,
-                self.treatment_config.downsampling_factor
+                self.ct_array_shape,
+                self.downsampling_factor
             )
         ])
 
@@ -112,7 +119,7 @@ class DoseEngine(nn.Module):
             self.machine_config,
             device = self.device,
             dtype=self.dtype,
-            field_size=self.treatment_config.field_size,
+            field_size=self.field_size,
             leafs_centered=self._leafs_centered,
             adjust_values=self._adjust_values
         )
@@ -121,7 +128,7 @@ class DoseEngine(nn.Module):
             device = self.device,
             dtype=self.dtype,
             resolution=self.resolution,
-            field_size=self.treatment_config.field_size,
+            field_size=self.field_size,
             verbose=self.verbose
         )
 
@@ -131,9 +138,9 @@ class DoseEngine(nn.Module):
             dtype=self.dtype,
             resolution=self.resolution,
             ct_array_shape=self.ct_array_shape,
-            sid=self.treatment_config.SID,
-            iso_center=self.treatment_config.iso_center,
-            field_size=self.treatment_config.field_size,
+            sid=self.SID,
+            iso_center=self.iso_center,
+            field_size=self.field_size,
             verbose=self.verbose
         )
 
@@ -144,8 +151,8 @@ class DoseEngine(nn.Module):
             resolution=self.resolution,
             ct_array_shape=self.ct_array_shape,
             gantry_angles=self.gantry_angles,
-            downsampling_factor=self.treatment_config.downsampling_factor,
-            lookup_table=torch.from_numpy(self.treatment_config.lookup_table),
+            downsampling_factor=self.downsampling_factor,
+            lookup_table=torch.from_numpy(self.machine_config.lookup_table),
             verbose=self.verbose
         )
         self.pencil_beam_kernel_layer = PencilBeamKernelLayer(
@@ -153,7 +160,7 @@ class DoseEngine(nn.Module):
             device = self.device,
             dtype=self.dtype,
             resolution=self.resolution,
-            kernel_size=self.treatment_config.kernel_size,
+            kernel_size=self.kernel_size,
             verbose=self.verbose
         )
         self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(
@@ -172,7 +179,7 @@ class DoseEngine(nn.Module):
     def get_open_parameters(self, field_size: float = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get open field parameters (fully retracted leaves, open jaws)."""
         if field_size is None:
-            field_size = self.treatment_config.field_size
+            field_size = self.field_size
         else:
             field_size = [field_size, field_size]
 
@@ -211,7 +218,7 @@ class DoseEngine(nn.Module):
         assert leaf_positions.shape[0] == B and mus.shape[0] == B and jaw_positions.shape[0] == B, \
             f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, jaw_positions={jaw_positions.shape[0]}, mus={mus.shape[0]}"
 
-        expected_ct = (B, *self.machine_config.ct_array_shape)
+        expected_ct = (B, *self.ct_array_shape)
         assert ct_image.shape == expected_ct, \
             f"CT shape mismatch: expected {expected_ct}, got {ct_image.shape}"
 
@@ -243,12 +250,12 @@ class DoseEngine(nn.Module):
         H, D, W = self.ct_array_shape
         kH, kW = batched_kernels.shape[0], batched_kernels.shape[1]
 
-        SID = float(self.treatment_config.SID)
+        SID = float(self.SID)
         dz = self.resolution[0]
         d_idx = D - 1
-        depth = self.treatment_config.iso_center[0] + SID - ((D - 1) / 2) * dz + d_idx * dz
+        depth = self.iso_center[0] + SID - ((D - 1) / 2) * dz + d_idx * dz
         scale = SID / depth
-        H_field, W_field = self.treatment_config.field_size_in_pixels
+        H_field, W_field = self.field_size
 
         min_leaf_pix = min_leaf * (W_field - 1)
         max_leaf_pix = max_leaf * (W_field - 1)
@@ -287,21 +294,13 @@ class DoseEngine(nn.Module):
         Returns:
             Dose tensor [B, H, D, W].
         """
-        H, D, W = self.machine_config.ct_array_shape
+        H, D, W = self.ct_array_shape
 
         self._assert_sizes(ct_image, leaf_positions, jaw_positions, mus)
 
         with torch.amp.autocast(self.device.type, dtype=self.dtype):
-            # Compute kernels from CT (no caching)
-            if self.treatment_config.downsampling_factor != (1, 1, 1):
-                ct_for_kernel = F.avg_pool3d(
-                    ct_image.unsqueeze(1), self.treatment_config.downsampling_factor
-                ).squeeze(1)
-            else:
-                ct_for_kernel = ct_image
-
             with torch.no_grad():
-                batched_radiological_depths = self.rad_depth_layer(ct_for_kernel)
+                batched_radiological_depths = self.rad_depth_layer(ct_image)
                 batched_kernels = torch.tensor(
                     self.pencil_beam_kernel_layer(batched_radiological_depths),
                     device=self.device,
@@ -363,10 +362,10 @@ class DoseEngine(nn.Module):
             else:
                 batched_accumulated_dose = batched_accumulated_dose[:, single_cp, ...]
 
-            if self.treatment_config.downsampling_factor != (1, 1, 1):
+            if self.downsampling_factor != (1, 1, 1):
                 batched_accumulated_dose = F.interpolate(
                     batched_accumulated_dose.unsqueeze(1),
-                    scale_factor=self.treatment_config.downsampling_factor,
+                    scale_factor=self.downsampling_factor,
                     mode="trilinear",
                     align_corners=False,
                 ).squeeze(1)

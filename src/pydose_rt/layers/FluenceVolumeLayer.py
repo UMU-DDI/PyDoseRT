@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig, OptimizationConfig
 
 
 class FluenceVolumeLayer(nn.Module):
@@ -141,7 +141,7 @@ class FluenceVolumeLayer(nn.Module):
         """
         B = fluence_map.shape[0]
         fluence_map = fluence_map.unsqueeze(1)
-        H, D, W = self.machine_config.ct_array_shape
+        H, D, W = self.ct_array_shape
         h_min_idx, h_max_idx, w_min_idx, w_max_idx = bbox
         h_min_idx = 0 if h_min_idx is None else h_min_idx
         h_max_idx = H - 1 if h_max_idx is None else h_max_idx

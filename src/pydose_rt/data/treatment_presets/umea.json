@@ -1,7 +1,5 @@
 {
   "prescription_gy": 42.7,
-  "iso_center": [0.0, 0.0, 0.0],
-  "field_size": [400, 400],
   "structures": [
     {
       "name": "CTV",

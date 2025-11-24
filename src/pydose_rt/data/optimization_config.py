@@ -121,7 +121,7 @@ class StructureTemplate(BaseModel):
     )
 
 
-class TreatmentConfig(BaseModel):
+class OptimizationConfig(BaseModel):
     """
     Treatment site configuration with constraints.
     
@@ -134,91 +134,6 @@ class TreatmentConfig(BaseModel):
     preset: Optional[str] = None
     prescription_gy: Optional[float] = None
     structures: Optional[List[StructureTemplate]] = []
-
-    kernel_size: Optional[int] = Field(
-        default=15,
-        description="Kernel size to use during convolution",
-    )
-    field_size: Optional[tuple[int, int]] = Field(
-        default=(400, 400), description="The field size in the plane given in mm (H,W)"
-    )
-    downsampling_factor: tuple[int, int, int] = Field(
-        default=(1, 1, 1),
-        description="The downsampling factor in the order z,y,x",
-    )
-    dtype: torch.dtype = Field(
-        default=torch.float32, description="The data type used for the calculations"
-    )
-
-    device: torch.device = Field(
-        default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        description="The device used for the calculations",
-    )
-    @property
-    def lookup_table(self) -> np.ndarray:
-        return np.array(
-            [
-                [-1000, 0.0],  # SAT: Added for safety
-                [-992, 0.00109],
-                [-960, 0.00109],
-                [-500, 0.5],
-                [-75, 0.95],
-                [42, 1.04],
-                [85, 1.08],
-                [490, 1.29],
-                [890, 1.52],
-                [1240, 1.72],
-                [1670, 1.95],
-                [2155, 2.15],
-                [2640, 2.34],
-                [2832, 2.46],
-                [2840, 6.6],
-            ],
-            dtype=np.float32,
-        )
-
-    number_of_cps: Optional[int] = Field(
-        default=None,
-        description="The number of beams for the plan"
-    )
-    
-    gantry_angles: Optional[np.ndarray] = Field(
-        default = np.array([]),
-        description = "Gantry angles of the plan"
-    )
-    starting_angle: Optional[float] = Field(
-        default=0.0,
-        description="The beam angle of the first beam in the series in degrees",
-    )
-    beam_limiting_device_angle: Optional[float] = Field(
-        default=0.0,
-        description="The beam limiting device angle in degrees for the in-plane fluence rotation.",
-    )
-    clockwise: Optional[bool] = Field(
-        default=False,
-        description="Determines whether the arc moves clockwise or not.",
-    )
-    iso_center: Optional[tuple[float, float, float]] = Field(
-        default=(0.0, 0.0, 0.0),
-        description="The distance of the isocenter from the center of the CT volume in mm",
-    )
-    SID: float = Field(default=1000, description="Source-to-isocenter distance in mm")
-
-
-    @computed_field(repr=False)
-    @property
-    def depth_offset(self) -> np.ndarray:
-        return self.SID - self.iso_center[1]
-
-    @computed_field(repr=False)
-    @property
-    def gantry_diff(self) -> float:
-        return float(math.radians(360) / self.number_of_cps)
-
-    @computed_field(repr=False)
-    @property
-    def gantry_diff_deg(self) -> float:
-        return float(360.0 / self.number_of_cps)
 
     @staticmethod
     def _load_preset_json(path_str: str) -> dict[str, Any]:

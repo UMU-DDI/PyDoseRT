@@ -33,10 +33,13 @@ class Beam:
     """
     gantry_angle: float  # radians
     beam_limiting_device_angle: float # radians
-    ssd: float
     mu: torch.Tensor     # scalar or [1]
     leaf_positions: torch.Tensor  # [N, 2]
     jaw_positions: torch.Tensor   # [2]
+    field_size: tuple[float, float] = (400, 400)
+    iso_center: tuple[float, float, float] = (0, 0, 0)
+    sid: float = 1000.0
+    ssd: float = None
 
     @classmethod
     def create(
@@ -44,6 +47,7 @@ class Beam:
         gantry_angle_deg: float,
         number_of_leaf_pairs: int,
         field_size_mm: tuple[float, float] = (400.0, 400.0),
+        iso_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
         device: torch.device | str = 'cuda',
         dtype: torch.dtype = torch.float32,
         requires_grad: bool = True,
@@ -94,6 +98,7 @@ class Beam:
             beam_limiting_device_angle=math.radians(0.0),
             leaf_positions=leaf_positions,
             jaw_positions=jaw_positions,
+            iso_center=iso_center
         )
 
     @property
@@ -183,6 +188,9 @@ class BeamSequence:
     mus: torch.Tensor             # [CP]
     leaf_positions: torch.Tensor  # [CP, N, 2]
     jaw_positions: torch.Tensor   # [CP, 2]
+    field_size: tuple[float, float]
+    iso_center: tuple[float, float, float]
+    sid: float
     gantry_angles: Optional[torch.Tensor] = None  # [CP] in radians, or None to use engine's
     beam_limiting_device_angles: Optional[torch.Tensor] = None
 
@@ -410,12 +418,31 @@ class BeamSequence:
         # jaw_positions: [2] -> [CP, 2]
         jaw_positions = torch.stack([b.jaw_positions for b in beams], dim=0)  # [CP, 2]
 
+        if np.all([np.all(b.iso_center == beams[0].iso_center) for b in beams]):
+            iso_center = beams[0].iso_center
+        else:
+            raise Exception("Isocenters are different for different beams. This will not work.")
+        
+        if np.all([np.all(b.sid == beams[0].sid) for b in beams]):
+            sid = beams[0].sid
+        else:
+            raise Exception("SID are different for different beams. This will not work.")
+        
+        if np.all([np.all(b.field_size == beams[0].field_size) for b in beams]):
+            field_size = beams[0].field_size
+        else:
+            raise Exception("Field sizes are different for different beams. This will not work.")
+        
+
         return cls(
             mus=mus,
             leaf_positions=leaf_positions,
             jaw_positions=jaw_positions,
             gantry_angles=gantry_angles,
-            beam_limiting_device_angles=beam_limiting_device_angles
+            beam_limiting_device_angles=beam_limiting_device_angles,
+            iso_center=iso_center,
+            sid=sid,
+            field_size=field_size
         )
 
     def __len__(self) -> int:
@@ -455,6 +482,9 @@ class BeamSequence:
             mu=self.mus[idx],                    # scalar
             leaf_positions=self.leaf_positions[idx, :, :],  # [N, 2]
             jaw_positions=self.jaw_positions[idx, :],       # [2]
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid
         )
 
     def __iter__(self) -> Iterator[Beam]:
@@ -506,6 +536,9 @@ class BeamSequence:
             jaw_positions=self.jaw_positions.detach(),
             gantry_angles=self.gantry_angles.detach() if self.gantry_angles is not None else None,
             beam_limiting_device_angles=self.beam_limiting_device_angles.detach() if self.beam_limiting_device_angles is not None else None,
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid
         )
 
     def clone(self) -> BeamSequence:
@@ -516,6 +549,9 @@ class BeamSequence:
             jaw_positions=self.jaw_positions.clone(),
             gantry_angles=self.gantry_angles.clone() if self.gantry_angles is not None else None,
             beam_limiting_device_angles=self.beam_limiting_device_angles.clone() if self.beam_limiting_device_angles is not None else None,
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid
         )
 
     def to(self, device: torch.device | str) -> BeamSequence:
@@ -526,6 +562,9 @@ class BeamSequence:
             jaw_positions=self.jaw_positions.to(device),
             gantry_angles=self.gantry_angles.to(device) if self.gantry_angles is not None else None,
             beam_limiting_device_angles=self.beam_limiting_device_angles.to(device) if self.beam_limiting_device_angles is not None else None,
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid
         )
 
     def slice(self, start: int, end: int) -> BeamSequence:
@@ -547,6 +586,9 @@ class BeamSequence:
             jaw_positions=self.jaw_positions[start:end, :],       # [CP_slice, 2]
             gantry_angles=self.gantry_angles[start:end] if self.gantry_angles is not None else None,
             beam_limiting_device_angles=self.beam_limiting_device_angles[start:end] if self.beam_limiting_device_angles is not None else None,
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid
         )
 
     def to_delivery(self) -> BeamSequence:
@@ -596,7 +638,10 @@ class BeamSequence:
             leaf_positions=avg_leaf_positions,
             jaw_positions=avg_jaw_positions,
             gantry_angles=avg_gantry_angles,
-            beam_limiting_device_angles=avg_beam_limiting_device_angles
+            beam_limiting_device_angles=avg_beam_limiting_device_angles,
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid
         )
 
     @property
