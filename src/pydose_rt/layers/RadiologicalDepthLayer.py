@@ -7,12 +7,13 @@ converts Hounsfield Units (HU) to density, and integrates the density along the 
 
 Typical usage example::
 
-    from ..MachineConfig import MachineConfig
+    from pydose_rt.data import MachineConfig
     import torch
-    config = MachineConfig(...)
-    layer = RadiologicalDepthLayer(config)
-    ct_stack = torch.tensor(...)
-    depth_profiles = layer(ct_stack)
+    machine_config = MachineConfig(...)
+    layer = RadiologicalDepthLayer(
+        machine_config, device, dtype, resolution,
+        ct_array_shape, gantry_angles, downsampling_factor, lookup_table
+    )
 
 Classes:
     RadiologicalDepthLayer: Torch layer for computing radiological depth profiles through CT volumes.
@@ -21,7 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig, OptimizationConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.physics.attenuation.hu_density_conversion import convert_HU_to_density
 from pydose_rt.geometry.rotations import get_radiological_depth_indices
 
@@ -56,7 +57,14 @@ class RadiologicalDepthLayer(nn.Module):
         Initializes the RadiologicalDepthLayer and precomputes sampling indices for each gantry angle.
 
         Args:
-            config (MachineConfig): Configuration object with CT array shape, gantry angles, resolution, and lookup table.
+            machine_config (MachineConfig): Configuration object with machine parameters.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
+            resolution (tuple[float, float, float]): Voxel spacing in mm.
+            ct_array_shape (tuple[float, float, float]): Shape of the CT array.
+            gantry_angles (list[float]): List of gantry angles in radians.
+            downsampling_factor (tuple[int, int, int]): Downsampling factor for CT.
+            lookup_table (torch.Tensor): HU-to-density lookup table.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super(RadiologicalDepthLayer, self).__init__()

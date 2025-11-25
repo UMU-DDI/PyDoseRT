@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 ValidParametersLayer module for validating and scaling leaf positions and monitor units (MUs).
 
@@ -10,13 +7,14 @@ and beam delivery in radiotherapy planning models.
 
 Typical usage example::
 
-    from ..MachineConfig import MachineConfig
+    from pydose_rt.data import MachineConfig
     import torch
-    config = MachineConfig(...)
-    layer = ValidParametersLayer(config)
+    machine_config = MachineConfig(...)
+    layer = ValidParametersLayer(machine_config, device, dtype, field_size)
     leaf_positions = torch.tensor(...)
+    jaw_positions = torch.tensor(...)
     mus = torch.tensor(...)
-    valid_leaf_positions, valid_mus = layer(leaf_positions, mus)
+    valid_leaf_positions, valid_jaw_positions, valid_mus = layer(leaf_positions, jaw_positions, mus)
 
 Classes:
     ValidParametersLayer: Torch layer for validating and scaling leaf positions and monitor units.
@@ -62,9 +60,11 @@ class ValidParametersLayer(nn.Module):
     ensuring that the values are within valid ranges for dose calculation and beam delivery.
 
     Attributes:
-        config: Configuration object containing scaling and field size parameters.
-        verbose (bool): Flag to enable verbose logging.
+        machine_config (MachineConfig): Configuration object containing machine parameters.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
+        dtype (type): Data type for tensors.
+        field_size (tuple[float, float]): Field size (width, height).
+        verbose (bool): Flag to enable verbose logging.
 
     Methods:
         __init__(config, slope=None, verbose=False): Initializes the ValidParametersLayer with configuration and verbosity.
@@ -75,8 +75,12 @@ class ValidParametersLayer(nn.Module):
         Initializes the ValidParametersLayer.
 
         Args:
-            config (MachineConfig): Configuration object with mu_scaling, minimum_leaf_opening, and field_size attributes.
-            verbose (bool, optional): If True, enables verbose output. Defaults to False.
+            machine_config (MachineConfig): Configuration object with machine parameters.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
+            field_size (tuple[float, float]): Field size (width, height).
+            leafs_centered (bool, optional): Whether leaf positions are centered. Defaults to False.
+            adjust_values (bool, optional): Whether to adjust parameter values. Defaults to True.
         """
         super().__init__()
 

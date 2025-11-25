@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 FluenceVolumeLayer module for projecting 2D fluence maps into 3D dose volumes in radiotherapy.
 
@@ -10,12 +7,13 @@ and profile corrections for efficient forward passes and accurate modeling of th
 
 Typical usage example::
 
-    from ..MachineConfig import MachineConfig
+    from pydose_rt.data import MachineConfig
     import torch
-    config = MachineConfig(...)
-    layer = FluenceVolumeLayer(config)
-    fluence_map = torch.tensor(...)
-    fluence_volume = layer(fluence_map)
+    machine_config = MachineConfig(...)
+    layer = FluenceVolumeLayer(
+        machine_config, device, dtype, sid,
+        resolution, ct_array_shape, iso_center, field_size
+    )
 
 Classes:
     FluenceVolumeLayer: Torch layer for projecting 2D fluence maps into 3D dose volumes.
@@ -25,7 +23,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig, OptimizationConfig
+from pydose_rt.data import MachineConfig
 
 
 class FluenceVolumeLayer(nn.Module):
@@ -36,13 +34,14 @@ class FluenceVolumeLayer(nn.Module):
     to generate a 3D volume suitable for dose calculation. It precomputes sampling grids and profile corrections for efficient forward passes.
 
     Attributes:
-        config (MachineConfig): Configuration object containing CT array shape, resolution, SID, fluence profile, and iso center.
-        verbose (bool): Flag to enable verbose logging.
+        machine_config (MachineConfig): Configuration object containing machine parameters.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
+        dtype (type): Data type for tensors.
+        verbose (bool): Flag to enable verbose logging.
         SID (float): Source-to-isocenter distance.
         profile_radius (torch.Tensor): Radii for fluence profile correction.
         profile_factors (torch.Tensor): Correction factors for fluence profile.
-        D (int): Number of slices in CT volume.
+        resolution (tuple): Voxel spacing in mm.
         profile_corrections (torch.Tensor): Precomputed profile corrections for each depth.
         sampling_grids (torch.Tensor): Precomputed ray sampling grids for mapping MLC plane to CT volume.
     """
@@ -60,8 +59,14 @@ class FluenceVolumeLayer(nn.Module):
         Initializes the FluenceVolumeLayer and precomputes profile corrections and sampling grids.
 
         Args:
-            config (MachineConfig): Configuration object with CT array shape, resolution, SID, fluence profile, and iso center.
-            verbose (bool, optional): If True, enables verbose output. Defaults to False.
+            machine_config (MachineConfig): Configuration object with machine parameters.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
+            sid (float): Source-to-isocenter distance.
+            resolution (tuple[float, float, float]): Voxel spacing in mm.
+            ct_array_shape (tuple[float, float, float]): Shape of the CT array.
+            iso_center (tuple[float, float, float]): Isocenter position.
+            field_size (tuple[float, float]): Field size (width, height) in pixels.
         """
         super().__init__()
 

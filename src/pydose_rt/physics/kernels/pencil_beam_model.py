@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 This module provides functions and classes for generating pencil beam kernels used in radiotherapy dose calculation.
 
@@ -10,7 +7,6 @@ based on radiological depth and beam parameters.
 """
 
 import numpy as np
-from pydose_rt.data.machine_config import MachineConfig
 
 coeffs = {
     "A1": [

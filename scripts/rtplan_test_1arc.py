@@ -75,11 +75,10 @@ for beam_sequence in beam_sequences:
 
     start_time = time.time()
     dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_volume)
-    elapsed_time = time.time() - start_time
+    print(f"Dose computed in {time.time() - start_time}")
     doses.append(dose_pred.detach())
 dose_pred = sum(doses)
 dose_pred = torch.where(patient.structures["External"], dose_pred, 0.0)
-print(f"Inference time is {len(doses) * elapsed_time}")
 
 # scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["PTVT_42.7"] > 0)
 scale = torch.mean(dose_volume[0, patient.structures[ptv_struct_name]]) / torch.mean(dose_pred[0, patient.structures[ptv_struct_name]])

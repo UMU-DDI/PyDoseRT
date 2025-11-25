@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 PencilBeamKernelLayer module for generating pencil beam dose kernels based on radiological depth.
 
@@ -8,12 +5,10 @@ This module provides the PencilBeamKernelLayer class, which uses a pencil beam m
 dose kernels for each voxel in the CT volume, based on the radiological depth.
 Typical usage example::
 
-    from ..MachineConfig import MachineConfig
+    from pydose_rt.data import MachineConfig
     import torch
-    config = MachineConfig(...)
-    layer = PencilBeamKernelLayer(config)
-    radiological_depth = torch.tensor(...)
-    kernels = layer(radiological_depth)
+    machine_config = MachineConfig(...)
+    layer = PencilBeamKernelLayer(machine_config, device, dtype, resolution, kernel_size)
 
 Classes:
     PencilBeamKernelLayer: Torch layer for generating pencil beam dose kernels from radiological depth.
@@ -23,7 +18,7 @@ import torch
 import torch.nn as nn
 
 from pydose_rt.physics.kernels.pencil_beam_model import PencilBeamModel
-from pydose_rt.data import MachineConfig, OptimizationConfig
+from pydose_rt.data import MachineConfig
 
         
 
@@ -53,9 +48,11 @@ class PencilBeamKernelLayer(nn.Module):
         Initializes the PencilBeamKernelLayer and creates the pencil beam model.
 
         Args:
-            config (MachineConfig): Configuration object with CT and beam parameters.
-            kernel_size (int, optional): Size of the dose kernel. Defaults to 25.
-            verbose (bool, optional): If True, enables verbose output. Defaults to False.
+            machine_config (MachineConfig): Configuration object with CT and beam parameters.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
+            resolution (tuple[float, float, float]): Voxel spacing in mm.
+            kernel_size (tuple[int, int]): Size of the dose kernel (height, width).
         """
         super().__init__()
 

@@ -7,12 +7,13 @@ treatment machine, enabling accurate dose modeling and further processing.
 
 Typical usage example::
 
-    from ..MachineConfig import MachineConfig
+    from pydose_rt.data import MachineConfig
     import torch
-    config = MachineConfig(...)
-    layer = FluenceMapLayer(config)
+    machine_config = MachineConfig(...)
+    layer = FluenceMapLayer(machine_config, device, dtype, resolution, field_size)
     leaf_positions = torch.tensor(...)
-    fluence_map = layer(leaf_positions)
+    jaw_positions = torch.tensor(...)
+    fluence_map = layer(leaf_positions, jaw_positions)
 
 Classes:
     FluenceMapLayer: Torch layer for calculating and resampling fluence maps from leaf positions.
@@ -62,8 +63,12 @@ class FluenceMapLayer(nn.Module):
         """
         Initializes the FluenceMapLayer.
 
-        Args:
-            config (MachineConfig): Configuration object with field_size_in_pixels, leaf_widths, and number_of_leaf_pairs attributes.
+        Args:            
+            machine_config (MachineConfig): Configuration object with machine parameters.
+            device (torch.device): Device on which computations are performed.
+            dtype (type): Data type for tensors.
+            resolution (tuple[float, float, float]): Voxel spacing in mm.
+            field_size (tuple[float, float]): Field size (width, height) in pixels.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
             training_sharpness (float, optional): Sharpness parameter for smooth gradients during training. Defaults to 10.0.
             eval_sharpness (float, optional): Sharpness parameter for sharp edges during evaluation. Defaults to 1000.0.
@@ -169,15 +174,14 @@ class FluenceMapLayer(nn.Module):
         jaw_positions: torch.Tensor = None
     ) -> torch.Tensor:
         """
-        Computes the fluence map from leaf and jaw positions. The calculated
-        leaf positions are stored in the mask.
+        Computes the fluence map from leaf and jaw positions.
 
         Args:
-            leaf_positions (torch.Tensor): Tensor of leaf positions and widths of shape [B, 2, G, N].
-            jaws (torch.Tensor): Tensor of jaw positions of shape [B, 2, G].
+            leaf_positions (torch.Tensor): Tensor of leaf positions of shape [B, G, N, 2].
+            jaw_positions (torch.Tensor): Tensor of jaw positions of shape [B, G, 2].
 
         Returns:
-            torch.Tensor: Fluence map tensor of shape [B*G, W, H, 1].
+            torch.Tensor: Fluence map tensor of shape [B*G, H, W].
         """
         B, G, N, _ = leaf_positions.shape  # [B, G, N, 2]
         leaf_positions = leaf_positions.reshape(

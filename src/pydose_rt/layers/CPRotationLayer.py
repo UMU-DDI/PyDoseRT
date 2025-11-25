@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 CPPRotationLayer module for performing beam-wise 2D rotation of dose volumes using grid sampling.
 
@@ -9,7 +6,7 @@ using PyTorch's grid sampling. The layer is designed to handle 5D tensors repres
 gantry angles, depth, height, and width.
 
 Typical usage example::
-    layer = CPPRotationLayer(config)
+    layer = CPRotationLayer(machine_config, device, dtype, gantry_angles)
     rotated_dose = layer(accumulated_dose)
 """
 import torch
@@ -23,10 +20,11 @@ class CPRotationLayer(nn.Module):
     """
     PyTorch module for performing beam-wise 2D rotation of dose volumes using grid sampling.
 
-    Attributes:
-        config (MachineConfig): Stores configuration parameters.
-        verbose (bool): Verbosity flag.
+    Attributes:        
+        machine_config (MachineConfig): Stores configuration parameters.
         device (torch.device): Device on which computations are performed.
+        dtype (type): Data type for tensors.
+        verbose (bool): Verbosity flag.
         rot_angles_rad (torch.Tensor): Tensor of gantry angles in radians.
     """
     def __init__(self,
@@ -39,10 +37,12 @@ class CPRotationLayer(nn.Module):
                 ):
         """
         Initializes the CPRotationLayer.
-        Args:
-            machine_config: Configuration parameters for the layer.
-            verbose: If True, enables verbose output for debugging.
-            gantry_angles: Gantry angles in radians. If None, uses treatment_config.gantry_angles.
+        Args:            
+            machine_config (MachineConfig): Configuration parameters for the layer.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
+            gantry_angles (list[float] | torch.Tensor): Gantry angles in radians.
+            verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """
         super().__init__()
         self.device = device

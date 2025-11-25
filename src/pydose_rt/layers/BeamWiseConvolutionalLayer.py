@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 This module provides the BeamWiseConvolutionalLayer class, a PyTorch nn.Module for performing
 beam-wise 2D convolution on fluence volumes using custom kernels.
@@ -11,15 +8,12 @@ permutation of tensors to match PyTorch's grouped convolution requirements and r
 in the same shape as the input fluence volume.
 
 Typical Usage:
-    layer = BeamWiseConvolutionalLayer(config)
+    layer = BeamWiseConvolutionalLayer(device, dtype)
     output = layer(fluence_vol, kernels)
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from pydose_rt.data import MachineConfig, OptimizationConfig
-
 
 class BeamWiseConvolutionalLayer(nn.Module):
     """
@@ -27,9 +21,9 @@ class BeamWiseConvolutionalLayer(nn.Module):
     where each control point has its own fluence map and kernel.
 
     Attributes:
-        config (MachineConfig): Stores configuration parameters.
+        device (torch.device): Device on which computations are performed.        
+        dtype (type): Data type for tensors.
         verbose (bool): Verbosity flag.
-        device (torch.device): Device on which computations are performed.
     """
 
     def __init__(self, 
@@ -40,7 +34,8 @@ class BeamWiseConvolutionalLayer(nn.Module):
         Initializes the BeamWiseConvolutionalLayer.
 
         Args:
-            config (MachineConfig): Configuration parameters for the layer.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
             verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """
         super().__init__()

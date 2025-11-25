@@ -9,7 +9,7 @@ import torch
 import math
 import numpy as np
 from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
-from pydose_rt.data import OptimizationConfig, Patient, BeamSequence, Beam
+from pydose_rt.data import Patient, BeamSequence, Beam
 from .utils.nifti_utils import load_files
 import SimpleITK as sitk
 from typing import List, Dict, Any, Tuple, Literal
@@ -25,30 +25,29 @@ def load_dicom(
     device: torch.device | str = 'cuda',
     dtype: torch.dtype = torch.float32,
 ) -> tuple['Patient', 'BeamSequence']:
-    """
-    Load DICOM data and create Patient and TreatmentConfig.
+    """    
+    Load DICOM data and create Patient and BeamSequence.
+    
     Args:
         ct_folder: Path to folder containing CT DICOM files
         dose_path: Path to RTDOSE file
-        plan_path: Path to RTPLAN file
+        plan_path: Path to RTPLAN file        
+        struct_path: Path to RTSTRUCT file
         struct_names: List of structure names to load (None = all)
         treatment_preset: Path to treatment preset JSON
         recenter: Whether to recenter to isocenter
         use_delivery: If True (default), configure for delivery positions (N averaged).
                       If False, configure for raw control points (N+1 from DICOM).
-                      Only affects return when return_beam_sequence=True.
-        device: Device for BeamSequence tensors (only used if return_beam_sequence=True)
-        dtype: Data type for BeamSequence tensors (only used if return_beam_sequence=True)
+                device: Device for BeamSequence tensors
+        dtype: Data type for BeamSequence tensors
     Returns:
-        (Patient, TreatmentConfig, BeamSequence)
+        (Patient, List[BeamSequence]): Patient data and list of beam sequences
     Note:
         When use_delivery=True:
         - BeamSequence contains N delivery positions (averaged from N+1 control points)
-        - TreatmentConfig.number_of_cps = N (matches BeamSequence)
         - DoseEngine can be created directly with this config
         When use_delivery=False:
         - BeamSequence contains N+1 raw control points from DICOM
-        - TreatmentConfig.number_of_cps = N+1 (matches BeamSequence)
         - Call beam_seq.to_delivery() before dose calculation
     """
     ct_series, ref = load_ct_series(ct_folder)

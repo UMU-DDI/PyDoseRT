@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 Main class for radiotherapy dose calculation using pencil beam convolution and beam-wise rotation.
 
@@ -60,14 +57,20 @@ class DoseEngine(nn.Module):
         Initializes the DoseEngine pipeline.
 
         Args:
+            ct_array_shape: Shape of the CT array (depth, height, width).
+            resolution: Voxel spacing in mm (depth, height, width).
             machine_config: Machine physics and MLC specifications.
-            treatment_config: Treatment settings.
-            leafs_centered: Whether leaf positions are centered.
-            crop_volume: Whether to crop the dose volume.
-            permute_ct: Whether to permute CT dimensions.
-            adjust_values: Whether to adjust parameter values.
-            verbose: Enable verbose output.
-            debug: Enable debug mode.
+            beam_input: Beam or BeamSequence defining the treatment geometry.
+            device: PyTorch device for computation.
+            dtype: Data type for tensors.
+            kernel_size: Size of the dose kernel.
+            downsampling_factor: Downsampling factor for CT (default: (1, 1, 1)).
+            leafs_centered: Whether leaf positions are centered (default: False).
+            crop_volume: Whether to crop the dose volume (default: False).
+            permute_ct: Whether to permute CT dimensions (default: False).
+            adjust_values: Whether to adjust parameter values (default: False).
+            verbose: Enable verbose output (default: False).
+            debug: Enable debug mode (default: False).
         """
         super().__init__()
         self.machine_config = machine_config
@@ -416,11 +419,11 @@ class DoseEngine(nn.Module):
 
         Args:
             beam: Single Beam (shapes: mu scalar, leaf_positions [N, 2], jaw_positions [2])
-            ct_image: CT image tensor [1, D, H, W]
-            gantry_angle: Override gantry angle in radians (uses beam.gantry_angle if None)
-
+            ct_image: CT image tensor [1, D, H, W]            
+            return_intermediates: If True, return intermediate computation results (default: False)
         Returns:
-            Dose tensor [1, H, D, W]
+            Dose tensor [1, H, D, W] if return_intermediates=False, otherwise returns
+            (radiological_depths, fluence_maps, fluence_volumes, dose)
         """
 
         # Convert from Beam format to forward() format:
@@ -459,7 +462,7 @@ class DoseEngine(nn.Module):
         total_dose = None
 
         for i, beam in enumerate(beam_sequence):
-            beam_dose = self.forward_single_beam(
+            beam_dose = self.compute_single_beam(
                 beam,
                 ct_image=ct_image,
                 gantry_angle=beam_sequence.gantry_angles[i].item(),

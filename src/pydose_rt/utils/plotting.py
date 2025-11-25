@@ -9,7 +9,7 @@ import os
 import cv2
 from pydose_rt.data.beam import BeamSequence
 from pydose_rt.engine.dose_engine import DoseEngine
-from pydose_rt.data import MachineConfig, OptimizationConfig, Patient
+from pydose_rt.data import MachineConfig, Patient
 
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1):

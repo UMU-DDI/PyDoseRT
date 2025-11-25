@@ -62,7 +62,7 @@ class Patient:
         return torch.where(self.structures[mask_name], self.dose, 0.0)
     
     def get_masked_ct(self, mask_name=None) -> torch.Tensor:
-        """Returns the dose where the provided mask is true."""
+        """Returns the CT array where the provided mask is true."""
         if mask_name is None:
             raise Exception("Mask name not provided")
         
