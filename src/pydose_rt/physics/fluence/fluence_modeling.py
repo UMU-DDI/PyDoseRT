@@ -278,7 +278,7 @@ def apply_tongue_and_groove(fluence, leaf_boundaries_mm, field_size_mm,
 def precompute_source_penumbra_kernel(source_size_mm: float, pixel_size_mm: float,
                                       device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     """
-    Precompute the source penumbra convolution kernel.
+    Precompute the source penumbra convolution kernel as 1D (for separable convolution).
 
     Args:
         source_size_mm: Effective source diameter (typical: 2-5mm)
@@ -287,7 +287,7 @@ def precompute_source_penumbra_kernel(source_size_mm: float, pixel_size_mm: floa
         dtype: Data type for kernel
 
     Returns:
-        kernel: [1, 1, K, K] convolution kernel
+        kernel: [1, 1, 1, K] 1D convolution kernel (for separable convolution)
     """
     sigma_pixels = (source_size_mm / pixel_size_mm) / 2.355
 
@@ -299,16 +299,16 @@ def precompute_source_penumbra_kernel(source_size_mm: float, pixel_size_mm: floa
     kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
     kernel_1d = kernel_1d / kernel_1d.sum()
 
-    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
-    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
+    # Return 1D kernel for separable convolution
+    kernel_1d = kernel_1d.view(1, 1, 1, kernel_size)
 
-    return kernel_2d
+    return kernel_1d
 
 
 def precompute_mlc_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
                                   device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     """
-    Precompute the MLC scatter convolution kernel.
+    Precompute the MLC scatter convolution kernel as 1D (for separable convolution).
 
     Args:
         scatter_range_mm: Characteristic decay distance (mm)
@@ -317,7 +317,7 @@ def precompute_mlc_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
         dtype: Data type for kernel
 
     Returns:
-        kernel: [1, 1, K, K] convolution kernel
+        kernel: [1, 1, 1, K] 1D convolution kernel (for separable convolution)
     """
     sigma_pixels = (scatter_range_mm / pixel_size_mm) / 2.0
 
@@ -331,16 +331,16 @@ def precompute_mlc_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
     kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
     kernel_1d = kernel_1d / kernel_1d.sum()
 
-    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
-    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
+    # Return 1D kernel for separable convolution
+    kernel_1d = kernel_1d.view(1, 1, 1, kernel_size)
 
-    return kernel_2d
+    return kernel_1d
 
 
 def precompute_head_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
                                    device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     """
-    Precompute the head scatter convolution kernel.
+    Precompute the head scatter convolution kernel as 1D (for separable convolution).
 
     Args:
         scatter_range_mm: Characteristic decay distance (mm, typical: 100-200)
@@ -349,7 +349,7 @@ def precompute_head_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float
         dtype: Data type for kernel
 
     Returns:
-        kernel: [1, 1, K, K] convolution kernel
+        kernel: [1, 1, 1, K] 1D convolution kernel (for separable convolution)
     """
     sigma_pixels = (scatter_range_mm / pixel_size_mm) / 2.0
 
@@ -363,10 +363,10 @@ def precompute_head_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float
     kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
     kernel_1d = kernel_1d / kernel_1d.sum()
 
-    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
-    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
+    # Return 1D kernel for separable convolution
+    kernel_1d = kernel_1d.view(1, 1, 1, kernel_size)
 
-    return kernel_2d
+    return kernel_1d
 
 
 def precompute_tongue_and_groove_mask(leaf_boundaries_mm: list, field_size_mm: float,
@@ -418,19 +418,35 @@ def precompute_tongue_and_groove_mask(leaf_boundaries_mm: list, field_size_mm: f
 def apply_precomputed_kernel(fluence: torch.Tensor, kernel: torch.Tensor,
                             padding_mode: str = 'replicate') -> torch.Tensor:
     """
-    Apply a precomputed convolution kernel to fluence map.
+    Apply a precomputed 1D convolution kernel to fluence map using separable convolution.
+
+    This is much faster than 2D convolution for Gaussian kernels:
+    - 2D convolution: O(K^2) operations per pixel
+    - Separable (2x1D): O(2K) operations per pixel
+    - For K=401, that's ~200x fewer operations!
 
     Args:
         fluence: [B, 1, H, W] fluence map
-        kernel: [1, 1, K, K] convolution kernel
+        kernel: [1, 1, 1, K] 1D convolution kernel
         padding_mode: Padding mode for convolution
 
     Returns:
         fluence_convolved: [B, 1, H, W] convolved fluence map
     """
-    pad = kernel.shape[-1] // 2
-    fluence_padded = F.pad(fluence, (pad, pad, pad, pad), mode=padding_mode)
-    fluence_convolved = F.conv2d(fluence_padded, kernel)
+    # Kernel is [1, 1, 1, K] for horizontal conv
+    kernel_size = kernel.shape[-1]
+    pad = kernel_size // 2
+
+    # Apply horizontal convolution (along width dimension)
+    fluence_padded_h = F.pad(fluence, (pad, pad, 0, 0), mode=padding_mode)
+    fluence_h = F.conv2d(fluence_padded_h, kernel)
+
+    # Apply vertical convolution (along height dimension)
+    # Transpose kernel from [1, 1, 1, K] to [1, 1, K, 1]
+    kernel_v = kernel.transpose(-2, -1)
+    fluence_padded_v = F.pad(fluence_h, (0, 0, pad, pad), mode=padding_mode)
+    fluence_convolved = F.conv2d(fluence_padded_v, kernel_v)
+
     return fluence_convolved
 
 
