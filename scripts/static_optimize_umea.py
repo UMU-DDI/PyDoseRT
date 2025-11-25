@@ -10,7 +10,7 @@ import math
 import torch
 from pydose_rt.data import Patient, OptimizationConfig, MachineConfig, loaders, BeamSequence
 from pydose_rt import DoseEngine
-from pydose_rt.layers import ValidParametersLayer
+from pydose_rt.layers import BeamValidationLayer
 from pydose_rt.utils.plotting import *
 from pydose_rt.physics.kernels.pencil_beam_model import *
 from pydose_rt.utils.grad_monitor import GradMonitor
@@ -137,7 +137,7 @@ for test_i in range(n_tests):
             dtype=dtype, 
             device=device
         )
-        valid_parameters_layer = ValidParametersLayer(
+        valid_parameters_layer = BeamValidationLayer(
             machine_config=machine_config, 
             device=device,
             dtype=dtype,

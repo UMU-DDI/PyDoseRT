@@ -3,7 +3,7 @@ from .FluenceMapLayer import FluenceMapLayer
 from .FluenceVolumeLayer import FluenceVolumeLayer
 from .PencilBeamKernelLayer import PencilBeamKernelLayer
 from .RadiologicalDepthLayer import RadiologicalDepthLayer
-from .ValidParametersLayer import ValidParametersLayer
+from .BeamValidationLayer import BeamValidationLayer
 
 __all__ = [
     "BeamWiseConvolutionalLayer",
@@ -11,5 +11,5 @@ __all__ = [
     "FluenceVolumeLayer",
     "PencilBeamKernelLayer",
     "RadiologicalDepthLayer",
-    "ValidParametersLayer",
+    "BeamValidationLayer",
     ]

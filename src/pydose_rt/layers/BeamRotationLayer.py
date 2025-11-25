@@ -6,7 +6,7 @@ using PyTorch's grid sampling. The layer is designed to handle 5D tensors repres
 gantry angles, depth, height, and width.
 
 Typical usage example::
-    layer = CPRotationLayer(machine_config, device, dtype, gantry_angles)
+    layer = BeamRotationLayer(machine_config, device, dtype, gantry_angles)
     rotated_dose = layer(accumulated_dose)
 """
 import torch
@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from pydose_rt.data import MachineConfig
 from pydose_rt.geometry.rotations import build_rotation_grids
 
-class CPRotationLayer(nn.Module):
+class BeamRotationLayer(nn.Module):
     """
     PyTorch module for performing beam-wise 2D rotation of dose volumes using grid sampling.
 
@@ -34,9 +34,9 @@ class CPRotationLayer(nn.Module):
                  ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float] | torch.Tensor = None,
                  verbose: bool = False,
-                ) -> 'CPRotationLayer':
+                ) -> 'BeamRotationLayer':
         """
-        Initializes the CPRotationLayer.
+        Initializes the BeamRotationLayer.
         Args:            
             machine_config (MachineConfig): Configuration parameters for the layer.
             device (torch.device): Device for computation (CPU or CUDA).

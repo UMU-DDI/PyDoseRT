@@ -9,7 +9,7 @@ import math
 import torch
 from pydose_rt.data import Patient, MachineConfig, loaders
 from pydose_rt import DoseEngine
-from pydose_rt.layers import ValidParametersLayer
+from pydose_rt.layers import BeamValidationLayer
 from pydose_rt.utils.plotting import *
 from pydose_rt.physics.kernels.pencil_beam_model import *
 from pydose_rt.utils.grad_monitor import GradMonitor
@@ -82,7 +82,7 @@ for test_i in range(n_tests):
 
 
         dose_layer = DoseEngine(machine_config, permute_ct=False, leafs_centered=False, adjust_values=True)
-        valid_parameters_layer = ValidParametersLayer(machine_config, device, dtype, dose_layer.field_size, leafs_centered=False, adjust_values=True)
+        valid_parameters_layer = BeamValidationLayer(machine_config, device, dtype, dose_layer.field_size, leafs_centered=False, adjust_values=True)
         dose_layer.train()
         pred_mlc, pred_jaws, pred_mus = dose_layer.get_open_parameters()
 

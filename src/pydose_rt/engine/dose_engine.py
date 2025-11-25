@@ -9,13 +9,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.layers.ValidParametersLayer import ValidParametersLayer
+from pydose_rt.layers.BeamValidationLayer import BeamValidationLayer
 from pydose_rt.layers.FluenceMapLayer import FluenceMapLayer
 from pydose_rt.layers.FluenceVolumeLayer import FluenceVolumeLayer
 from pydose_rt.layers.RadiologicalDepthLayer import RadiologicalDepthLayer
 from pydose_rt.layers.PencilBeamKernelLayer import PencilBeamKernelLayer
 from pydose_rt.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
-from pydose_rt.layers.CPRotationLayer import CPRotationLayer
+from pydose_rt.layers.BeamRotationLayer import BeamRotationLayer
 from pydose_rt.data import MachineConfig, Beam, BeamSequence
 from pydose_rt.geometry.rotations import rotate_2d_images
 
@@ -118,7 +118,7 @@ class DoseEngine(nn.Module):
             )
         ])
 
-        self.valid_parameters_layer = ValidParametersLayer(
+        self.valid_parameters_layer = BeamValidationLayer(
             self.machine_config,
             device = self.device,
             dtype=self.dtype,
@@ -171,7 +171,7 @@ class DoseEngine(nn.Module):
             self.dtype,
             verbose=self.verbose
         )
-        self.rotation_layer = CPRotationLayer(
+        self.rotation_layer = BeamRotationLayer(
             self.machine_config, 
             device=self.device, 
             dtype=self.dtype,

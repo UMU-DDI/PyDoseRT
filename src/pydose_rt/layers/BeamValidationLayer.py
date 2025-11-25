@@ -1,7 +1,7 @@
 """
-ValidParametersLayer module for validating and scaling leaf positions and monitor units (MUs).
+BeamValidationLayer module for validating and scaling leaf positions and monitor units (MUs).
 
-This module provides the ValidParametersLayer class, which clamps and scales leaf positions and MUs
+This module provides the BeamValidationLayer class, which clamps and scales leaf positions and MUs
 according to configuration parameters, ensuring that the values are within valid ranges for dose calculation
 and beam delivery in radiotherapy planning models.
 
@@ -10,14 +10,14 @@ Typical usage example::
     from pydose_rt.data import MachineConfig
     import torch
     machine_config = MachineConfig(...)
-    layer = ValidParametersLayer(machine_config, device, dtype, field_size)
+    layer = BeamValidationLayer(machine_config, device, dtype, field_size)
     leaf_positions = torch.tensor(...)
     jaw_positions = torch.tensor(...)
     mus = torch.tensor(...)
     valid_leaf_positions, valid_jaw_positions, valid_mus = layer(leaf_positions, jaw_positions, mus)
 
 Classes:
-    ValidParametersLayer: Torch layer for validating and scaling leaf positions and monitor units.
+    BeamValidationLayer: Torch layer for validating and scaling leaf positions and monitor units.
 """
 
 import torch
@@ -52,9 +52,9 @@ class MaximumLeafTipProjector(nn.Module):
         """
         return self.value * torch.tanh(self.k * (x - self.center)) + self.center
     
-class ValidParametersLayer(nn.Module):
+class BeamValidationLayer(nn.Module):
     """
-    ValidParametersLayer for validating and scaling leaf positions, monitor units (MUs) and jaw positions.
+    BeamValidationLayer for validating and scaling leaf positions, monitor units (MUs) and jaw positions.
 
     This layer clamps and scales leaf positions and MUs according to configuration parameters,
     ensuring that the values are within valid ranges for dose calculation and beam delivery.
@@ -67,12 +67,12 @@ class ValidParametersLayer(nn.Module):
         verbose (bool): Flag to enable verbose logging.
 
     Methods:
-        __init__(config, slope=None, verbose=False): Initializes the ValidParametersLayer with configuration and verbosity.
+        __init__(config, slope=None, verbose=False): Initializes the BeamValidationLayer with configuration and verbosity.
         forward(leaf_positions, mus): Clamps and scales leaf positions and MUs, returning validated tensors.
     """
-    def __init__(self, machine_config: MachineConfig, device: torch.device, dtype: type, field_size: tuple[float, float], leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False) -> 'ValidParametersLayer':
+    def __init__(self, machine_config: MachineConfig, device: torch.device, dtype: type, field_size: tuple[float, float], leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False) -> 'BeamValidationLayer':
         """
-        Initializes the ValidParametersLayer.
+        Initializes the BeamValidationLayer.
 
         Args:
             machine_config (MachineConfig): Configuration object with machine parameters.
