@@ -8,7 +8,7 @@ import time
 import math
 
 from pydicom.data import get_testdata_file
-from pydose_rt.data import MachineConfig, Patient, TreatmentConfig, loaders
+from pydose_rt.data import MachineConfig, Patient, loaders
 # from pydose_rt.data import MachineConfig
 from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
 from pydose_rt.utils.utils import mae_optimal_scale

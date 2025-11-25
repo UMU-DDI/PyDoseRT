@@ -15,10 +15,6 @@ def pencil_beam_kernel_layer(request, default_machine_config, default_treatment_
         "number_of_cps", default_treatment_config.number_of_cps
     )
 
-    config = TreatmentConfig(
-        preset="src/pydose_rt/data/treatment_presets/test.json",
-        number_of_cps=number_of_cps,
-    )
     return PencilBeamKernelLayer(default_machine_config, config), config
 
 

@@ -7,7 +7,7 @@ import torch
 import time
 import math
 import torch
-from pydose_rt.data import Patient, TreatmentConfig, MachineConfig, loaders
+from pydose_rt.data import Patient, MachineConfig, loaders
 from pydose_rt import DoseEngine
 from pydose_rt.layers import ValidParametersLayer
 from pydose_rt.utils.plotting import *
@@ -36,11 +36,11 @@ if remote:
     patient = loaders.load_nifti(
         folder_path=patient_list[0]
     )
-    treatment = TreatmentConfig(preset="src/pydose_rt/data/treatment_presets/lund-probe.json")
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/optimization_presets/lund-probe.json")
 
-    treatment.kernel_size = 15
-    treatment.device = device
-    treatment.dtype = torch.float16
+    kernel_size = 15
+    device = device
+    dtype = torch.float16
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 3000
@@ -50,11 +50,11 @@ else:
     patient = loaders.load_nifti(
         folder_path=patient_list[0]
     )
-    treatment = TreatmentConfig(preset="src/pydose_rt/data/treatment_presets/lund-probe.json")
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/optimization_presets/lund-probe.json")
 
-    treatment.kernel_size = 3
-    treatment.device = device
-    treatment.dtype = torch.float16
+    kernel_size = 3
+    device = device
+    dtype = torch.float16
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
     max_iter = 100
@@ -78,29 +78,11 @@ for test_i in range(n_tests):
         current_res = [np.inf]
         weights = get_initial_weights()
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None}
-        treatment.randomize_weights()
-
-        y_dose = torch.from_numpy(patient.dose)
-        masks = torch.from_numpy(np.stack([v for k,v in patient.structures.items()], 0))
-        y_dose = y_dose.expand(1, -1, -1, -1)
-        masks = masks.expand(1, -1, -1, -1, -1)
-
-        ct_volume = torch.from_numpy(np.expand_dims(patient.ct_array, 0)).to(treatment.device).to(treatment.dtype)  # scale to HU
+        optimization.randomize_weights()
 
 
-        mask_target = masks[0, 0, ...].expand(1, -1, -1, -1).clone().detach().to(treatment.device) > 0
-        mask_external = masks.sum(1).clone().detach().to(treatment.device) > 0
-        mask_oar = torch.sum(masks[0, 1:-1, ...], 0).expand(1, -1, -1, -1).clone().detach().to(treatment.device) > 0
-        dose_target = y_dose.expand(1, -1, -1, -1).clone().detach().to(treatment.device)
-        masks_torch = []
-        for i in range(masks.shape[1]):
-            masks_torch.append(masks[0, i, ...].expand(1, -1, -1, -1))
-        y_dose = y_dose.to(treatment.device)
-        y_dose = torch.where(mask_external, y_dose, torch.zeros_like(y_dose))
-        masks = masks.to(treatment.device)
-
-        dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=True)
-        valid_parameters_layer = ValidParametersLayer(machine_config, treatment, treatment.dtype, treatment.device, leafs_centered=False, adjust_values=True)
+        dose_layer = DoseEngine(machine_config, permute_ct=False, leafs_centered=False, adjust_values=True)
+        valid_parameters_layer = ValidParametersLayer(machine_config, device, dtype, dose_layer.field_size, leafs_centered=False, adjust_values=True)
         dose_layer.train()
         pred_mlc, pred_jaws, pred_mus = dose_layer.get_open_parameters()
 
@@ -113,11 +95,11 @@ for test_i in range(n_tests):
         experiment.log_parameters(
             {
                 "lr_0": lr,
-                "kernel_size": treatment.kernel_size,
+                "kernel_size": kernel_size,
                 "lr_decay": lr_decay,
                 "weights": weights,
                 "physical_size": machine_config.physical_size_ct,
-                "roi_weights": treatment.weights
+                "roi_weights": optimization.weights
             }, nested_support=True
         )
 

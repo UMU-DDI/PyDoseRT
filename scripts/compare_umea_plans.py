@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import math
 import pydicom
 from pydose_rt import DoseEngine
-from pydose_rt.data import MachineConfig, TreatmentConfig, Phantom, loaders
+from pydose_rt.data import MachineConfig, Phantom, loaders
 from pydose_rt.utils.utils import sample_tensor_nearest
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,11 +21,9 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
         results =  []
         for field_size in field_sizes:
             machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", ct_array_shape=(500, 500, 500), resolution=(1.0, 1.0, 1.0), number_of_leaf_pairs=60, mlc_scatter_amplitude=mlc_scatter_amplitude, mlc_scatter_range_mm=mlc_scatter_range_mm)
-            treatment_config = TreatmentConfig(field_size=(400, 400), number_of_cps=1, starting_angle=0, iso_center=(0.0, 150.0, 0.0), kernel_size=501)
             phantom = Phantom.from_uniform_water(shape=machine_config.ct_array_shape, spacing=machine_config.resolution)
             dose_engine = DoseEngine(
                 machine_config, 
-                treatment_config, 
                 permute_ct=False, 
                 leafs_centered=False,
                 adjust_values=False
@@ -37,7 +35,7 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
                 mlcs, 
                 mus, 
                 jaws, 
-                ct_image=phantom.ct_array.to(treatment_config.dtype).to(treatment_config.device))
+                ct_image=phantom.ct_array.to(dose_engine.dtype).to(dose_engine.device))
             dose = dose
 
             measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
@@ -53,7 +51,7 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
                 axes = axes.flatten()
 
             for i, measurement in enumerate(measurements):
-                samples = sample_tensor_nearest(dose[0, ...], machine_config.resolution, treatment_config.iso_center, measurement["coords_engine"])
+                samples = sample_tensor_nearest(dose[0, ...], machine_config.resolution, dose_engine.iso_center, measurement["coords_engine"])
                 samples = samples * measurement["dose"].max() / samples.max()
                 mape = np.mean(np.abs(samples - measurement["dose"])[measurement["dose"] > 0] /  measurement["dose"][measurement["dose"] > 0])
                 results.append(mape)
@@ -73,7 +71,7 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
                 plt.tight_layout()
                 plt.show()
             
-            del machine_config, treatment_config, dose_engine, dose, phantom
+            del machine_config, dose_engine, dose, phantom
         print(f"Scatter amplitude: {mlc_scatter_amplitude}\tScatter range: {mlc_scatter_range_mm}\tResults: {np.mean(results)}")
 
                 

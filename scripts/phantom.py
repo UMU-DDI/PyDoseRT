@@ -4,20 +4,17 @@ import pydicom
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from pydose_rt import DoseEngine
-from pydose_rt.data import MachineConfig, TreatmentConfig, Phantom, Beam
+from pydose_rt.data import MachineConfig, Phantom, Beam
 
 machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", ct_array_shape=(185, 167, 167), resolution=(3.0, 3.0, 3.0), number_of_leaf_pairs=60, tpr_20_10=0.72)
 
-treatment_config = TreatmentConfig(field_size=(100, 100), number_of_cps=1, starting_angle=0, iso_center=(0.0, 150.0, 0.0), kernel_size=55)
-
 phantom = Phantom.from_uniform_water(shape=machine_config.ct_array_shape, spacing=machine_config.resolution)
-phantom = phantom.ct_array.to(treatment_config.dtype).to(treatment_config.device)
 dose_engine = DoseEngine(
     machine_config, 
-    treatment_config, 
     permute_ct=False, 
     leafs_centered=True
 )
+phantom = phantom.ct_array.to(dose_engine.dtype).to(dose_engine.device)
 
 beam = Beam.create(gantry_angle_deg=45, machine_config=machine_config)
 # mlcs, jaws, mus = dose_engine.get_open_parameters()

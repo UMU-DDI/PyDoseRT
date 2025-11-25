@@ -175,7 +175,7 @@ def volume_at_dose(dose_array: np.ndarray,
 
 
 def validate_clinical_criteria(patient: Patient,
-                               treatment_config: OptimizationConfig,
+                               optimization_config: OptimizationConfig,
                                pred_dose: np.ndarray) -> Dict[str, Dict[str, float]]:
     """
     Validate predicted dose against clinical criteria defined in treatment_config.
@@ -187,7 +187,7 @@ def validate_clinical_criteria(patient: Patient,
     -----------
     patient : Patient
         Patient data including structure masks
-    treatment_config : TreatmentConfig
+    optimization_config : OptimizationConfig
         Treatment configuration with clinical criteria
     pred_dose : np.ndarray
         Predicted dose distribution (Gy), shape (1, D, H, W) or (D, H, W)
@@ -212,7 +212,7 @@ def validate_clinical_criteria(patient: Patient,
     results = {}
 
     # Process each structure with clinical criteria
-    for struct in treatment_config.structures:
+    for struct in optimization_config.structures:
         structure_name = struct.name
 
         # Skip if structure not in patient masks
@@ -230,7 +230,7 @@ def validate_clinical_criteria(patient: Patient,
             for clin_criterion in struct.clinical_criteria:
                 criterion_result = _evaluate_clinical_criterion(
                     dose, structure_mask, clin_criterion, voxel_volume_cc,
-                    prescription_gy=treatment_config.prescription_gy
+                    prescription_gy=optimization_config.prescription_gy
                 )
                 structure_results['criteria'].append(criterion_result)
 

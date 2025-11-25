@@ -464,86 +464,6 @@ class BeamSequence:
             field_size=field_size
         )
 
-    @classmethod
-    def from_treatment_config(
-        cls,
-        treatment_config,
-        device: torch.device | str = 'cuda',
-        dtype: torch.dtype = torch.float32,
-        requires_grad: bool = False,
-    ) -> BeamSequence:
-        """
-        Create a BeamSequence from a TreatmentConfig (typically loaded from DICOM).
-
-        This method uses the actual shape of plan_mlcs to determine the number
-        of control points, and computes gantry angles accordingly. This handles
-        the case where plan_mlcs has N+1 control points but treatment_config
-        might be configured for N delivery positions.
-
-        Args:
-            treatment_config: TreatmentConfig with plan_mlcs, plan_mus, plan_jaws
-            device: Target device
-            dtype: Data type
-            requires_grad: Whether tensors should track gradients
-
-        Returns:
-            BeamSequence with the plan parameters (raw control points from DICOM)
-        """
-        leaf_positions = torch.tensor(
-            treatment_config.plan_mlcs,
-            dtype=dtype,
-            device=device
-        )
-        if requires_grad:
-            leaf_positions = leaf_positions.requires_grad_(True)
-
-        mus = torch.tensor(
-            treatment_config.plan_mus,
-            dtype=dtype,
-            device=device
-        )
-        if requires_grad:
-            mus = mus.requires_grad_(True)
-
-        jaw_positions = torch.tensor(
-            treatment_config.plan_jaws,
-            dtype=dtype,
-            device=device
-        )
-        if requires_grad:
-            jaw_positions = jaw_positions.requires_grad_(True)
-
-        # Remove batch dimension if present and transpose (DICOM data comes as [1, 2, CP, N])
-        if leaf_positions.dim() == 4:
-            leaf_positions = leaf_positions.squeeze(0)  # [2, CP, N]
-        # Transpose from [2, CP, N] to [CP, N, 2]
-        leaf_positions = leaf_positions.permute(1, 2, 0)  # [CP, N, 2]
-
-        if mus.dim() == 2:
-            mus = mus.squeeze(0)  # [CP]
-
-        if jaw_positions.dim() == 3:
-            jaw_positions = jaw_positions.squeeze(0)  # [2, CP]
-        # Transpose from [2, CP] to [CP, 2]
-        jaw_positions = jaw_positions.permute(1, 0)  # [CP, 2]
-
-        # Compute gantry angles based on actual data shape
-        num_cps_in_data = leaf_positions.shape[0]  # [CP, N, 2] -> CP is dim 0
-        gantry_angles = cls._compute_gantry_angles(
-            num_cps=num_cps_in_data,
-            starting_angle_deg=treatment_config.starting_angle,
-            clockwise=treatment_config.clockwise,
-            device=device,
-            dtype=dtype,
-        )
-
-        return cls(
-            mus=mus,
-            leaf_positions=leaf_positions,
-            jaw_positions=jaw_positions,
-            gantry_angles=gantry_angles,
-        )
-
     @staticmethod
     def _compute_gantry_angles(
         num_cps: int,
@@ -565,7 +485,7 @@ class BeamSequence:
         else:
             end = start - math.radians(360)
 
-        # Match the TreatmentConfig.gantry_angles computation
+        # Match the gantry_angles computation
         angles = np.linspace(start, end, num_cps + 2, endpoint=False)[:-2] % (2 * math.pi)
         return torch.tensor(angles, dtype=dtype, device=device)
 
