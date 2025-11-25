@@ -37,7 +37,7 @@ class Beam:
     mu: torch.Tensor     # scalar or [1]
     leaf_positions: torch.Tensor  # [N, 2]
     jaw_positions: torch.Tensor   # [2]
-    field_size: tuple[float, float] = (400, 400)
+    field_size: tuple[int, int] = (400, 400)
     iso_center: tuple[float, float, float] = (0, 0, 0)
     sid: float = 1000.0
     ssd: float = None
@@ -48,7 +48,7 @@ class Beam:
         gantry_angle_deg: float,
         number_of_leaf_pairs: int,
         beam_limiting_device_angle_deg:float = 0.0,
-        field_size_mm: tuple[float, float] = (400.0, 400.0),
+        field_size_mm: tuple[int, int] = (400, 400),
         iso_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
         device: torch.device | str = 'cuda',
         dtype: torch.dtype = torch.float32,
@@ -191,7 +191,7 @@ class BeamSequence:
     mus: torch.Tensor             # [CP]
     leaf_positions: torch.Tensor  # [CP, N, 2]
     jaw_positions: torch.Tensor   # [CP, 2]
-    field_size: tuple[float, float]
+    field_size: tuple[int, int]
     iso_center: tuple[float, float, float]
     sid: float
     gantry_angles: Optional[torch.Tensor] = None  # [CP] in radians, or None to use engine's
@@ -249,7 +249,7 @@ class BeamSequence:
         cls,
         gantry_angles: list[float] | torch.Tensor,
         number_of_leaf_pairs: int,
-        field_size: tuple[float, float],
+        field_size: tuple[int, int],
         iso_center: tuple[float, float, float],
         beam_limiting_device_angles: list[float] | torch.Tensor | None = None,
         sid: float = 1000.0,

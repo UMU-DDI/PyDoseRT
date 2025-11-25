@@ -157,7 +157,7 @@ for test_i in range(n_tests):
                 "kernel_size": engine.kernel_size,
                 "lr_decay": lr_decay,
                 "weights": weights,
-                "physical_size": patient.get_physical_size(),
+                "physical_size": patient.physical_size,
                 "roi_weights": optimization.weights
             }, nested_support=True
         )

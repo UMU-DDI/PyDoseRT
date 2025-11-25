@@ -29,10 +29,34 @@ class Patient:
     dose: Optional[torch.Tensor] = None
     voxel_spacing_mm: Optional[tuple[float, float, float]] = None
 
-    plan_iso_center: Optional[tuple[float, float, float]] = None
-    plan_clockwise: Optional[bool] = None
-    plan_starting_angle: Optional[float] = None
+    @property
+    def shape(self) -> torch.Size:
+        """
+        Shape of the patient data.
 
+        Returns the shape of `ct_array` and verifies that all structures
+        (and dose, if present) have the same shape. Raises an error if any
+        mismatch is found.
+        """
+        base_shape = self.ct_array.shape
+
+        # Check structures
+        for name, struct in self.structures.items():
+            if struct.shape != base_shape:
+                raise ValueError(
+                    f"Structure '{name}' has shape {struct.shape}, "
+                    f"but expected {base_shape} (same as ct_array)."
+                )
+
+        # Optionally also enforce dose shape consistency
+        if self.dose is not None and self.dose.shape != base_shape:
+            raise ValueError(
+                f"Dose has shape {self.dose.shape}, "
+                f"but expected {base_shape} (same as ct_array)."
+            )
+
+        return base_shape
+    
     def to(self, target: torch.device | str | torch.dtype) -> 'Patient':
         """Move all tensors to a different device or dtype."""
         return Patient(
@@ -45,7 +69,8 @@ class Patient:
             plan_starting_angle=self.plan_starting_angle,
         )
     
-    def get_physical_size(self) -> np.ndarray:
+    @property
+    def physical_size(self) -> torch.Size:
         return np.multiply(
             np.array(self.ct_array.shape, dtype=np.float32),
             np.array(self.voxel_spacing_mm, dtype=np.float32),
@@ -70,7 +95,29 @@ class Patient:
             raise Exception(f"Mask {mask_name} does not exist in structures ({list(self.structures.keys())})")
         
         return torch.where(self.structures[mask_name], self.ct_array, -1000.0)
+    
+    def add_mask(self, mask_name: str, mask: np.ndarray | torch.Tensor, overwrite: bool = False):
+        if not overwrite and (mask_name in self.structures):
+            raise Exception(
+                f"Mask {mask_name} already exists for the patient. "
+                f"If you want to overwrite, set overwrite to True."
+            )
+        
+        if isinstance(mask, np.ndarray):
+            mask = torch.from_numpy(mask) > 0
+        elif isinstance(mask, torch.Tensor):
+            mask = mask > 0
+        else:
+            raise Exception(f"Mask type {type(mask)} not supported.")
 
+        # Enforce same shape as ct_array
+        if mask.shape != self.ct_array.shape:
+            raise ValueError(
+                f"Mask '{mask_name}' has shape {mask.shape}, "
+                f"but expected {self.ct_array.shape} (same as ct_array)."
+            )
+        
+        self.structures[mask_name] = mask
 
 @dataclass
 class Phantom(Patient):
@@ -82,7 +129,7 @@ class Phantom(Patient):
 
     def __init__(
         self,
-        ct_array: np.array,
+        ct_array: np.ndarray,
         voxel_spacing_mm: tuple[float, float, float]
     ):
         super().__init__(

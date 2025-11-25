@@ -65,7 +65,7 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
                     struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
                     use_delivery=True
                     )
-
+        print(f"Patient {patient_name}:\t{patient.ct_array.shape})")
         optimization = OptimizationConfig(
             preset="src/pydose_rt/data/optimization_presets/umea.json"
         )
