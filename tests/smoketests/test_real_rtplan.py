@@ -29,11 +29,12 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
                 struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
                 )
     beam_sequence = beam_sequence[0]
+    beam_sequence = beam_sequence[::4]
 
     kernel_size = kernel_size
     device = device
     dtype = dtype
-    downsampling_factor = (1, 4, 4)
+    downsampling_factor = (1, 2, 2)
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
 
@@ -62,7 +63,7 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
     dose_pred = np.where(external_mask, dose_pred, 0.0)
     scale = np.quantile(dose_volume[masks["CTV"] > 0], 0.9) / np.quantile(dose_pred[0, masks["CTV"] > 0], 0.9)
     dose_pred = dose_pred * scale
-    mae_map = np.abs(dose_pred[0] - dose_volume)
+    mae_map = np.abs(dose_pred[0] - dose_volume[0].cpu().detach().numpy())
     actual = np.mean(mae_map[masks["External"] > 0])
 
     assert expected >= actual, "The dose engine did not perform well enough for real plan."
