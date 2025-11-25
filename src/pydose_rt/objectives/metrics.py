@@ -532,7 +532,7 @@ def validate_unit_dose(machine: MachineConfig, patient, target_mu, kernel_size, 
     beam.mu = target_mu * beam.mu
     
     # Create dose engine
-    dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine, beam, kernel_size, device, dtype, downsampling_factor, permute_ct=False, leafs_centered=False)
+    dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine, beam, 401, device, dtype, downsampling_factor, permute_ct=False, leafs_centered=False)
  
     # Calculate dose
     dose = dose_layer.compute_single_beam(
