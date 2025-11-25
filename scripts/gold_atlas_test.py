@@ -43,8 +43,8 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float16
-        kernel_size = 25
-        downsampling_factor = (1, 2, 2)
+        kernel_size = 51
+        downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -101,7 +101,7 @@ for patient_name in sorted(os.listdir(base_path)):
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred[0], optimization, compute_gamma=True, compute_clinical_criteria=False)
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred[0], optimization, compute_gamma=True, compute_clinical_criteria=False, global_normalisation=2.2)
         # print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
         print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']} ({scale.item()})")
 

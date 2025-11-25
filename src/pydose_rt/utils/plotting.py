@@ -433,6 +433,7 @@ def make_animation(experiment,
 
 def quick_plot(dose_volume, dose_pred, ct_volume, title, dose_max, out_path = None):
     vmax = 1
+    mae_max = 0.1 * dose_max
     plt.figure()
     slice_idx = dose_volume.shape[1] // 2 - 5
     plt.subplot(331)
@@ -448,7 +449,7 @@ def quick_plot(dose_volume, dose_pred, ct_volume, title, dose_max, out_path = No
     plt.colorbar()
     plt.subplot(333)
     plt.imshow(ct_volume[0, slice_idx, :, :].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[0, slice_idx, :, :].cpu().detach().numpy() - dose_pred[0, slice_idx, :, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+    plt.imshow(dose_volume[0, slice_idx, :, :].cpu().detach().numpy() - dose_pred[0, slice_idx, :, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
     plt.axis('off')
     plt.colorbar()
 
@@ -466,7 +467,7 @@ def quick_plot(dose_volume, dose_pred, ct_volume, title, dose_max, out_path = No
     plt.colorbar()
     plt.subplot(336)
     plt.imshow(ct_volume[0, :, slice_idx, :].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[0, :, slice_idx, :].cpu().detach().numpy() - dose_pred[0, :, slice_idx, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+    plt.imshow(dose_volume[0, :, slice_idx, :].cpu().detach().numpy() - dose_pred[0, :, slice_idx, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
     plt.axis('off')
     plt.colorbar()
 
@@ -484,7 +485,7 @@ def quick_plot(dose_volume, dose_pred, ct_volume, title, dose_max, out_path = No
     plt.colorbar()
     plt.subplot(339)
     plt.imshow(ct_volume[0, :, :, slice_idx].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[0, :, :, slice_idx].cpu().detach().numpy() - dose_pred[0, :, :, slice_idx].cpu().detach().numpy(), cmap='coolwarm', vmin=-vmax, vmax=vmax, alpha=0.6)
+    plt.imshow(dose_volume[0, :, :, slice_idx].cpu().detach().numpy() - dose_pred[0, :, :, slice_idx].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
     plt.axis('off')
     plt.colorbar()
 

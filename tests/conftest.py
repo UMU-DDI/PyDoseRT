@@ -130,6 +130,11 @@ def default_number_of_cps():
 def default_gantry_angles(default_number_of_cps, default_device, default_dtype):
     """Fixture for default gantry angles"""
     return torch.zeros(default_number_of_cps, device=default_device, dtype=default_dtype)
+
+@pytest.fixture
+def default_beam_limiting_device_angles(default_number_of_cps, default_device, default_dtype):
+    """Fixture for default gantry angles"""
+    return torch.zeros(default_number_of_cps, device=default_device, dtype=default_dtype)
  
 @pytest.fixture
 def default_beam(default_machine_config, default_field_size, default_iso_center, default_device, default_dtype):

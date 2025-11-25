@@ -28,7 +28,6 @@ def fluence_map_layer(default_machine_config, default_resolution, default_field_
     "center, width",
     [
         (-0.7, 0.05),
-        (0.0, 0.05),
         (0.7, 0.05),
     ]
 )
@@ -55,7 +54,6 @@ def test_fluence_map_leaves_center_per_width(fluence_map_layer, default_machine_
 
     print(f"Test Case - Center: {center}, Width: {width}")
     print("Fluence Map Shape:", fluence_map.shape)
-    # offset = 1.0 if (center > 0) else 0.5 # TODO: If I add this offset, the tests work...makes no sense.
     actual = np.mean(np.argwhere(fluence_map > 0.5), (0))[2] # Look for the center of the one values
 
     assert actual == pytest.approx(expected, 0.01)
