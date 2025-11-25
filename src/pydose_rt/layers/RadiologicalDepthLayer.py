@@ -52,7 +52,7 @@ class RadiologicalDepthLayer(nn.Module):
                  gantry_angles: list[float],
                  downsampling_factor: tuple[int, int, int],
                  lookup_table: torch.Tensor,
-                 verbose: bool = False):
+                 verbose: bool = False) -> 'RadiologicalDepthLayer':
         """
         Initializes the RadiologicalDepthLayer and precomputes sampling indices for each gantry angle.
 

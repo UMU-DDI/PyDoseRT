@@ -43,7 +43,7 @@ class PencilBeamKernelLayer(nn.Module):
                  dtype: type,
                  resolution: tuple[float, float, float],
                  kernel_size: tuple[int, int],
-                 verbose: bool = False):
+                 verbose: bool = False) -> 'PencilBeamKernelLayer':
         """
         Initializes the PencilBeamKernelLayer and creates the pencil beam model.
 

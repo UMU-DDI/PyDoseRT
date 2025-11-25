@@ -159,7 +159,10 @@ class PencilBeamModel:
         params (dict): Precomputed kernel parameters for the given TPR.
         rs (np.ndarray): Radial distance grid for kernel calculation.
     """
-    def __init__(self, resolution, tpr_20_10, kernel_size: int):
+    def __init__(self, 
+                 resolution, 
+                 tpr_20_10, 
+                 kernel_size: int) -> 'PencilBeamModel':
         """
         Initialize the PencilBeamModel.
 

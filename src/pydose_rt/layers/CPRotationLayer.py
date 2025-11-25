@@ -34,7 +34,7 @@ class CPRotationLayer(nn.Module):
                  ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float] | torch.Tensor = None,
                  verbose: bool = False,
-                ):
+                ) -> 'CPRotationLayer':
         """
         Initializes the CPRotationLayer.
         Args:            

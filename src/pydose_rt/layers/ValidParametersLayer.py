@@ -70,7 +70,7 @@ class ValidParametersLayer(nn.Module):
         __init__(config, slope=None, verbose=False): Initializes the ValidParametersLayer with configuration and verbosity.
         forward(leaf_positions, mus): Clamps and scales leaf positions and MUs, returning validated tensors.
     """
-    def __init__(self, machine_config: MachineConfig, device: torch.device, dtype: type, field_size: tuple[float, float], leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False):
+    def __init__(self, machine_config: MachineConfig, device: torch.device, dtype: type, field_size: tuple[float, float], leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False) -> 'ValidParametersLayer':
         """
         Initializes the ValidParametersLayer.
 

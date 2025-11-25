@@ -29,7 +29,7 @@ class BeamWiseConvolutionalLayer(nn.Module):
     def __init__(self, 
                  device,
                  dtype,
-                 verbose: bool = False):
+                 verbose: bool = False) -> 'BeamWiseConvolutionalLayer':
         """
         Initializes the BeamWiseConvolutionalLayer.
 

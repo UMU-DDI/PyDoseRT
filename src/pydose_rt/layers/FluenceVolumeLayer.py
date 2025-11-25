@@ -54,7 +54,7 @@ class FluenceVolumeLayer(nn.Module):
                  ct_array_shape: tuple[float, float, float],
                  iso_center: tuple[float, float, float],
                  field_size: tuple[float, float],
-                 verbose: bool = False):
+                 verbose: bool = False) -> 'FluenceVolumeLayer':
         """
         Initializes the FluenceVolumeLayer and precomputes profile corrections and sampling grids.
 

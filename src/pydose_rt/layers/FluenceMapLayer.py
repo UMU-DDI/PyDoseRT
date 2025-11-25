@@ -59,7 +59,7 @@ class FluenceMapLayer(nn.Module):
         field_size: tuple[float, float],
         verbose: bool = False,
         training_sharpness: float = 10.0,
-    ):
+    ) -> 'FluenceMapLayer':
         """
         Initializes the FluenceMapLayer.
 
