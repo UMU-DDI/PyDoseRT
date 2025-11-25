@@ -41,15 +41,21 @@ def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
     c = sorted_ratios[median_idx]
     return c
 
-def get_shapes(machine: MachineConfig, treatment: OptimizationConfig):
+def get_shapes(machine: MachineConfig, ct_shape: tuple[int, int, int] = None, number_of_cps: int = None, kernel_size: int = None, field_size: tuple[int, int] = None):
     shapes = dict()
-    shapes["MLCs"] = (1, 2, treatment.number_of_cps, machine.number_of_leaf_pairs)
-    shapes["jaws"] = (1, 2, treatment.number_of_cps)
-    shapes["MUs"] = (1, treatment.number_of_cps)
-    shapes["radiological_depths"] = (treatment.number_of_cps, machine.ct_array_shape[1], 1)
-    shapes["kernels"] = (treatment.kernel_size, treatment.kernel_size, treatment.number_of_cps, machine.ct_array_shape[1])
-    shapes["fluence_maps"] = (treatment.number_of_cps, treatment.field_size[0], treatment.field_size[1])
-    shapes["fluence_volumes"] = (treatment.number_of_cps, machine.ct_array_shape[0], machine.ct_array_shape[1], machine.ct_array_shape[2], 1)
+    if number_of_cps is None:
+        return
+    
+    shapes["MLCs"] = (1, number_of_cps, machine.number_of_leaf_pairs, 2)
+    shapes["jaws"] = (1, number_of_cps, 2)
+    shapes["MUs"] = (1, number_of_cps)
+    if ct_shape is not None:
+        shapes["fluence_volumes"] = (number_of_cps, ct_shape[0], ct_shape[1], ct_shape[2], 1)
+        shapes["radiological_depths"] = (number_of_cps, ct_shape[1], 1)
+        if kernel_size is not None:
+            shapes["kernels"] = (kernel_size, kernel_size, number_of_cps, ct_shape[1])
+    if field_size is not None:
+        shapes["fluence_maps"] = (number_of_cps, field_size[0], field_size[1])
 
     return shapes
 

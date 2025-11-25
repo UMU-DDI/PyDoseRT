@@ -48,8 +48,8 @@ class RadiologicalDepthLayer(nn.Module):
                  resolution: tuple[float, float, float],
                  ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float],
-                 downsampling_factor: tuple[int, int, int],
                  lookup_table: torch.Tensor,
+                 downsampling_factor: tuple[int, int, int] = (1, 1, 1),
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
                  verbose: bool = False) -> 'RadiologicalDepthLayer':
@@ -61,8 +61,8 @@ class RadiologicalDepthLayer(nn.Module):
             resolution (tuple[float, float, float]): Voxel spacing in mm.
             ct_array_shape (tuple[float, float, float]): Shape of the CT array.
             gantry_angles (list[float]): List of gantry angles in radians.
-            downsampling_factor (tuple[int, int, int]): Downsampling factor for CT.
             lookup_table (torch.Tensor): HU-to-density lookup table.
+            downsampling_factor (tuple[int, int, int]): Downsampling factor for CT.
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
@@ -79,6 +79,8 @@ class RadiologicalDepthLayer(nn.Module):
         self.machine_config = machine_config
         self.verbose = verbose
         self.downsampling_factor = downsampling_factor
+        if not(isinstance(lookup_table, torch.Tensor)):
+            lookup_table = torch.from_numpy(lookup_table)
         self.lookup_table = lookup_table
 
         # Determine if we should use full-sized CT for depth extraction

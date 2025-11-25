@@ -71,7 +71,7 @@ class BeamValidationLayer(nn.Module):
         forward(leaf_positions, mus): Clamps and scales leaf positions and MUs, returning validated tensors.
     """
     def __init__(self, machine_config: MachineConfig, 
-                 field_size: tuple[float, float] = (400.0, 400.0), 
+                 field_size: tuple[int, int] = (400, 400), 
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
                  leafs_centered: bool = False, 
@@ -82,7 +82,7 @@ class BeamValidationLayer(nn.Module):
 
         Args:
             machine_config (MachineConfig): Configuration object with machine parameters.
-            field_size (tuple[float, float]): Field size (width, height).
+            field_size (tuple[int, int]): Field size (width, height).
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
             leafs_centered (bool, optional): Whether leaf positions are centered. Defaults to False.

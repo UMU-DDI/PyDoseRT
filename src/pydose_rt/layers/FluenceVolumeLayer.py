@@ -51,7 +51,7 @@ class FluenceVolumeLayer(nn.Module):
                  ct_array_shape: tuple[float, float, float],
                  sid: float = 1000.0,
                  iso_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
-                 field_size: tuple[float, float] = (400.0, 400.0),
+                 field_size: tuple[int, int] = (400, 400),
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
                  verbose: bool = False) -> 'FluenceVolumeLayer':
@@ -64,7 +64,7 @@ class FluenceVolumeLayer(nn.Module):
             ct_array_shape (tuple[float, float, float]): Shape of the CT array.
             sid (float): Source-to-isocenter distance.
             iso_center (tuple[float, float, float]): Isocenter position.
-            field_size (tuple[float, float]): Field size (width, height) in pixels.
+            field_size (tuple[int, int]): Field size (width, height) in pixels.
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
         """

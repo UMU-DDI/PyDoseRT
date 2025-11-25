@@ -1,24 +1,14 @@
-import sys
-
 from pydose_rt.utils.utils import get_shapes
-sys.path.append("../../")
 import pytest
-import numpy as np
 import torch
 from pydose_rt.data import MachineConfig
 from pydose_rt.layers import PencilBeamKernelLayer
 
 @pytest.fixture
-def pencil_beam_kernel_layer(request, default_machine_config, default_treatment_config):
+def pencil_beam_kernel_layer(request, default_machine_config, default_resolution):
     """Fixture to create a PencilBeamKernelLayer with configurable kernel_size and number_of_cps."""
-    kernel_size = request.param.get("kernel_size", 5)
-    number_of_cps = request.param.get(
-        "number_of_cps", default_treatment_config.number_of_cps
-    )
-    treatment_config = default_treatment_config
-    treatment_config.number_of_cps = number_of_cps
-
-    return PencilBeamKernelLayer(default_machine_config, treatment_config, kernel_size), treatment_config
+    kernel_size = request.param.get("kernel_size", None)
+    return PencilBeamKernelLayer(default_machine_config, default_resolution, kernel_size), kernel_size
 
 
 @pytest.mark.parametrize(
@@ -31,13 +21,16 @@ def pencil_beam_kernel_layer(request, default_machine_config, default_treatment_
     ],
     indirect=True,
 )
-def test_pencil_beam_kernel_output_shape(pencil_beam_kernel_layer, default_machine_config):
+def test_pencil_beam_kernel_output_shape(pencil_beam_kernel_layer, default_ct_array_shape, default_machine_config, default_number_of_cps, default_dtype, default_device):
     """Test that output shape is as expected based on input width."""
-    pencil_beam_kernel_layer, treatment_config = pencil_beam_kernel_layer
-    shapes = get_shapes(default_machine_config, treatment_config)
+    pencil_beam_kernel_layer, kernel_size = pencil_beam_kernel_layer
+    shapes = get_shapes(default_machine_config, 
+                        kernel_size=kernel_size,
+                        number_of_cps=default_number_of_cps,
+                        ct_shape=default_ct_array_shape)
     expected_shape = shapes["kernels"]
 
-    radiological_depth = torch.zeros(shapes["radiological_depths"], dtype=torch.float32, device=treatment_config.device)
+    radiological_depth = torch.zeros(shapes["radiological_depths"], dtype=default_dtype, device=default_device)
     kernels = pencil_beam_kernel_layer(radiological_depth)
 
     

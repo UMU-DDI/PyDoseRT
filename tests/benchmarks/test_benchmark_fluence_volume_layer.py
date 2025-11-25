@@ -1,7 +1,6 @@
 from pathlib import Path
 import sys
 
-from pydose_rt.data.optimization_config import TreatmentConfig
 from pydose_rt.utils.utils import get_shapes
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest

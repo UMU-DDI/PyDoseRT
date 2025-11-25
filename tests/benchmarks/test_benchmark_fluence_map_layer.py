@@ -6,7 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import numpy as np
 import torch
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.layers import FluenceMapLayer
 from pydose_rt.utils.grad_monitor import GradMonitor
 

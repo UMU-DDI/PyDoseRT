@@ -254,7 +254,7 @@ def leafs_loss(leafs, config):
 
     leaf_rate_in_pixels = (
         config.maximum_leaf_speed / config.resolution[1]
-    ) / config.field_size_in_pixels[1]
+    ) / config.field_size[1]
     leaf_rate = (
         leaf_rate_in_pixels
         * (config.gantry_diff_deg / max(config.minimum_gantry_angle_speed, 1e-3))
@@ -286,7 +286,7 @@ def jaws_loss(jaws, config):
 
     jaw_rate_in_pixels = (
         config.maximum_jaw_speed / config.resolution[1]
-    ) / config.field_size_in_pixels[1]
+    ) / config.field_size[1]
     jaw_rate = (
         jaw_rate_in_pixels
         * (config.gantry_diff_deg / max(config.minimum_gantry_angle_speed, 1e-3))

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import os
 import torch
-from pydose_rt.data import MachineConfig, TreatmentConfig, loaders
+from pydose_rt.data import MachineConfig, loaders
 from pydose_rt.objectives.metrics import validate_unit_dose
 from pydose_rt import DoseEngine
 import SimpleITK as sitk
@@ -13,7 +13,7 @@ import SimpleITK as sitk
 
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("kernel_size", [15, 25])
-def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path, dtype, kernel_size):
+def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path, dtype, kernel_size):
     if not rtp_data_dir.exists():
         pytest.skip(f"Missing case folder: {rtp_data_dir}")
 
@@ -21,22 +21,23 @@ def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path, dtype, kernel_s
     expected = 5.0
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    patient, treatment = loaders.load_dicom(
+    patient, beam_sequence = loaders.load_dicom(
                 ct_folder=rtp_data_dir, 
+                struct_path=rtp_struct_path,
                 dose_path=rtp_dose_path, 
                 plan_path=rtp_plan_path, 
                 struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "External"],
-                treatment_preset="src/pydose_rt/data/optimization_presets/umea.json"
                 )
+    beam_sequence = beam_sequence[0]
 
-    treatment.kernel_size = kernel_size
-    treatment.device = device
-    treatment.dtype = dtype
-    treatment.downsampling_factor = (1, 2, 2)
+    kernel_size = kernel_size
+    device = device
+    dtype = dtype
+    downsampling_factor = (1, 4, 4)
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
 
-    ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 130)
+    ref_dose, calibration_factor = validate_unit_dose(machine_config, patient, 110, 1, downsampling_factor, device, dtype)
     if (np.abs(ref_dose - 1.0) > 0.001):
         print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
         machine_config.mean_photon_energy_MeV = calibration_factor
@@ -44,9 +45,6 @@ def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path, dtype, kernel_s
     ct_image = patient.ct_array
     dose = patient.dose
     masks = patient.structures
-    leafs = treatment.plan_mlcs
-    mus = treatment.plan_mus
-    jaws = treatment.plan_jaws
 
     dose_volume = dose
     ct_volume = ct_image
@@ -55,13 +53,9 @@ def test_real_rtplan(rtp_data_dir, rtp_dose_path, rtp_plan_path, dtype, kernel_s
 
     ct_slices = np.array(np.expand_dims(ct_volume, 0))
 
-    dose_layer = DoseEngine(machine_config, treatment, permute_ct=False, leafs_centered=False, adjust_values=False)
+    dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, kernel_size, downsampling_factor=downsampling_factor, permute_ct=False, leafs_centered=False, adjust_values=False)
 
-    leafs = torch.tensor((np.array(leafs)[:, :, :-1, :] + np.array(leafs)[:, :, 1:, :]) / 2, dtype=dose_layer.dtype, device=dose_layer.device)
-    mus = torch.tensor((np.array(mus)[:, :-1] + np.array(mus)[:, 1:]) / 2, dtype=dose_layer.dtype, device=dose_layer.device)
-    jaws = torch.tensor((np.array(jaws)[:, :, :-1] + np.array(jaws)[:, :, 1:]) / 2, dtype=dose_layer.dtype, device=dose_layer.device)
-        
-    dose_pred = dose_layer(leafs, mus, jaws, ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device))
+    dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device))
     dose_pred = dose_pred.cpu().detach().numpy()
 
 

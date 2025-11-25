@@ -54,7 +54,7 @@ class FluenceMapLayer(nn.Module):
         self,
         machine_config: MachineConfig,
         resolution: tuple[float, float, float],
-        field_size: tuple[float, float] = (400.0, 400.0),
+        field_size: tuple[int, int] = (400, 400),
         device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
@@ -66,7 +66,7 @@ class FluenceMapLayer(nn.Module):
         Args:            
             machine_config (MachineConfig): Configuration object with machine parameters.
             resolution (tuple[float, float, float]): Voxel spacing in mm.
-            field_size (tuple[float, float]): Field size (width, height) in pixels.
+            field_size (tuple[int, int]): Field size (width, height) in pixels.
             device (torch.device): Device on which computations are performed.
             dtype (type): Data type for tensors.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.

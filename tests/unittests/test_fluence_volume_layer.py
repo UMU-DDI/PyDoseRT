@@ -5,33 +5,26 @@ from pydose_rt.utils.utils import get_shapes
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.layers import FluenceVolumeLayer
 
 
 # ---- Fixtures -----
 @pytest.fixture
-def fluence_volume_layer(default_machine_config, default_treatment_config):
+def fluence_volume_layer(default_machine_config, default_resolution, default_ct_array_shape):
     """Fixture to create a FluenceMapLayer instance"""
-    return FluenceVolumeLayer(default_machine_config, default_treatment_config)
-
-
-@pytest.fixture
-def fluence_volume_layer_with_configurable_beams(request) -> tuple[FluenceVolumeLayer, TreatmentConfig]:
-    """Fixture to create a FluenceMapLayer instance with configurable beams"""
-    config = TreatmentConfig(
-        preset="src/pydose_rt/data/optimization_presets/test.json",
-        number_of_cps=request.param,
-    )
-    return FluenceVolumeLayer(config), config
+    return FluenceVolumeLayer(default_machine_config, default_resolution, default_ct_array_shape)
 
 
 # ----- Tests -----
-def test_fluence_volume_output_shape(fluence_volume_layer, default_machine_config, default_treatment_config):
+def test_fluence_volume_output_shape(fluence_volume_layer, default_machine_config, default_field_size, default_ct_array_shape, default_number_of_cps, default_dtype, default_device):
     """Test that fluence map behaves correctly based on input width."""
     # Arrange
-    shapes = get_shapes(default_machine_config, default_treatment_config)
-    fluence_map = torch.zeros(shapes["fluence_maps"], dtype=torch.float32, device=default_treatment_config.device)
+    shapes = get_shapes(default_machine_config, 
+                        number_of_cps=default_number_of_cps,
+                        field_size=default_field_size,
+                        ct_shape=default_ct_array_shape)
+    fluence_map = torch.zeros(shapes["fluence_maps"], dtype=default_dtype, device=default_device)
     expected = shapes["fluence_volumes"]
 
     # Act

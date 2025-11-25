@@ -3,7 +3,7 @@ sys.path.append("../../")
 import pytest
 import numpy as np
 import torch
-from pydose_rt.data import MachineConfig, TreatmentConfig
+from pydose_rt.data import MachineConfig
 from pydose_rt.layers import RadiologicalDepthLayer
 
 

@@ -10,8 +10,8 @@ import pytest
 from pydose_rt.physics.kernels.pencil_beam_model import coeffs as COEFFICIENTS, PencilBeamModel
 
 @pytest.fixture(scope="function")
-def pencil_beam_kernel_model(default_machine_config) -> PencilBeamModel:
-    return PencilBeamModel(default_machine_config.resolution, default_machine_config.tpr_20_10, kernel_size=25)
+def pencil_beam_kernel_model(default_machine_config, default_resolution) -> PencilBeamModel:
+    return PencilBeamModel(default_resolution, default_machine_config.tpr_20_10, kernel_size=25)
 
 
 class TestPencilBeamModel:
