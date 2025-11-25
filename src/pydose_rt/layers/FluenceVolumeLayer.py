@@ -47,29 +47,34 @@ class FluenceVolumeLayer(nn.Module):
     """
 
     def __init__(self, machine_config: MachineConfig, 
-                 device: torch.device, 
-                 dtype: type,
-                 sid: float,
                  resolution: tuple[float, float, float],
                  ct_array_shape: tuple[float, float, float],
-                 iso_center: tuple[float, float, float],
-                 field_size: tuple[float, float],
+                 sid: float = 1000.0,
+                 iso_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
+                 field_size: tuple[float, float] = (400.0, 400.0),
+                 device: torch.device | str | None = None,
+                 dtype: torch.dtype = torch.float32,
                  verbose: bool = False) -> 'FluenceVolumeLayer':
         """
         Initializes the FluenceVolumeLayer and precomputes profile corrections and sampling grids.
 
         Args:
             machine_config (MachineConfig): Configuration object with machine parameters.
-            device (torch.device): Device for computation (CPU or CUDA).
-            dtype (type): Data type for tensors.
-            sid (float): Source-to-isocenter distance.
             resolution (tuple[float, float, float]): Voxel spacing in mm.
             ct_array_shape (tuple[float, float, float]): Shape of the CT array.
+            sid (float): Source-to-isocenter distance.
             iso_center (tuple[float, float, float]): Isocenter position.
             field_size (tuple[float, float]): Field size (width, height) in pixels.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
         """
         super().__init__()
 
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device=device
         self.dtype=dtype
         self.machine_config = machine_config

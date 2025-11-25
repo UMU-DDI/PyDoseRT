@@ -29,9 +29,9 @@ class BeamRotationLayer(nn.Module):
     """
     def __init__(self,
                  machine_config: MachineConfig,
-                 device: torch.device, 
-                 dtype: type,
                  ct_array_shape: tuple[float, float, float],
+                 device: torch.device | str | None = None,
+                 dtype: torch.dtype = torch.float32,
                  gantry_angles: list[float] | torch.Tensor = None,
                  verbose: bool = False,
                 ) -> 'BeamRotationLayer':
@@ -45,6 +45,11 @@ class BeamRotationLayer(nn.Module):
             verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """
         super().__init__()
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device = device
         self.dtype = dtype
         self.machine_config = machine_config

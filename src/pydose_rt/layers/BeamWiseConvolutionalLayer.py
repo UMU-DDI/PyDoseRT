@@ -27,8 +27,8 @@ class BeamWiseConvolutionalLayer(nn.Module):
     """
 
     def __init__(self, 
-                 device,
-                 dtype,
+                 device: torch.device | str | None = None,
+                 dtype: torch.dtype = torch.float32,
                  verbose: bool = False) -> 'BeamWiseConvolutionalLayer':
         """
         Initializes the BeamWiseConvolutionalLayer.
@@ -40,6 +40,11 @@ class BeamWiseConvolutionalLayer(nn.Module):
         """
         super().__init__()
 
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device=device
         self.dtype=dtype
         self.verbose = verbose

@@ -39,23 +39,28 @@ class PencilBeamKernelLayer(nn.Module):
     """
     def __init__(self, 
                  machine_config: MachineConfig, 
-                 device: torch.device, 
-                 dtype: type,
                  resolution: tuple[float, float, float],
                  kernel_size: tuple[int, int],
+                 device: torch.device | str | None = None,
+                 dtype: torch.dtype = torch.float32,
                  verbose: bool = False) -> 'PencilBeamKernelLayer':
         """
         Initializes the PencilBeamKernelLayer and creates the pencil beam model.
 
         Args:
             machine_config (MachineConfig): Configuration object with CT and beam parameters.
-            device (torch.device): Device for computation (CPU or CUDA).
-            dtype (type): Data type for tensors.
             resolution (tuple[float, float, float]): Voxel spacing in mm.
             kernel_size (tuple[int, int]): Size of the dose kernel (height, width).
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
         """
         super().__init__()
 
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device=device
         self.dtype=dtype
         self.machine_config = machine_config

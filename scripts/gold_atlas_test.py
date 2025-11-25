@@ -54,7 +54,7 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float16
-        kernel_size = 15
+        kernel_size = 25
         downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
@@ -84,7 +84,7 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
         doses = []
         for beam_sequence in beam_sequences:
             beam_sequence = beam_sequence.to(device).to(dtype)
-            dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, device, dtype, kernel_size)
+            dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, kernel_size, device, dtype)
             dose_layer.eval()
             dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_volume)
             doses.append(dose_pred.detach())
@@ -92,8 +92,8 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
         dose_pred = torch.where(patient.structures["External"], dose_pred, 0.0)
 
         # scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["PTVT_42.7"] > 0)
-        scale = torch.mean(dose_volume[0, patient.structures[ptv_struct_name]]) / torch.mean(dose_pred[0, patient.structures[ptv_struct_name]])
-        # scale = 5.51 / np.quantile(dose_pred[0, masks["PTVT_42.7"] > 0], 0.01)
+        # scale = torch.mean(dose_volume[0, patient.structures[ptv_struct_name]]) / torch.mean(dose_pred[0, patient.structures[ptv_struct_name]])
+        scale = torch.tensor(1.0)
         dose_pred = dose_pred * scale
         dose_max = max(dose_volume.max(), dose_pred.max()).item()
 
@@ -115,7 +115,7 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
         res = result_validation(patient, machine_config, beam_sequence, dose_pred[0], optimization, compute_gamma=True, compute_clinical_criteria=False)
         # print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
-        print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']}")
+        print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']} ({scale.item()})")
 
         quick_plot(dose_volume, dose_pred, ct_volume, f"MAE {str(np.round(mae_loss, 4))} Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}", dose_max, f"out/quick_{patient_name}.png")
 

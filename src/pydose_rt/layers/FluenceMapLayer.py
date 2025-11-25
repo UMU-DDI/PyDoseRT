@@ -53,10 +53,10 @@ class FluenceMapLayer(nn.Module):
     def __init__(
         self,
         machine_config: MachineConfig,
-        device: torch.device,
-        dtype: type,
         resolution: tuple[float, float, float],
-        field_size: tuple[float, float],
+        field_size: tuple[float, float] = (400.0, 400.0),
+        device: torch.device | str | None = None,
+        dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         training_sharpness: float = 10.0,
     ) -> 'FluenceMapLayer':
@@ -65,16 +65,20 @@ class FluenceMapLayer(nn.Module):
 
         Args:            
             machine_config (MachineConfig): Configuration object with machine parameters.
-            device (torch.device): Device on which computations are performed.
-            dtype (type): Data type for tensors.
             resolution (tuple[float, float, float]): Voxel spacing in mm.
             field_size (tuple[float, float]): Field size (width, height) in pixels.
+            device (torch.device): Device on which computations are performed.
+            dtype (type): Data type for tensors.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
             training_sharpness (float, optional): Sharpness parameter for smooth gradients during training. Defaults to 10.0.
-            eval_sharpness (float, optional): Sharpness parameter for sharp edges during evaluation. Defaults to 1000.0.
         """
         super().__init__()
 
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device=device
         self.dtype=dtype
         self.machine_config = machine_config

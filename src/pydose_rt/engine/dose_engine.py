@@ -42,9 +42,9 @@ class DoseEngine(nn.Module):
         resolution: tuple[float, float, float],
         machine_config: MachineConfig,
         beam_input: BeamSequence | Beam,
-        device: torch.device, 
-        dtype: type,
         kernel_size: int,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype = torch.float32,
         downsampling_factor: tuple[int, int, int] = (1, 1, 1),
         leafs_centered: bool = False,
         crop_volume: bool = False,
@@ -85,6 +85,12 @@ class DoseEngine(nn.Module):
         self._adjust_values = adjust_values
         self.kernel_size = kernel_size
 
+
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device = device
         self.dtype = dtype
 

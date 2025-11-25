@@ -45,30 +45,35 @@ class RadiologicalDepthLayer(nn.Module):
 
     def __init__(self, 
                  machine_config: MachineConfig, 
-                 device: torch.device, 
-                 dtype: type,
                  resolution: tuple[float, float, float],
                  ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float],
                  downsampling_factor: tuple[int, int, int],
                  lookup_table: torch.Tensor,
+                 device: torch.device | str | None = None,
+                 dtype: torch.dtype = torch.float32,
                  verbose: bool = False) -> 'RadiologicalDepthLayer':
         """
         Initializes the RadiologicalDepthLayer and precomputes sampling indices for each gantry angle.
 
         Args:
             machine_config (MachineConfig): Configuration object with machine parameters.
-            device (torch.device): Device for computation (CPU or CUDA).
-            dtype (type): Data type for tensors.
             resolution (tuple[float, float, float]): Voxel spacing in mm.
             ct_array_shape (tuple[float, float, float]): Shape of the CT array.
             gantry_angles (list[float]): List of gantry angles in radians.
             downsampling_factor (tuple[int, int, int]): Downsampling factor for CT.
             lookup_table (torch.Tensor): HU-to-density lookup table.
+            device (torch.device): Device for computation (CPU or CUDA).
+            dtype (type): Data type for tensors.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super(RadiologicalDepthLayer, self).__init__()
 
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device=device
         self.dtype=dtype
         self.machine_config = machine_config

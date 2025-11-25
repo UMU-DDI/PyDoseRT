@@ -70,20 +70,31 @@ class BeamValidationLayer(nn.Module):
         __init__(config, slope=None, verbose=False): Initializes the BeamValidationLayer with configuration and verbosity.
         forward(leaf_positions, mus): Clamps and scales leaf positions and MUs, returning validated tensors.
     """
-    def __init__(self, machine_config: MachineConfig, device: torch.device, dtype: type, field_size: tuple[float, float], leafs_centered: bool = False, adjust_values: bool = True, verbose: bool = False) -> 'BeamValidationLayer':
+    def __init__(self, machine_config: MachineConfig, 
+                 field_size: tuple[float, float] = (400.0, 400.0), 
+                 device: torch.device | str | None = None,
+                 dtype: torch.dtype = torch.float32,
+                 leafs_centered: bool = False, 
+                 adjust_values: bool = True, 
+                 verbose: bool = False) -> 'BeamValidationLayer':
         """
         Initializes the BeamValidationLayer.
 
         Args:
             machine_config (MachineConfig): Configuration object with machine parameters.
+            field_size (tuple[float, float]): Field size (width, height).
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
-            field_size (tuple[float, float]): Field size (width, height).
             leafs_centered (bool, optional): Whether leaf positions are centered. Defaults to False.
             adjust_values (bool, optional): Whether to adjust parameter values. Defaults to True.
         """
         super().__init__()
 
+        # Handle device default
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
         self.device=device
         self.dtype=dtype
         self.machine_config = machine_config
