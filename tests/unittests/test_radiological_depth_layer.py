@@ -38,7 +38,7 @@ def test_radiological_depth_output_shape(radiological_depth_layer, default_machi
 def radiological_depth_layer_beams(request):
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
     config = TreatmentConfig(
-        preset="src/pydose_rt/data/treatment_presets/test.json",
+        preset="src/pydose_rt/data/optimization_presets/test.json",
         number_of_cps=request.param,
     )
     return RadiologicalDepthLayer(config), config

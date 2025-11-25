@@ -41,7 +41,7 @@ patient, treatment = loaders.load_dicom(
             dose_path=rtdose_path, 
             plan_path=rtplan_path, 
             struct_names=["External"],
-            treatment_preset="src/pydose_rt/data/treatment_presets/umea.json"
+            treatment_preset="src/pydose_rt/data/optimization_presets/umea.json"
             )
 
 treatment.kernel_size = 75

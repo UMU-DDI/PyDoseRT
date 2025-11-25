@@ -7,7 +7,7 @@ import torch
 
 def test_dose_engine_layer(benchmark):
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/test.json")
-    treatment_config = TreatmentConfig(preset="src/pydose_rt/data/treatment_presets/test.json", kernel_size=5)
+    treatment_config = TreatmentConfig(preset="src/pydose_rt/data/optimization_presets/test.json", kernel_size=5)
     dose_layer = DoseEngine(machine_config, treatment_config)
     
 

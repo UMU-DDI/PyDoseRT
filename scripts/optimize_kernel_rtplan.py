@@ -51,7 +51,7 @@ patient, treatment = loaders.load_dicom(
             dose_path=rtdose_path, 
             plan_path=rtplan_path, 
             struct_names=["CTV", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
-            treatment_preset="src/pydose_rt/data/treatment_presets/vienna.json"
+            treatment_preset="src/pydose_rt/data/optimization_presets/vienna.json"
             )
 
 treatment.fluence_kernel_size = 55

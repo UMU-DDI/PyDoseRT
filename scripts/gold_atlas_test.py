@@ -53,6 +53,9 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
         # rtdose_path = "/home/bolo/Downloads/rs_doses/RS_Old_in_Water/RD1.2.752.243.1.1.20251119095655132.6200.21611.dcm"
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        dtype = torch.float16
+        kernel_size = 15
+        downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -63,27 +66,27 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
                     use_delivery=True
                     )
 
-        treatment = OptimizationConfig(
-            preset="src/pydose_rt/data/treatment_presets/umea.json"
+        optimization = OptimizationConfig(
+            preset="src/pydose_rt/data/optimization_presets/umea.json"
         )
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
-        machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
-        ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 110)
+        machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
+        ref_dose, calibration_factor = validate_unit_dose(machine_config, patient=patient, target_mu=110, kernel_size=kernel_size, downsampling_factor=downsampling_factor, device=device, dtype=dtype)
         if (np.abs(ref_dose - 1.0) > 0.001):
             # print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             machine_config.mean_photon_energy_MeV = calibration_factor
             
-        patient = patient.to(treatment.device).to(treatment.dtype)
+        patient = patient.to(device).to(dtype)
         ct_volume = patient.get_masked_ct("External").unsqueeze(0)
         dose_volume = patient.get_masked_dose("External").unsqueeze(0)
 
         doses = []
         for beam_sequence in beam_sequences:
-            beam_sequence = beam_sequence.to(treatment.device).to(treatment.dtype)
-            dose_layer = DoseEngine(machine_config, treatment, beam_sequence=beam_sequence)
+            beam_sequence = beam_sequence.to(device).to(dtype)
+            dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, device, dtype, kernel_size)
             dose_layer.eval()
-            dose_pred = dose_layer.forward_beam_sequence(beam_sequence, ct_volume)
+            dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_volume)
             doses.append(dose_pred.detach())
         dose_pred = sum(doses)
         dose_pred = torch.where(patient.structures["External"], dose_pred, 0.0)
@@ -110,13 +113,13 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, treatment, dose_pred, leafs, jaws, mus, compute_gamma=True, compute_clinical_criteria=False)
+        res = result_validation(patient, machine_config, optimization, dose_pred, leafs, jaws, mus, compute_gamma=True, compute_clinical_criteria=False)
         # print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
         print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']}")
 
         quick_plot(dose_volume, dose_pred, ct_volume, f"MAE {str(np.round(mae_loss, 4))} Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}", dose_max, f"out/quick_{patient_name}.png")
 
-        print_results(None, treatment, [0.0], dose_volume, leafs, mus, jaws, None, None, None, [], dose_pred, ct_volume, [mask.unsqueeze(0) for mask in list(patient.structures.values())], mae_loss, dose_max=dose_max, out_path=f"out/final_{patient_name}.png")
+        print_results(None, optimization, [0.0], dose_volume, leafs, mus, jaws, None, None, None, [], dose_pred, ct_volume, [mask.unsqueeze(0) for mask in list(patient.structures.values())], mae_loss, dose_max=dose_max, out_path=f"out/final_{patient_name}.png")
 
         # make_animation(None, 
         #                treatment, 
@@ -128,6 +131,6 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
         #                (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2,
         #                dose_max
         #                )
-        del dose_layer, dose_pred, dose_volume, patient, treatment
+        del dose_layer, dose_pred, dose_volume, patient, optimization
     except Exception as e:
         print(e)

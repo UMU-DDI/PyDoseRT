@@ -47,6 +47,7 @@ class Beam:
         cls,
         gantry_angle_deg: float,
         number_of_leaf_pairs: int,
+        beam_limiting_device_angle_deg:float = 0.0,
         field_size_mm: tuple[float, float] = (400.0, 400.0),
         iso_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
         device: torch.device | str = 'cuda',
@@ -95,9 +96,9 @@ class Beam:
 
         return cls(
             gantry_angle=math.radians(gantry_angle_deg),
+            beam_limiting_device_angle=math.radians(beam_limiting_device_angle_deg),
             mu=mu,
             ssd=1000.0,
-            beam_limiting_device_angle=math.radians(0.0),
             leaf_positions=leaf_positions,
             jaw_positions=jaw_positions,
             iso_center=iso_center

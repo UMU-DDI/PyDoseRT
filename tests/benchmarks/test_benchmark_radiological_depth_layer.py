@@ -17,7 +17,7 @@ def radiological_depth_layer(default_machine_config, default_treatment_config):
 def radiological_depth_layer_beams(default_machine_config, request):
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
     config = TreatmentConfig(
-        preset="src/pydose_rt/data/treatment_presets/test.json",
+        preset="src/pydose_rt/data/optimization_presets/test.json",
         number_of_cps=request.param,
     )
     return RadiologicalDepthLayer(default_machine_config, config), config

@@ -523,31 +523,21 @@ def result_validation(patient: Patient,
 
     return results
 
-def validate_unit_dose(machine: MachineConfig, target_mu: int):
-    # Create config for 20x20x20 cm phantom with 2mm resolution
-    # 200mm / 2mm = 100 voxels per dimension
-    treatment = copy.deepcopy(treatment)
-    device = treatment.device
-    # config.machine.ct_array_shape = tuple(np.divide((200, 200, 200), config.machine.resolution).astype(np.int32))
-    treatment.number_of_cps = 1
-    treatment.gantry_angles = np.array([0.0])
-    treatment.beam_limiting_device_angle = np.array([0.0])
-    
-    # config.machine.downsampling_factor = (1,1,1)
-    center_x, center_y, center_z = np.divide(machine.ct_array_shape, 2).astype(np.int32)
-    iso_y = - (100 - center_y * machine.resolution[1])
-    center_y_iso = center_y - int(iso_y / machine.resolution[1])
-    treatment.iso_center = (0.0, iso_y, 0.0)
-    beam = Beam.create(0.0, machine.number_of_leaf_pairs, (100.0, 100.0), treatment.device, treatment.dtype)
+def validate_unit_dose(machine: MachineConfig, patient, target_mu, kernel_size, downsampling_factor, device, dtype):
+    center_x, center_y, center_z = np.divide(patient.ct_array.shape, 2).astype(np.int32)
+    iso_y = - (100 - center_y * patient.voxel_spacing_mm[1])
+    center_y_iso = center_y - int(iso_y / patient.voxel_spacing_mm[1])
+    iso_center = (0.0, iso_y, 0.0)
+    beam = Beam.create(0.0, machine.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=device, dtype=dtype)
     beam.mu = target_mu * beam.mu
     
     # Create dose engine
-    dose_layer = DoseEngine(machine, treatment, permute_ct=False, leafs_centered=False)
+    dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine, beam, device, dtype, kernel_size, downsampling_factor, permute_ct=False, leafs_centered=False)
  
     # Calculate dose
-    dose = dose_layer.forward_single_beam(
+    dose = dose_layer.compute_single_beam(
         beam,
-        ct_image=torch.ones(machine.ct_array_shape, dtype=treatment.dtype, device=device).unsqueeze(0),
+        ct_image=torch.ones_like(patient.ct_array).to(dose_layer.dtype).to(dose_layer.device).unsqueeze(0),
     )
 
     # Get center dose (at 10cm depth - index 50 for 100 voxels)

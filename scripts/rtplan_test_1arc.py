@@ -45,7 +45,7 @@ patient, beam_sequences = loaders.load_dicom(
             )
 
 optimization = OptimizationConfig(
-    preset="src/pydose_rt/data/treatment_presets/umea.json",
+    preset="src/pydose_rt/data/optimization_presets/umea.json",
 )
 
 ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]

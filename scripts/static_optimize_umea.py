@@ -46,7 +46,7 @@ if remote:
                 struct_names=["CTVT", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"]
                 )
     beam_sequence = beam_sequence[0].clone()
-    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/gold-atlas.json")
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
     kernel_size = 25
     device = device
@@ -73,7 +73,7 @@ else:
     beam_sequence: BeamSequence = beam_sequence[0]
     beam_sequence = beam_sequence[::16].clone()
 
-    optimization = OptimizationConfig(preset="src/pydose_rt/data/treatment_presets/gold-atlas.json")
+    optimization = OptimizationConfig(preset="src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
     kernel_size = 3
     device = device

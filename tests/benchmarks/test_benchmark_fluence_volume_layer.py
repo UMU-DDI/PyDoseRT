@@ -21,7 +21,7 @@ def fluence_volume_layer(default_machine_config, default_treatment_config):
 def fluence_volume_layer_with_configurable_beams(default_machine_config, request) -> tuple[FluenceVolumeLayer, TreatmentConfig]:
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
     config = TreatmentConfig(
-        preset="src/pydose_rt/data/treatment_presets/test.json",
+        preset="src/pydose_rt/data/optimization_presets/test.json",
         number_of_cps=request.param,
     )
     return FluenceVolumeLayer(default_machine_config, config), config

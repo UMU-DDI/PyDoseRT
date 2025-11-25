@@ -68,5 +68,5 @@ def default_machine_config():
 def default_treatment_config():
     """Fixture for the default TreatmentConfig"""
     return TreatmentConfig(
-        preset="src/pydose_rt/data/treatment_presets/test.json",
+        preset="src/pydose_rt/data/optimization_presets/test.json",
     )
