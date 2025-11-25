@@ -9,6 +9,106 @@ import os
 import time
 import pydicom
 from pydose_rt.data import OptimizationConfig
+import os
+from pathlib import Path
+import pydicom
+import os
+from pathlib import Path
+import pydicom
+
+
+
+def find_patient_paths(patient_base: str | Path):
+    """
+    Given a patient directory, recursively search for:
+      - RTPLAN (RP / RTPLAN)
+      - RTDOSE (RD / RTDOSE)
+      - RTSTRUCT (RS / RTSTRUCT)
+      - CT folder (directory whose files are CT dicoms; pick the one with most slices)
+
+    Returns:
+        ct_folder: Path
+        rtplan_path: Path
+        rtdose_path: Path
+        rtstruct_path: Path
+
+    Raises:
+        FileNotFoundError if any of the above cannot be found.
+    """
+    patient_base = Path(patient_base)
+
+    rtplan_path: Path | None = None
+    rtdose_path: Path | None = None
+    rtstruct_path: Path | None = None
+
+    ct_candidates: list[tuple[Path, int]] = []  # (folder, number_of_ct_files)
+
+    for root, dirs, files in os.walk(patient_base):
+        root_path = Path(root)
+
+        # --- Find RTPLAN / RTDOSE / RTSTRUCT by filename ---
+        for fname in files:
+            lname = fname.lower()
+            fpath = root_path / fname
+
+            # RTPLAN: contains "rtplan" OR filename starting with "rp"
+            if ("rtplan" in lname) or lname.startswith("rp"):
+                if rtplan_path is None:
+                    rtplan_path = fpath
+
+            # RTDOSE: contains "rtdose" OR filename starting with "rd"
+            if ("rtdose" in lname) or lname.startswith("rd"):
+                if rtdose_path is None:
+                    rtdose_path = fpath
+
+            # RTSTRUCT: contains "rtstruct" OR filename starting with "rs"
+            if ("rtstruct" in lname) or lname.startswith("rs"):
+                if rtstruct_path is None:
+                    rtstruct_path = fpath
+
+        # --- Look for CT dicom folders ---
+        dicom_files = [
+            root_path / f
+            for f in files
+            if f.lower().endswith(".dcm") or "." not in f  # allow extension-less DICOMs
+        ]
+
+        if not dicom_files:
+            continue
+
+        # Try to read one file and check Modality
+        try:
+            ds = pydicom.dcmread(str(dicom_files[0]), stop_before_pixels=True, force=True)
+            modality = getattr(ds, "Modality", "").upper()
+        except Exception:
+            modality = ""
+
+        if modality == "CT":
+            ct_candidates.append((root_path, len(dicom_files)))
+
+    # Choose CT folder with the most slices (if multiple CT series exist)
+    ct_folder: Path | None = None
+    if ct_candidates:
+        ct_folder = max(ct_candidates, key=lambda x: x[1])[0]
+
+    # --- Sanity checks ---
+    missing = [
+        name
+        for name, val in [
+            ("ct_folder", ct_folder),
+            ("rtplan_path", rtplan_path),
+            ("rtdose_path", rtdose_path),
+            ("rtstruct_path", rtstruct_path),
+        ]
+        if val is None
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"Could not find {', '.join(missing)} under {patient_base}"
+        )
+
+    return ct_folder, rtplan_path, rtdose_path, rtstruct_path
+
 
 def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
     """

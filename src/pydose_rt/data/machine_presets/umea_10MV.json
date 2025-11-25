@@ -8,6 +8,7 @@
     "head_scatter_amplitude": 1.0,
     "head_scatter_range_mm": 200,
     "number_of_leaf_pairs": 60,
+    "calibration_mu": 110,
     "source_size_mm": 0.5,
     "leaf_widths": [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
 }

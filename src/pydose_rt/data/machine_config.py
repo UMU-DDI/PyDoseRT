@@ -70,7 +70,14 @@ class MachineConfig(BaseSettings):
         description="Width of tongue-and-groove region in mm (typical: 1-2)",
     )
 
-    tpr_20_10: float = Field(description="The tissue phantom ratio TPR20/10")
+    tpr_20_10: float = Field(
+        description="The tissue phantom ratio TPR20/10"
+    )
+
+    calibration_mu: float = Field(
+        default=100,
+        description="The mu value for dose calibration in water."
+    )
     mean_photon_energy_MeV: float = Field(
         default=10.0, description="Mean photon energy in MeV"
     )

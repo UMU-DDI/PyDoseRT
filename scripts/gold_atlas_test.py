@@ -17,7 +17,7 @@ from pydicom.data import get_testdata_file
 from pydose_rt.data import MachineConfig, Patient, OptimizationConfig, loaders
 # from pydose_rt.data import MachineConfig
 from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
-from pydose_rt.utils.utils import mae_optimal_scale
+from pydose_rt.utils.utils import find_patient_paths
 import numpy as np
 from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
@@ -35,23 +35,12 @@ import torch
 # rtstruct_path = next((f for f in Path(ct_folder).iterdir() if "RS" in f.name.upper() or "RTSTRUCT" in f.name.upper()), None)
 # rtplan_path = f"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/{patient_name}_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
 # rtdose_path = f"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/{patient_name}_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-
-for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/")):
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/15X/')
+for patient_name in sorted(os.listdir(base_path)):
     try:
-        # patient_name = "P01"
-        base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/{patient_name}")
-
-        ct_folder = base / "[CT] Deformed CT"
-        rtplan_path = next((base / "[RP] CT").iterdir())
-        rtdose_path = next((base / "[RD] CT Dose").iterdir())
-        rtstruct_path = next((base / "[RS] RayStation").iterdir())
-
-        # rtplan_path = "/home/bolo/Downloads/rs_doses/RS_Imported_in_Water/RP1.2.752.243.1.1.20251119095513498.5300.35324.dcm"
-        # rtdose_path = "/home/bolo/Downloads/rs_doses/RS_Imported_in_Water/RD1.2.752.243.1.1.20251119095513499.5600.75370.dcm"
-
-        # rtplan_path = "/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/0e54d72a21_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
-        # rtdose_path = "/home/bolo/Downloads/rs_doses/RS_Old_in_Water/RD1.2.752.243.1.1.20251119095655132.6200.21611.dcm"
-
+        patient_dir = base_path / patient_name
+        ct_folder, rtplan_path, rtdose_path, rtstruct_path = find_patient_paths(patient_dir)
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float16
         kernel_size = 25
@@ -65,14 +54,13 @@ for patient_name in sorted(os.listdir("/home/bolo/Documents/PyDoseRT/test_data/G
                     struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
                     use_delivery=True
                     )
-        print(f"Patient {patient_name}:\t{patient.ct_array.shape})")
         optimization = OptimizationConfig(
             preset="src/pydose_rt/data/optimization_presets/umea.json"
         )
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
-        machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
-        ref_dose, calibration_factor = validate_unit_dose(machine_config, patient=patient, target_mu=110, kernel_size=kernel_size, downsampling_factor=downsampling_factor, device=device, dtype=dtype)
+        machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_6MV.json")
+        ref_dose, calibration_factor = validate_unit_dose(machine_config, patient=patient, target_mu=machine_config.calibration_mu, kernel_size=kernel_size, downsampling_factor=downsampling_factor, device=device, dtype=dtype)
         if (np.abs(ref_dose - 1.0) > 0.001):
             # print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             machine_config.mean_photon_energy_MeV = calibration_factor

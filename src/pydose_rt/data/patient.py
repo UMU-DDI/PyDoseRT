@@ -63,10 +63,7 @@ class Patient:
             ct_array=self.ct_array.to(target),
             structures={k: v.to(target) > 0 for k, v in self.structures.items()} if self.structures else {},
             dose=self.dose.to(target) if self.dose is not None else None,
-            voxel_spacing_mm=self.voxel_spacing_mm,
-            plan_iso_center=self.plan_iso_center,
-            plan_clockwise=self.plan_clockwise,
-            plan_starting_angle=self.plan_starting_angle,
+            voxel_spacing_mm=self.voxel_spacing_mm
         )
     
     @property
