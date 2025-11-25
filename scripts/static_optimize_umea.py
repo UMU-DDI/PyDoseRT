@@ -166,7 +166,7 @@ for test_i in range(n_tests):
             optimizer.zero_grad(set_to_none=True)
             
             # Forward
-            dose_pred = engine.compute_beam_sequnce(
+            dose_pred = engine.compute_beam_sequence(
                 beam_sequence.to_delivery(),
                 ct_image=ct_volume
             )
