@@ -1,13 +1,14 @@
 
 [project]
 name = "pydose_rt"
-version = "0.2.0"
-description = "Add your description here"
+version = "0.3.0"
+description = "A differentiable radiation therapy dose calculation engine for automated treatment planning, built on PyTorch."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 authors = [
+    { name="Attila Simkó", email="gerd.heilemann@meduniwien.ac.at" },
     { name="Gerd Heilemann", email="gerd.heilemann@meduniwien.ac.at" },
-    { name="Josef Lundman", email="josef@lundman.eu" },
+    { name="Josef Lundman", email="josef.lundman@regionvasterbotten.se" },
 ]
 dependencies = [
     "torch>=2.6.0",
