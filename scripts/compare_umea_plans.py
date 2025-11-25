@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import math
 import pydicom
 from pydose_rt import DoseEngine
-from pydose_rt.data import MachineConfig, Phantom, loaders
+from pydose_rt.data import MachineConfig, Phantom, loaders, Beam
 from pydose_rt.utils.utils import sample_tensor_nearest
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,22 +20,42 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
     for mlc_scatter_range_mm in mlc_scatter_range_mms:
         results =  []
         for field_size in field_sizes:
-            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", ct_array_shape=(500, 500, 500), resolution=(1.0, 1.0, 1.0), number_of_leaf_pairs=60, mlc_scatter_amplitude=mlc_scatter_amplitude, mlc_scatter_range_mm=mlc_scatter_range_mm)
-            phantom = Phantom.from_uniform_water(shape=machine_config.ct_array_shape, spacing=machine_config.resolution)
+            resolution = (1.0, 1.0, 1.0)
+            ct_array_shape = (500, 500, 500)
+            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_6MV.json", mlc_scatter_amplitude=mlc_scatter_amplitude, mlc_scatter_range_mm=mlc_scatter_range_mm)
+            phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution)
+            field_size=(400, 400)
+            number_of_cps=1
+            starting_angle=0
+            iso_center=(0.0, 150.0, 0.0)
+            kernel_size=501
+            dtype=torch.float32
+            beam = Beam.create(
+                gantry_angle_deg=0.0, 
+                number_of_leaf_pairs=60, 
+                beam_limiting_device_angle_deg=0.0, 
+                field_size_mm=field_size, 
+                iso_center=iso_center, 
+                device=device, 
+                dtype=dtype)
             dose_engine = DoseEngine(
+                phantom.shape,
+                phantom.voxel_spacing_mm,
                 machine_config, 
+                beam_input=beam,
+                kernel_size=kernel_size,
+                device=device,
+                dtype=dtype,
                 permute_ct=False, 
                 leafs_centered=False,
                 adjust_values=False
             )
             dose_engine.eval()
+            phantom = phantom.to(dose_engine.dtype).to(dose_engine.device)
 
-            mlcs, jaws, mus = dose_engine.get_open_parameters(field_size=field_size)
-            dose = dose_engine(
-                mlcs, 
-                mus, 
-                jaws, 
-                ct_image=phantom.ct_array.to(dose_engine.dtype).to(dose_engine.device))
+            dose = dose_engine.compute_single_beam(
+                beam,
+                ct_image=phantom.ct_array)
             dose = dose
 
             measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
@@ -51,7 +71,7 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
                 axes = axes.flatten()
 
             for i, measurement in enumerate(measurements):
-                samples = sample_tensor_nearest(dose[0, ...], machine_config.resolution, dose_engine.iso_center, measurement["coords_engine"])
+                samples = sample_tensor_nearest(dose[0, ...], resolution, iso_center, measurement["coords_engine"])
                 samples = samples * measurement["dose"].max() / samples.max()
                 mape = np.mean(np.abs(samples - measurement["dose"])[measurement["dose"] > 0] /  measurement["dose"][measurement["dose"] > 0])
                 results.append(mape)

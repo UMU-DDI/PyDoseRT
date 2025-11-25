@@ -35,7 +35,7 @@ import torch
 # rtstruct_path = next((f for f in Path(ct_folder).iterdir() if "RS" in f.name.upper() or "RTSTRUCT" in f.name.upper()), None)
 # rtplan_path = f"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/{patient_name}_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
 # rtdose_path = f"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/{patient_name}_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/15X/')
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/NODES/')
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
@@ -44,7 +44,7 @@ for patient_name in sorted(os.listdir(base_path)):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float16
         kernel_size = 25
-        downsampling_factor = (1, 1, 1)
+        downsampling_factor = (1, 2, 2)
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -59,7 +59,7 @@ for patient_name in sorted(os.listdir(base_path)):
         )
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
-        machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_6MV.json")
+        machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
         ref_dose, calibration_factor = validate_unit_dose(machine_config, patient=patient, target_mu=machine_config.calibration_mu, kernel_size=kernel_size, downsampling_factor=downsampling_factor, device=device, dtype=dtype)
         if (np.abs(ref_dose - 1.0) > 0.001):
             # print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
@@ -72,7 +72,7 @@ for patient_name in sorted(os.listdir(base_path)):
         doses = []
         for beam_sequence in beam_sequences:
             beam_sequence = beam_sequence.to(device).to(dtype)
-            dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, kernel_size, device, dtype)
+            dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, kernel_size, device, dtype, downsampling_factor)
             dose_layer.eval()
             dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_volume)
             doses.append(dose_pred.detach())
