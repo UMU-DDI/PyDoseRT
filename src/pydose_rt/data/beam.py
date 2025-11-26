@@ -33,7 +33,7 @@ class Beam:
         jaw_positions: Jaw positions [2] where 2=(lower, upper)
     """
     gantry_angle: float  # radians
-    beam_limiting_device_angle: float # radians
+    collimator_angle: float # radians
     mu: torch.Tensor     # scalar or [1]
     leaf_positions: torch.Tensor  # [N, 2]
     jaw_positions: torch.Tensor   # [2]
@@ -47,7 +47,7 @@ class Beam:
         cls,
         gantry_angle_deg: float,
         number_of_leaf_pairs: int,
-        beam_limiting_device_angle_deg:float = 0.0,
+        collimator_angle_deg:float = 0.0,
         field_size_mm: tuple[int, int] = (400, 400),
         iso_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
         device: torch.device | str = 'cuda',
@@ -96,7 +96,7 @@ class Beam:
 
         return cls(
             gantry_angle=math.radians(gantry_angle_deg),
-            beam_limiting_device_angle=math.radians(beam_limiting_device_angle_deg),
+            collimator_angle=math.radians(collimator_angle_deg),
             mu=mu,
             ssd=1000.0,
             leaf_positions=leaf_positions,
@@ -195,7 +195,7 @@ class BeamSequence:
     iso_center: tuple[float, float, float]
     sid: float
     gantry_angles: Optional[torch.Tensor] = None  # [CP] in radians, or None to use engine's
-    beam_limiting_device_angles: Optional[torch.Tensor] = None
+    collimator_angles: Optional[torch.Tensor] = None
 
     @property
     def has_gantry_angles(self) -> bool:
@@ -251,7 +251,7 @@ class BeamSequence:
         number_of_leaf_pairs: int,
         field_size: tuple[int, int],
         iso_center: tuple[float, float, float],
-        beam_limiting_device_angles: list[float] | torch.Tensor | None = None,
+        collimator_angles: list[float] | torch.Tensor | None = None,
         sid: float = 1000.0,
         open_field_size: float = 0.0,
         device: torch.device | str = 'cuda',
@@ -266,7 +266,7 @@ class BeamSequence:
             number_of_leaf_pairs: Number of MLC leaf pairs
             field_size: Field size (width, height) in mm
             iso_center: Isocenter position (x, y, z) in mm
-            beam_limiting_device_angles: BLD angles in degrees, or None for all zeros
+            collimator_angles: BLD angles in degrees, or None for all zeros
             sid: Source to isocenter distance in mm
             open_field_size: Size of the open field in mm (0.0=closed)
             device: PyTorch device
@@ -311,13 +311,13 @@ class BeamSequence:
         mus = torch.ones(num_cps, device=device, dtype=dtype)
         
         # Handle beam limiting device angles
-        if beam_limiting_device_angles is None:
-            beam_limiting_device_angles = torch.zeros(num_cps, device=device, dtype=dtype)
-        elif isinstance(beam_limiting_device_angles, list):
-            beam_limiting_device_angles = torch.tensor(beam_limiting_device_angles, dtype=dtype, device=device)
-            beam_limiting_device_angles = torch.deg2rad(beam_limiting_device_angles)
+        if collimator_angles is None:
+            collimator_angles = torch.zeros(num_cps, device=device, dtype=dtype)
+        elif isinstance(collimator_angles, list):
+            collimator_angles = torch.tensor(collimator_angles, dtype=dtype, device=device)
+            collimator_angles = torch.deg2rad(collimator_angles)
         else:
-            beam_limiting_device_angles = beam_limiting_device_angles.to(dtype=dtype, device=device)
+            collimator_angles = collimator_angles.to(dtype=dtype, device=device)
         
         # Set requires_grad
         if requires_grad:
@@ -330,7 +330,7 @@ class BeamSequence:
             leaf_positions=leaf_positions,
             jaw_positions=jaw_positions,
             gantry_angles=gantry_angles,
-            beam_limiting_device_angles=beam_limiting_device_angles,
+            collimator_angles=collimator_angles,
             field_size=field_size,
             iso_center=iso_center,
             sid=sid,
@@ -423,7 +423,7 @@ class BeamSequence:
             mus=mus,
             jaw_positions=jaw_positions,
             gantry_angles=dose_engine.gantry_angles,
-            beam_limiting_device_angles=dose_engine.collimator_angles,
+            collimator_angles=dose_engine.collimator_angles,
             iso_center=dose_engine.iso_center,
             sid=dose_engine.SID,
             field_size=dose_engine.field_size,
@@ -436,7 +436,7 @@ class BeamSequence:
         mus: torch.Tensor,
         jaw_positions: torch.Tensor,
         gantry_angles: torch.Tensor,
-        beam_limiting_device_angles: torch.Tensor,
+        collimator_angles: torch.Tensor,
         iso_center: float,
         sid: float,
         field_size: tuple[float, float]
@@ -459,7 +459,7 @@ class BeamSequence:
             leaf_positions=leaf_positions,
             jaw_positions=jaw_positions,
             gantry_angles=gantry_angles,
-            beam_limiting_device_angles=beam_limiting_device_angles,
+            collimator_angles=collimator_angles,
             iso_center=iso_center,
             sid=sid,
             field_size=field_size
@@ -513,8 +513,8 @@ class BeamSequence:
             device=beams[0].device,
         )
 
-        beam_limiting_device_angles = torch.tensor(
-            [b.beam_limiting_device_angle for b in beams],
+        collimator_angles = torch.tensor(
+            [b.collimator_angle for b in beams],
             dtype=beams[0].dtype,
             device=beams[0].device,
         )
@@ -550,7 +550,7 @@ class BeamSequence:
             leaf_positions=leaf_positions,
             jaw_positions=jaw_positions,
             gantry_angles=gantry_angles,
-            beam_limiting_device_angles=beam_limiting_device_angles,
+            collimator_angles=collimator_angles,
             iso_center=iso_center,
             sid=sid,
             field_size=field_size
@@ -582,7 +582,7 @@ class BeamSequence:
                 leaf_positions=self.leaf_positions[idx, :, :],
                 jaw_positions=self.jaw_positions[idx, :],
                 gantry_angles=self.gantry_angles[idx] if self.gantry_angles is not None else None,
-                beam_limiting_device_angles=self.beam_limiting_device_angles[idx] if self.beam_limiting_device_angles is not None else None,
+                collimator_angles=self.collimator_angles[idx] if self.collimator_angles is not None else None,
                 field_size=self.field_size,
                 iso_center=self.iso_center,
                 sid=self.sid,
@@ -601,7 +601,7 @@ class BeamSequence:
 
             return Beam(
                 gantry_angle=self.gantry_angles[idx].item(),
-                beam_limiting_device_angle=self.beam_limiting_device_angles[idx].item(),
+                collimator_angle=self.collimator_angles[idx].item(),
                 mu=self.mus[idx],                    # scalar
                 leaf_positions=self.leaf_positions[idx, :, :],  # [N, 2]
                 jaw_positions=self.jaw_positions[idx, :],       # [2]
@@ -658,7 +658,7 @@ class BeamSequence:
             leaf_positions=self.leaf_positions.detach(),
             jaw_positions=self.jaw_positions.detach(),
             gantry_angles=self.gantry_angles.detach() if self.gantry_angles is not None else None,
-            beam_limiting_device_angles=self.beam_limiting_device_angles.detach() if self.beam_limiting_device_angles is not None else None,
+            collimator_angles=self.collimator_angles.detach() if self.collimator_angles is not None else None,
             field_size=self.field_size,
             iso_center=self.iso_center,
             sid=self.sid
@@ -671,7 +671,7 @@ class BeamSequence:
             leaf_positions=self.leaf_positions.clone(),
             jaw_positions=self.jaw_positions.clone(),
             gantry_angles=self.gantry_angles.clone() if self.gantry_angles is not None else None,
-            beam_limiting_device_angles=self.beam_limiting_device_angles.clone() if self.beam_limiting_device_angles is not None else None,
+            collimator_angles=self.collimator_angles.clone() if self.collimator_angles is not None else None,
             field_size=self.field_size,
             iso_center=self.iso_center,
             sid=self.sid
@@ -684,7 +684,7 @@ class BeamSequence:
             leaf_positions=self.leaf_positions.to(device),
             jaw_positions=self.jaw_positions.to(device),
             gantry_angles=self.gantry_angles.to(device) if self.gantry_angles is not None else None,
-            beam_limiting_device_angles=self.beam_limiting_device_angles.to(device) if self.beam_limiting_device_angles is not None else None,
+            collimator_angles=self.collimator_angles.to(device) if self.collimator_angles is not None else None,
             field_size=self.field_size,
             iso_center=self.iso_center,
             sid=self.sid
@@ -708,7 +708,7 @@ class BeamSequence:
             leaf_positions=self.leaf_positions[start:end, :, :],  # [CP_slice, N, 2]
             jaw_positions=self.jaw_positions[start:end, :],       # [CP_slice, 2]
             gantry_angles=self.gantry_angles[start:end] if self.gantry_angles is not None else None,
-            beam_limiting_device_angles=self.beam_limiting_device_angles[start:end] if self.beam_limiting_device_angles is not None else None,
+            collimator_angles=self.collimator_angles[start:end] if self.collimator_angles is not None else None,
             field_size=self.field_size,
             iso_center=self.iso_center,
             sid=self.sid
@@ -752,16 +752,16 @@ class BeamSequence:
         if self.gantry_angles is not None:
             avg_gantry_angles = (self.gantry_angles[:-1] + self.gantry_angles[1:]) / 2
 
-        avg_beam_limiting_device_angles = None
-        if self.beam_limiting_device_angles is not None:
-            avg_beam_limiting_device_angles = (self.beam_limiting_device_angles[:-1] + self.beam_limiting_device_angles[1:]) / 2
+        avg_collimator_angles = None
+        if self.collimator_angles is not None:
+            avg_collimator_angles = (self.collimator_angles[:-1] + self.collimator_angles[1:]) / 2
 
         return BeamSequence(
             mus=avg_mus,
             leaf_positions=avg_leaf_positions,
             jaw_positions=avg_jaw_positions,
             gantry_angles=avg_gantry_angles,
-            beam_limiting_device_angles=avg_beam_limiting_device_angles,
+            collimator_angles=avg_collimator_angles,
             field_size=self.field_size,
             iso_center=self.iso_center,
             sid=self.sid

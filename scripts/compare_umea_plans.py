@@ -33,14 +33,14 @@ for mlc_scatter_amplitude in mlc_scatter_amplitudes:
             beam = Beam.create(
                 gantry_angle_deg=0.0, 
                 number_of_leaf_pairs=60, 
-                beam_limiting_device_angle_deg=0.0, 
+                collimator_angle_deg=0.0, 
                 field_size_mm=field_size, 
                 iso_center=iso_center, 
                 device=device, 
                 dtype=dtype)
             dose_engine = DoseEngine(
                 phantom.shape,
-                phantom.voxel_spacing_mm,
+                phantom.resolution,
                 machine_config, 
                 beam_input=beam,
                 kernel_size=kernel_size,

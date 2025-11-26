@@ -42,7 +42,7 @@ if remote:
     device = device
     dtype = torch.float16
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
     max_iter = 3000
 else:
     data_path = "/media/bolo/Datasets/converted_lund/"
@@ -56,7 +56,7 @@ else:
     device = device
     dtype = torch.float16
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/lund-probe.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
     max_iter = 100
 
 

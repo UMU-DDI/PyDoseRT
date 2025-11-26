@@ -2,7 +2,7 @@
   "prescription_gy": 42.7,
   "structures": [
     {
-      "name": "PTV",
+      "name": "",
       "color": "black",
       "constraints": {
         "lower_bound_gy": 42.7,
@@ -15,7 +15,7 @@
     {
       "name": "PenileBulb",
       "color": "red",
-      "constraints": {
+      "PenileBulb": {
         "lower_bound_gy": 0.0,
         "higher_bound_gy": 40.4,
         "lower_bound_target_percent": 0.0,

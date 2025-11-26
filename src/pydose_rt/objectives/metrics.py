@@ -206,8 +206,8 @@ def validate_clinical_criteria(patient: Patient,
     dose = dose.cpu().detach().numpy()
 
     # Calculate voxel volume in cc
-    voxel_spacing_mm = patient.voxel_spacing_mm
-    voxel_volume_cc = np.prod(voxel_spacing_mm) / 1000.0  # Convert mm³ to cc
+    resolution = patient.resolution
+    voxel_volume_cc = np.prod(resolution) / 1000.0  # Convert mm³ to cc
 
     results = {}
 
@@ -442,7 +442,7 @@ def result_validation(patient: Patient,
         
     if compute_gamma:
         axes = tuple(
-            np.arange(patient.dose.shape[i]) * patient.voxel_spacing_mm[i]
+            np.arange(patient.dose.shape[i]) * patient.resolution[i]
             for i in range(3)
         )
         
@@ -522,29 +522,3 @@ def result_validation(patient: Patient,
     
 
     return results
-
-def validate_unit_dose(machine: MachineConfig, patient, target_mu, kernel_size, downsampling_factor, device, dtype):
-    center_x, center_y, center_z = np.divide(patient.ct_array.shape, 2).astype(np.int32)
-    iso_y = - (100 - center_y * patient.voxel_spacing_mm[1])
-    center_y_iso = center_y - int(iso_y / patient.voxel_spacing_mm[1])
-    iso_center = (0.0, iso_y, 0.0)
-    beam = Beam.create(0.0, machine.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=device, dtype=dtype)
-    beam.mu = target_mu * beam.mu
-    
-    # Create dose engine
-    dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine, beam, 401, device, dtype, downsampling_factor, permute_ct=False, leafs_centered=False)
- 
-    # Calculate dose
-    dose = dose_layer.compute_single_beam(
-        beam,
-        ct_image=torch.ones_like(patient.ct_array).to(dose_layer.dtype).to(dose_layer.device).unsqueeze(0),
-    )
-
-    # Get center dose (at 10cm depth - index 50 for 100 voxels)
-    center_dose = dose[0, center_x, center_y_iso, center_z].detach().cpu().numpy()
-
-    # Calculate calibration factor
-    # This gives the factor to normalize to 1 Gy per MU at reference conditions
-    calibration_factor = machine.mean_photon_energy_MeV / center_dose
-
-    return center_dose, calibration_factor

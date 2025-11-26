@@ -16,7 +16,7 @@ import nibabel as nib
 from pydicom.data import get_testdata_file
 from pydose_rt.data import MachineConfig, Patient, OptimizationConfig, loaders
 # from pydose_rt.data import MachineConfig
-from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
+from pydose_rt.objectives.metrics import result_validation
 from pydose_rt.utils.utils import find_patient_paths
 import numpy as np
 from rt_utils import RTStructBuilder
@@ -48,7 +48,7 @@ for patient_name in sorted(os.listdir(base_path)):
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
-                    dose_path=rtdose_path, 
+                    dose_paths=rtdose_path, 
                     plan_path=rtplan_path, 
                     struct_path=rtstruct_path,
                     struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
@@ -60,40 +60,33 @@ for patient_name in sorted(os.listdir(base_path)):
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
         machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
-        ref_dose, calibration_factor = validate_unit_dose(machine_config, patient=patient, target_mu=machine_config.calibration_mu, kernel_size=kernel_size, downsampling_factor=downsampling_factor, device=device, dtype=dtype)
-        if (np.abs(ref_dose - 1.0) > 0.001):
-            # print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
-            machine_config.mean_photon_energy_MeV = calibration_factor
             
         patient = patient.to(device).to(dtype)
-        ct_volume = patient.get_masked_ct("External").unsqueeze(0)
-        dose_volume = patient.get_masked_dose("External").unsqueeze(0)
+        dose_volume = patient.dose
+        # ct_volume = patient.get_masked_ct("External")
+        # dose_volume = patient.get_masked_dose("External")
 
         doses = []
         for beam_sequence in beam_sequences:
             beam_sequence = beam_sequence.to(device).to(dtype)
-            dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, kernel_size, device, dtype, downsampling_factor)
-            dose_layer.eval()
-            dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_volume)
+            # dose_engine = DoseEngine(patient.ct_array.shape, patient.resolution, machine_config, beam_sequence, kernel_size, device, dtype, downsampling_factor)
+            dose_engine = DoseEngine(kernel_size=15,
+                                     machine_config=machine_config,
+                                     image_template=patient.density_image,
+                                     beam_template=beam_sequence
+                                    )
+            # dose_engine.calibrate()
+
+            dose_pred = dose_engine.compute_dose_sequential(beam_sequence, ct_image=patient.density_image)
             doses.append(dose_pred.detach())
         dose_pred = sum(doses)
-        dose_pred = torch.where(patient.structures["External"], dose_pred, 0.0)
+        dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
 
-        # scale = mae_optimal_scale(dose_pred[0, ...], dose_volume, mask=masks["PTVT_42.7"] > 0)
-        # scale = torch.mean(dose_volume[0, patient.structures[ptv_struct_name]]) / torch.mean(dose_pred[0, patient.structures[ptv_struct_name]])
-        scale = torch.tensor(1.0)
-        dose_pred = dose_pred * scale
         dose_max = max(dose_volume.max(), dose_pred.max()).item()
 
-
-        # affine = np.eye(4)   # Identity matrix: simple default
-        # img = nib.Nifti1Image(dose_volume, affine)
-        # nib.save(img, "out/dose_true.nii.gz")   # or "output.nii"
-        # img = nib.Nifti1Image(dose_pred[0], affine)
-        # nib.save(img, "out/dose_pred.nii.gz")   # or "output.nii"
-
-        mae_map = torch.abs(dose_pred[0] - dose_volume[0])
+        mae_map = torch.abs(dose_pred - dose_volume)
         mae_loss = np.mean(torch.mean(mae_map[patient.structures["External"]]).item())
+        print(mae_loss)
 
 
         # print(scale.item())
@@ -103,11 +96,11 @@ for patient_name in sorted(os.listdir(base_path)):
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
         res = result_validation(patient, machine_config, beam_sequence, dose_pred[0], optimization, compute_gamma=True, compute_clinical_criteria=False, global_normalisation=2.2)
         # print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
-        print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']} ({scale.item()})")
+        print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']}")
 
-        quick_plot(dose_volume, dose_pred, ct_volume, f"MAE {str(np.round(mae_loss, 4))} Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}", dose_max, f"out/quick_{patient_name}.png")
+        quick_plot(patient, dose_pred, f"MAE {str(np.round(mae_loss, 4))} Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}", dose_max, f"out/quick_{patient_name}.png")
 
-        print_results(None, optimization, [0.0], dose_volume, beam_sequence, None, None, None, [], dose_pred, ct_volume, [mask.unsqueeze(0) for mask in list(patient.structures.values())], mae_loss, dose_max=dose_max, out_path=f"out/final_{patient_name}.png")
+        print_results(None, optimization, [0.0], patient, beam_sequence, None, None, None, [], dose_pred, mae_loss, dose_max=dose_max, out_path=f"out/final_{patient_name}.png")
 
         # make_animation(None, 
         #                treatment, 
@@ -119,6 +112,6 @@ for patient_name in sorted(os.listdir(base_path)):
         #                (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2,
         #                dose_max
         #                )
-        del dose_layer, dose_pred, dose_volume, patient, optimization
+        del dose_engine, dose_pred, dose_volume, patient, optimization
     except Exception as e:
         print(e)

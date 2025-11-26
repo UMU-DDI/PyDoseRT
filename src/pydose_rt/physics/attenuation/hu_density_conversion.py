@@ -1,6 +1,26 @@
 import torch
 
-def convert_HU_to_density(hu_tensor: torch.Tensor, lut_table: torch.Tensor):
+def convert_HU_to_density(
+        hu_tensor: torch.Tensor, 
+        lut_table: torch.Tensor = torch.Tensor(
+            [
+                [-1000, 0.0],  # TODO: Added for safety
+                [-992, 0.00109],
+                [-960, 0.00109],
+                [-500, 0.5],
+                [-75, 0.95],
+                [42, 1.04],
+                [85, 1.08],
+                [490, 1.29],
+                [890, 1.52],
+                [1240, 1.72],
+                [1670, 1.95],
+                [2155, 2.15],
+                [2640, 2.34],
+                [2832, 2.46],
+                [2840, 6.6],
+            ]
+        )):
     """
     Interpolates HU values to densities using a lookup table (LUT).
 

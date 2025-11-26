@@ -121,7 +121,7 @@ def get_rtdose_info(rtdose_path):
     shape = (ds.Rows, ds.Columns, len(grid_frame_offset))
     return origin, spacing, shape
 
-def fetch_plan_data(plan_path: str, scaling: float) -> str:
+def fetch_plan_data(plan_path: str) -> str:
     """Summarizes the RTPLAN beam information in the dataset."""
     ds = pydicom.dcmread(plan_path)
     data = dict()
@@ -155,7 +155,7 @@ def fetch_plan_data(plan_path: str, scaling: float) -> str:
                             else:
                                 mu_value = beam_meterset * cps.CumulativeMetersetWeight
                         beam_data.append(Beam(gantry_angle=math.radians(cps.GantryAngle), 
-                            beam_limiting_device_angle=math.radians(bld_angle), 
+                            collimator_angle=math.radians(bld_angle), 
                             ssd=cps.SourceToSurfaceDistance,
                             mu=torch.from_numpy(np.array(mu_value - old_mu_value)),
                             leaf_positions=torch.from_numpy(np.stack(
@@ -208,9 +208,6 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
             masks[struct_name] = mask
     return masks
 def load_dose(path):
-    # Load dose volumes
-    doses = dict()
-    dose_idx = 0
     dataset = pydicom.dcmread(path)
 
     scaling = float(dataset.DoseGridScaling)
@@ -219,15 +216,15 @@ def load_dose(path):
     dose = reader.Execute()
     dose = sitk.Cast(dose, sitk.sitkFloat32)
     dose = scaling * dose
-    
-    plan_sequence = dataset.ReferencedRTPlanSequence
+    beam_name = path.name
 
-    if len(plan_sequence) == 0 or not hasattr(plan_sequence[0], "ReferencedFractionGroupSequence"):
-        beam_name = "dose_" + str(dose_idx)
-    else:
-        beam_name = str(plan_sequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence[0].ReferencedBeamNumber)
-
-    return dose
+    # plan_sequence = dataset.ReferencedRTPlanSequence
+    # if len(plan_sequence) == 0:
+    #     beam_name = path.name
+    # else:
+    #     beam_name = plan_sequence[0].ReferencedSOPInstanceUID
+    #     plan_sequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence[0].ReferencedBeamNumber
+    return dose, beam_name
 
 
 def resample_to_iso_center(image, iso_center, spacing, size, pixel_value=0, interpolation=sitk.sitkLinear):

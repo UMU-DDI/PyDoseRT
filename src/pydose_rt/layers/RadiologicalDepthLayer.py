@@ -23,7 +23,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from pydose_rt.data import MachineConfig
-from pydose_rt.physics.attenuation.hu_density_conversion import convert_HU_to_density
 from pydose_rt.geometry.rotations import get_radiological_depth_indices
 
 
@@ -36,7 +35,7 @@ class RadiologicalDepthLayer(nn.Module):
     depth profiles for dose calculation.
 
     Attributes:
-        config (MachineConfig): Configuration object containing CT array shape, gantry angles, resolution, and lookup table for HU-to-density conversion.
+        config (MachineConfig): Configuration object containing CT array shape, gantry angles and resolution.
         verbose (bool): Flag to enable verbose logging.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
         stacked_indices (torch.Tensor): Precomputed indices for sampling CT volume along rotated lines for each gantry angle.
@@ -48,7 +47,6 @@ class RadiologicalDepthLayer(nn.Module):
                  resolution: tuple[float, float, float],
                  ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float],
-                 lookup_table: torch.Tensor,
                  downsampling_factor: tuple[int, int, int] = (1, 1, 1),
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
@@ -61,7 +59,6 @@ class RadiologicalDepthLayer(nn.Module):
             resolution (tuple[float, float, float]): Voxel spacing in mm.
             ct_array_shape (tuple[float, float, float]): Shape of the CT array.
             gantry_angles (list[float]): List of gantry angles in radians.
-            lookup_table (torch.Tensor): HU-to-density lookup table.
             downsampling_factor (tuple[int, int, int]): Downsampling factor for CT.
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
@@ -79,9 +76,6 @@ class RadiologicalDepthLayer(nn.Module):
         self.machine_config = machine_config
         self.verbose = verbose
         self.downsampling_factor = downsampling_factor
-        if not(isinstance(lookup_table, torch.Tensor)):
-            lookup_table = torch.from_numpy(lookup_table)
-        self.lookup_table = lookup_table
 
         # Determine if we should use full-sized CT for depth extraction
         self.downsample_depths = self.downsampling_factor != (1, 1, 1)
@@ -169,12 +163,7 @@ class RadiologicalDepthLayer(nn.Module):
             c0 = c00 * (1 - yd) + c01 * yd
             c1 = c10 * (1 - yd) + c11 * yd
 
-            gathered = c0 * (1 - zd) + c1 * zd  # [B, G, P]
-
-            # Convert HU to density using lookup table
-            density = convert_HU_to_density(
-                gathered, self.lookup_table
-            )  # shape: [B, G, P]
+            density = c0 * (1 - zd) + c1 * zd  # [B, G, P]
 
             # Calculate physical step size per angle (accounts for anisotropic voxels)
             if P > 1:

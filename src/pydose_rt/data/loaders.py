@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from token import OP
 from typing import Optional, TYPE_CHECKING, List, overload
 import torch
+from pathlib import Path
 import math
 import numpy as np
 from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
@@ -15,10 +16,10 @@ import SimpleITK as sitk
 from typing import List, Dict, Any, Tuple, Literal
 
 def load_dicom(
-    ct_folder: str,
-    dose_path: str | None,
-    plan_path: str | None,
-    struct_path: str | None,
+    ct_folder: Path,
+    dose_paths: List[Path] | Path | None,
+    plan_path: Path | None,
+    struct_path: Path | None,
     struct_names: List[str] | None = None,
     recenter: bool = True,
     use_delivery: bool = False,
@@ -30,7 +31,7 @@ def load_dicom(
     
     Args:
         ct_folder: Path to folder containing CT DICOM files
-        dose_path: Path to RTDOSE file
+        dose_paths: Path to RTDOSE file(s)
         plan_path: Path to RTPLAN file        
         struct_path: Path to RTSTRUCT file
         struct_names: List of structure names to load (None = all)
@@ -52,12 +53,18 @@ def load_dicom(
     """
     ct_series, ref = load_ct_series(ct_folder)
     structures = load_structures(ct_series, ct_folder, struct_path, struct_names=struct_names)
-    dose = load_dose(dose_path)
-    scaling = 400
 
+    if isinstance(dose_paths, Path):
+        dose_paths = [ dose_paths ]
+
+    doses = dict()
+    for dose_path in dose_paths:
+        dose, plan_ref = load_dose(dose_path)
+        doses[plan_ref] = dose
+    dose = list(doses.values())[0]
     # If RTPLAN is available, use it to determine isocenter
     if plan_path is not None:
-        plans = fetch_plan_data(plan_path, scaling)
+        plans = fetch_plan_data(plan_path)
         beams, num_fractions = list(plans.values())[0]
         # Use the first dose as reference
         ct_series, structures, dose, iso_center = resample_based_on_plan(ct_series, structures, dose, recenter, plan_path)
@@ -65,13 +72,17 @@ def load_dicom(
     else:
         # No plan, just match to first dose
         ct_series, structures = resample_based_on_dose(ct_series, dose)
-
+    resolution = ct_series.GetSpacing()
+    CT = torch.from_numpy(sitk.GetArrayFromImage(ct_series))
+    structures = {k: torch.from_numpy(sitk.GetArrayFromImage(v) > 0) for k, v in structures.items()}
+    dose = torch.from_numpy(sitk.GetArrayFromImage(dose) / num_fractions)
     patient = Patient(
-        ct_array=torch.from_numpy(sitk.GetArrayFromImage(ct_series)),        
-        structures={k: torch.from_numpy(sitk.GetArrayFromImage(v)) > 0 for k, v in structures.items()},
-        voxel_spacing_mm=ct_series.GetSpacing(),
-        dose=torch.from_numpy(sitk.GetArrayFromImage(dose) / num_fractions)
-    )
+        ct_tensor=CT,        
+        structures=structures,
+        dose=dose, 
+        resolution=resolution
+        )
+    
     
 
     # Create BeamSequence from raw control points

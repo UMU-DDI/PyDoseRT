@@ -4,13 +4,10 @@ Patient configuration - CT dimensions and geometric parameters.
 # from pydantic import BaseModel, Field, model_validator
 from dataclasses import dataclass, field
 from token import OP
-from typing import Optional, TYPE_CHECKING, List
+from typing import Optional, TYPE_CHECKING
+from pydose_rt.physics.attenuation.hu_density_conversion import convert_HU_to_density
 import torch
 import numpy as np
-from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
-from .utils.nifti_utils import load_files
-import SimpleITK as sitk
-
 
 if TYPE_CHECKING:
     from pydose_rt.data import Patient
@@ -20,57 +17,75 @@ class Patient:
     """
     Patient-specific configuration.
 
-    Defines CT dimensions and geometric parameters for dose calculation.
     """
 
-    # CT dimensions
-    ct_array: torch.Tensor
+    _ct_tensor: torch.Tensor | None = None
+    _attenuation_tensor: torch.Tensor | None = None
+    _resolution: tuple[float, float, float] = None
     structures: Optional[dict[str, torch.Tensor]] = field(default_factory=dict)
     dose: Optional[torch.Tensor] = None
-    voxel_spacing_mm: Optional[tuple[float, float, float]] = None
 
-    @property
-    def shape(self) -> torch.Size:
-        """
-        Shape of the patient data.
+    def __init__(self, ct_tensor=None, attenuation_tensor = None, structures: Optional[dict[str, torch.Tensor]] = dict(), dose: torch.Tensor = None, resolution=None):
+        self._ct_tensor = ct_tensor
+        self._attenuation_tensor = attenuation_tensor
+        self.structures = structures
+        self.dose = dose
+        self._resolution = resolution
 
-        Returns the shape of `ct_array` and verifies that all structures
-        (and dose, if present) have the same shape. Raises an error if any
-        mismatch is found.
-        """
-        base_shape = self.ct_array.shape
+    def __post_init__(self):
+        # Enforce that structures and dose have same shape as density_image
+        base_shape = self.density_image.shape
 
-        # Check structures
         for name, struct in self.structures.items():
             if struct.shape != base_shape:
                 raise ValueError(
                     f"Structure '{name}' has shape {struct.shape}, "
-                    f"but expected {base_shape} (same as ct_array)."
+                    f"but expected {base_shape} (same as density_image)."
                 )
 
-        # Optionally also enforce dose shape consistency
         if self.dose is not None and self.dose.shape != base_shape:
             raise ValueError(
                 f"Dose has shape {self.dose.shape}, "
-                f"but expected {base_shape} (same as ct_array)."
+                f"but expected {base_shape} (same as density_image)."
             )
+        
+    @property
+    def density_image(self) -> torch.Tensor:
+        """
 
-        return base_shape
+        """
+        if self._ct_tensor is not None:
+            density_image = convert_HU_to_density(self._ct_tensor)
+        elif self._attenuation_tensor is not None:
+            density_image = self._attenuation_tensor
+        density_image.resolution = self._resolution
+
+        return density_image
     
     def to(self, target: torch.device | str | torch.dtype) -> 'Patient':
         """Move all tensors to a different device or dtype."""
         return Patient(
-            ct_array=self.ct_array.to(target),
+            ct_tensor=self._ct_tensor.to(target) if self._ct_tensor is not None else None, 
+            attenuation_tensor = self._attenuation_tensor.to(target) if self._attenuation_tensor is not None else None, 
             structures={k: v.to(target) > 0 for k, v in self.structures.items()} if self.structures else {},
             dose=self.dose.to(target) if self.dose is not None else None,
-            voxel_spacing_mm=self.voxel_spacing_mm
+            resolution=self._resolution
         )
     
     @property
+    def device(self) -> torch.device:
+        return self.density_image.attenuation.data.device
+    
+    @property
+    def dtype(self) -> type:
+        return self.density_image.attenuation.data.dtype
+    
+
+    @property
     def physical_size(self) -> torch.Size:
         return np.multiply(
-            np.array(self.ct_array.shape, dtype=np.float32),
-            np.array(self.voxel_spacing_mm, dtype=np.float32),
+            np.array(self.density_image.shape, dtype=np.float32),
+            np.array(self.resolution, dtype=np.float32),
         )
 
     def get_masked_dose(self, mask_name=None) -> torch.Tensor:
@@ -91,7 +106,7 @@ class Patient:
         if mask_name not in self.structures:
             raise Exception(f"Mask {mask_name} does not exist in structures ({list(self.structures.keys())})")
         
-        return torch.where(self.structures[mask_name], self.ct_array, -1000.0)
+        return torch.where(self.structures[mask_name], self.density_image, -1000.0)
     
     def add_mask(self, mask_name: str, mask: np.ndarray | torch.Tensor, overwrite: bool = False):
         if not overwrite and (mask_name in self.structures):
@@ -107,11 +122,11 @@ class Patient:
         else:
             raise Exception(f"Mask type {type(mask)} not supported.")
 
-        # Enforce same shape as ct_array
-        if mask.shape != self.ct_array.shape:
+        # Enforce same shape as density_image
+        if mask.shape != self.density_image.shape:
             raise ValueError(
                 f"Mask '{mask_name}' has shape {mask.shape}, "
-                f"but expected {self.ct_array.shape} (same as ct_array)."
+                f"but expected {self.density_image.shape} (same as density_image)."
             )
         
         self.structures[mask_name] = mask
@@ -126,14 +141,14 @@ class Phantom(Patient):
 
     def __init__(
         self,
-        ct_array: np.ndarray,
-        voxel_spacing_mm: tuple[float, float, float]
+        density_image: np.ndarray,
+        resolution: tuple[float, float, float]
     ):
         super().__init__(
-            ct_array=ct_array,
+            ct_tensor=density_image,
             structures={},
             dose=None,
-            voxel_spacing_mm=voxel_spacing_mm
+            resolution=resolution
         )
     
     @classmethod
@@ -145,11 +160,11 @@ class Phantom(Patient):
         """
         Alternate constructor: create a Phantom directly from a spherical phantom.
         """
-        ct_array = torch.ones(shape)
+        density_image = torch.ones(shape)
 
         return cls(
-            ct_array=ct_array,
-            voxel_spacing_mm=spacing
+            density_image=density_image,
+            resolution=spacing
         )
 
 
@@ -177,9 +192,9 @@ class Phantom(Patient):
             (Z - center[0]) ** 2
         )
 
-        ct_array = torch.from_numpy(np.expand_dims(np.where(distances <= radius_mm, ct_value, background_value), 0))
+        density_image = torch.from_numpy(np.expand_dims(np.where(distances <= radius_mm, ct_value, background_value), 0))
 
         return cls(
-            ct_array=ct_array,
-            voxel_spacing_mm=spacing
+            density_image=density_image,
+            resolution=spacing
         )

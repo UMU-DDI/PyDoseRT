@@ -54,7 +54,7 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
 
     ct_slices = np.array(np.expand_dims(ct_volume, 0))
 
-    dose_layer = DoseEngine(patient.ct_array.shape, patient.voxel_spacing_mm, machine_config, beam_sequence, kernel_size, downsampling_factor=downsampling_factor, permute_ct=False, leafs_centered=False, adjust_values=False)
+    dose_layer = DoseEngine(patient.ct_array.shape, patient.resolution, machine_config, beam_sequence, kernel_size, downsampling_factor=downsampling_factor, permute_ct=False, leafs_centered=False, adjust_values=False)
 
     dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device))
     dose_pred = dose_pred.cpu().detach().numpy()

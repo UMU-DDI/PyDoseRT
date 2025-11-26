@@ -53,7 +53,7 @@ if remote:
     dtype = torch.float32
     downsampling_factor = (1, 2, 2)
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
     max_iter = 1000
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/{patient_name}")
@@ -81,7 +81,7 @@ else:
     downsampling_factor = (1, 2, 2)
 
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
     max_iter = 10
 
 
@@ -89,7 +89,7 @@ gantry_angles = beam_sequence.gantry_angles
 number_of_leaf_pairs  = beam_sequence.num_leaf_pairs
 field_size = beam_sequence.field_size
 iso_center = beam_sequence.iso_center
-beam_limiting_device_angles = beam_sequence.beam_limiting_device_angles
+collimator_angles = beam_sequence.collimator_angles
 sid = beam_sequence.sid
 open_field_size = 100.0
 
@@ -115,7 +115,7 @@ for test_i in range(n_tests):
                                             number_of_leaf_pairs,
                                             field_size,
                                             iso_center,
-                                            beam_limiting_device_angles,
+                                            collimator_angles,
                                             sid,
                                             open_field_size,
                                             device,
@@ -129,7 +129,7 @@ for test_i in range(n_tests):
         
         engine = DoseEngine(
             ct_array_shape=patient.ct_array.shape, 
-            resolution=patient.voxel_spacing_mm, 
+            resolution=patient.resolution, 
             machine_config=machine_config,
             beam_input=beam_sequence.to_delivery(), 
             downsampling_factor=downsampling_factor,

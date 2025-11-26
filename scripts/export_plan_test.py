@@ -45,7 +45,7 @@ treatment.kernel_size = 75
 treatment.device = device
 treatment.dtype = torch.float16
 
-machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.voxel_spacing_mm, ct_array_shape=patient.ct_array.shape)
+machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
 
 
 mu_path = '/home/bolo/Documents/PyDose/out/mu_values-3000.npy'

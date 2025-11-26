@@ -336,7 +336,7 @@ def make_animation(experiment,
         with torch.no_grad():
             engine = DoseEngine(
                 ct_array_shape=patient_data.ct_array.shape, 
-                resolution=patient_data.voxel_spacing_mm, 
+                resolution=patient_data.resolution, 
                 machine_config=machine_config,
                 beam_input=beam, 
                 downsampling_factor=(1, 1, 1),

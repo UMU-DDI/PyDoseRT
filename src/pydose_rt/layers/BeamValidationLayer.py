@@ -74,7 +74,6 @@ class BeamValidationLayer(nn.Module):
                  field_size: tuple[int, int] = (400, 400), 
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
-                 leafs_centered: bool = False, 
                  adjust_values: bool = True, 
                  verbose: bool = False) -> 'BeamValidationLayer':
         """
@@ -85,7 +84,6 @@ class BeamValidationLayer(nn.Module):
             field_size (tuple[int, int]): Field size (width, height).
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
-            leafs_centered (bool, optional): Whether leaf positions are centered. Defaults to False.
             adjust_values (bool, optional): Whether to adjust parameter values. Defaults to True.
         """
         super().__init__()
@@ -99,7 +97,6 @@ class BeamValidationLayer(nn.Module):
         self.dtype=dtype
         self.machine_config = machine_config
         self.verbose = verbose
-        self.leafs_centered = leafs_centered
         self.adjust_values = adjust_values
         self.min_leaf_opening = machine_config.minimum_leaf_opening
         self.min_jaw_opening = machine_config.minimum_jaw_opening

@@ -59,7 +59,7 @@ doses = []
 for beam_sequence in beam_sequences:
     dose_layer = DoseEngine(
         ct_array_shape=patient.ct_array.shape,
-        resolution=patient.voxel_spacing_mm,
+        resolution=patient.resolution,
         machine_config=machine_config, 
         dtype=dtype, 
         device=device, 
