@@ -2,7 +2,7 @@
   "prescription_gy": 6.1,
   "structures": [
     {
-      "name": "CTV",
+      "name": "CTVT",
       "color": "red",
       "constraints": {
         "lower_bound_gy": 42.7, 

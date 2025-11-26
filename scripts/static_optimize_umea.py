@@ -133,6 +133,7 @@ for test_i in range(n_tests):
             beam_template=beam_sequence.to_delivery(), 
             downsampling_factor=downsampling_factor,
             kernel_size=kernel_size, 
+            adjust_values=True,
             dtype=dtype, 
             device=device
         )
@@ -140,6 +141,7 @@ for test_i in range(n_tests):
             machine_config=machine_config, 
             device=device,
             dtype=dtype,
+            adjust_values=True,
             field_size=beam_sequence.field_size
         )
         

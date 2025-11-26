@@ -8,62 +8,6 @@ import math
 def scale_loss(loss, weight):
     return loss * weight
 
-class TrainableLossWeightsNormalized(nn.Module):
-    def __init__(self, num_losses=2, sum_value=100):
-        """
-        Implements trainable loss weights that are normalized to sum to 1.
-        Args:
-            num_losses (int): Number of loss components.
-        """
-        super().__init__()
-        self.log_sigma = nn.Parameter(torch.zeros(num_losses))
-        self.sum_value = sum_value
-
-    def forward(self, losses):
-        """
-        Combines the individual loss components with normalized trainable weights.
-        Args:
-            losses: A list or tensor of loss terms [L1, L2, ..., Ln].
-        Returns:
-            A scalar tensor representing the weighted sum of losses.
-        """
-        losses = torch.stack(losses)
-        raw_weights = torch.exp(-2.0 * self.log_sigma)
-        sum_weights = raw_weights.sum() + 1e-8
-        norm_weights = raw_weights / sum_weights * self.sum_value
-        total_loss = (norm_weights * losses).sum()
-        return total_loss
-
-
-class SumLoss(nn.Module):
-    """
-    Sums all loss components in a list or tensor.
-    """
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, losses):
-        """
-        Args:
-            losses: A list or tensor of loss terms [L1, L2, ..., Ln].
-        Returns:
-            A scalar tensor representing the sum of losses.
-        """
-        losses = torch.stack(losses)
-        return losses.sum()
-
-
-# ======================================================================================
-# Auxiliary Loss Function
-# ======================================================================================
-def auxiliary_loss(dose_pred, dose_bypass):
-    """
-    Auxiliary loss that encourages the bypass branch output to match the static dose.
-    For example, use Mean Squared Error between dose_static and dose_bypass.
-    """
-    return torch.mean((dose_pred - dose_bypass) ** 2)
-
 
 
 def constraint_loss(
@@ -401,13 +345,8 @@ def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_
 
 def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, beam_sequence, weights):
     losses = []
-    relevant_masks = [
-        patient.structures["CTVT"], 
-        patient.structures["PTVT_42.7"], 
-        patient.structures["External"]
-    ]
-    for mask in relevant_masks:
-        losses.append(torch.mean(torch.abs((dose_true - dose_pred)[0, mask > 0])**2))
+    for name, mask in patient.structures.items():
+        losses.append(treatment.weights[name] * torch.mean(torch.abs(dose_true - dose_pred)[0, mask]))
 
     jaw_loss = torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))**2)
     bank_loss = leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap)
