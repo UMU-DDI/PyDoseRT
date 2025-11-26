@@ -30,7 +30,7 @@ class Patient:
         self._ct_tensor = self.set_resolution(ct_tensor) if ct_tensor is not None else None
         self._attenuation_tensor = self.set_resolution(attenuation_tensor) if attenuation_tensor is not None else None
         self.structures = structures
-        self.dose = self.set_resolution(dose)
+        self.dose = self.set_resolution(dose) if dose is not None else None
 
     def __post_init__(self):
         # Enforce that structures and dose have same shape as density_image
