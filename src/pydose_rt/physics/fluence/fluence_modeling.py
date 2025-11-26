@@ -275,34 +275,38 @@ def apply_tongue_and_groove(fluence, leaf_boundaries_mm, field_size_mm,
 # Precomputation functions for efficient forward passes
 # ============================================================================
 
-def precompute_source_penumbra_kernel(source_size_mm: float, pixel_size_mm: float,
-                                      device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+def precompute_source_penumbra_kernel(desired_penumbra_fwhm_mm: float,
+                               device: torch.device,
+                               dtype: torch.dtype) -> torch.Tensor:
     """
-    Precompute the source penumbra convolution kernel as 1D (for separable convolution).
+    Precompute a 1D Gaussian kernel that produces a desired penumbra width (FWHM)
+    in millimeters at the isocenter plane.
 
     Args:
-        source_size_mm: Effective source diameter (typical: 2-5mm)
-        pixel_size_mm: Pixel size in fluence map
-        device: Device to create kernel on
-        dtype: Data type for kernel
+        desired_penumbra_fwhm_mm: Penumbra width (FWHM) in mm, typically 2–4 mm.
+        device: Device to create kernel on.
+        dtype: Torch dtype.
 
     Returns:
-        kernel: [1, 1, 1, K] 1D convolution kernel (for separable convolution)
+        kernel: [1, 1, 1, K] separable 1D convolution kernel.
     """
-    sigma_pixels = (source_size_mm / pixel_size_mm) / 2.355
 
+    # Convert physical FWHM to Gaussian sigma in pixel units
+    sigma_pixels = desired_penumbra_fwhm_mm  / 2.355
+
+    # Kernel size: 6σ rule of thumb (covers >99% of Gaussian energy)
     kernel_size = int(6 * sigma_pixels) + 1
     if kernel_size % 2 == 0:
         kernel_size += 1
 
-    x = torch.linspace(-(kernel_size//2), kernel_size//2, kernel_size, device=device, dtype=dtype)
-    kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
-    kernel_1d = kernel_1d / kernel_1d.sum()
+    # Coordinates centered at zero
+    x = torch.linspace(-(kernel_size//2), kernel_size//2,
+                       kernel_size, device=device, dtype=dtype)
 
-    # Return 1D kernel for separable convolution
-    kernel_1d = kernel_1d.view(1, 1, 1, kernel_size)
+    kernel_1d = torch.exp(-(x**2) / (2 * sigma_pixels**2))
+    kernel_1d /= kernel_1d.sum()
 
-    return kernel_1d
+    return kernel_1d.view(1, 1, 1, kernel_size)
 
 
 def precompute_mlc_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
@@ -504,3 +508,35 @@ def apply_precomputed_tongue_and_groove(fluence: torch.Tensor, tg_mask: torch.Te
         fluence_with_tg: [B, 1, H, W] fluence map with T&G effect
     """
     return fluence * tg_mask
+
+def make_interpolator(point_dict):
+    # Sort keys and values into tensors
+    xs = torch.tensor([vals[0] for vals in point_dict], dtype=torch.float32)
+    ys = torch.tensor([vals[1] for vals in point_dict], dtype=torch.float32)
+
+    def interpolate(x):
+        """
+        x: tensor of any shape
+        returns: tensor of same shape with interpolated values
+        """
+
+        # Ensure xs, ys are on the same device as x
+        _xs = xs.to(x.device)
+        _ys = ys.to(x.device)
+
+        # searchsorted gives index of the right bin
+        idx = torch.searchsorted(_xs, x)
+
+        # Clamp to valid interpolation range
+        idx = torch.clamp(idx, 1, len(_xs) - 1)
+
+        x0 = _xs[idx - 1]
+        x1 = _xs[idx]
+        y0 = _ys[idx - 1]
+        y1 = _ys[idx]
+
+        # Linear interpolation
+        t = (x - x0) / (x1 - x0)
+        return y0 + t * (y1 - y0)
+    
+    return interpolate

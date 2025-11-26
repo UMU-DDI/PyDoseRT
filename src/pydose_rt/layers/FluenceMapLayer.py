@@ -31,7 +31,8 @@ from pydose_rt.physics.fluence.fluence_modeling import (
     apply_precomputed_kernel,
     apply_precomputed_mlc_scatter,
     apply_precomputed_head_scatter,
-    apply_precomputed_tongue_and_groove
+    apply_precomputed_tongue_and_groove,
+    make_interpolator
 )
 
 
@@ -86,6 +87,7 @@ class FluenceMapLayer(nn.Module):
         self.verbose = verbose
         self.training_sharpness = training_sharpness
         self.field_size = field_size
+        self.training = False
 
         if self.machine_config.leaf_widths is None:
             self.leaf_widths = torch.ones((self.machine_config.number_of_leaf_pairs, ), dtype=self.dtype) * self.field_size[1] / self.machine_config.number_of_leaf_pairs
@@ -110,8 +112,7 @@ class FluenceMapLayer(nn.Module):
 
         # Precompute source penumbra kernel (always applied)
         source_penumbra_kernel = precompute_source_penumbra_kernel(
-            source_size_mm=self.machine_config.source_size_mm,
-            pixel_size_mm=1.0,
+            desired_penumbra_fwhm_mm=self.machine_config.penumbra_fwhm,
             device=self.device,
             dtype=self.dtype
         )
@@ -131,6 +132,8 @@ class FluenceMapLayer(nn.Module):
 
         # Precompute head scatter kernel if amplitude > 0
         if self.machine_config.head_scatter_amplitude > 0:
+            self.head_scatter_interp_x = make_interpolator(self.machine_config.head_scatter_x)
+            self.head_scatter_interp_y = make_interpolator(self.machine_config.head_scatter_y)
             head_scatter_kernel = precompute_head_scatter_kernel(
                 scatter_range_mm=self.machine_config.head_scatter_range_mm,
                 pixel_size_mm=1.0,
@@ -266,6 +269,9 @@ class FluenceMapLayer(nn.Module):
 
         # Apply head scatter using precomputed kernel
         if self.head_scatter_kernel is not None:
+            mlc_field_sizes = torch.amax(torch.sum((mask[..., 0] > 0.5), 1), 1).detach() / 10.0
+            jaw_field_sizes = torch.amax(torch.sum((mask[..., 0] > 0.5), 2), 1).detach() / 10.0
+            S_c = self.head_scatter_interp_x(mlc_field_sizes) * self.head_scatter_interp_y(jaw_field_sizes)
             fluence_map = apply_precomputed_head_scatter(
                 fluence_map,
                 kernel=self.head_scatter_kernel,

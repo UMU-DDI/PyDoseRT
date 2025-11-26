@@ -77,7 +77,7 @@ for patient_name in sorted(os.listdir(base_path)):
                                     )
             # dose_engine.calibrate()
 
-            dose_pred = dose_engine.compute_dose_sequential(beam_sequence, ct_image=patient.density_image)
+            dose_pred = dose_engine.compute_dose(beam_sequence, ct_image=patient.density_image)
             doses.append(dose_pred.detach())
         dose_pred = sum(doses)
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)

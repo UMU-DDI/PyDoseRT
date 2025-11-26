@@ -49,9 +49,9 @@ class MachineConfig(BaseSettings):
         default=30.0,
         description="Characteristic decay distance for MLC scatter tail in mm (typical: 20-50)",
     )
-    source_size_mm: float = Field(
+    penumbra_fwhm: float = Field(
         default=1.5,
-        description="Source size for penumbra calculations (in mm)",
+        description="Modelled penumbra width (FWHM) in mm.",
     )
     head_scatter_amplitude: float = Field(
         default=0.0,
@@ -60,6 +60,14 @@ class MachineConfig(BaseSettings):
     head_scatter_range_mm: float = Field(
         default=150.0,
         description="Head scatter characteristic decay distance in mm (typical: 100-200)",
+    )
+    head_scatter_x: list[tuple[float, float]] = Field(
+        default=None,
+        description="Head scatter measurements in the MLC direction."
+    )
+    head_scatter_y: list[tuple[float, float]] = Field(
+        default=None,
+        description="Head scatter measurements in the jaw direction."
     )
     tongue_groove_reduction: float = Field(
         default=0.0,

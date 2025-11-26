@@ -10,61 +10,6 @@ import pymedphys
 import torch
 from typing import Dict, List, Tuple, Optional
 
-def exponentially_weighted_difference(x, y1, y2, alpha=5.0):
-    """
-    Calculate exponentially weighted difference between two curves.
-    
-    Parameters:
-    x: array of x values (0-1 range)
-    y1, y2: arrays of y values for the two curves
-    alpha: exponent factor to control weighting strength
-    
-    Returns:
-    The exponentially weighted difference
-    """
-    # Exponential weighting
-    weights = np.exp(alpha * x)
-    
-    # Normalize weights to sum to 1
-    weights = weights / np.sum(weights)
-    
-    # Calculate differences
-    diff = y1 - y2
-    
-    # Apply weights and sum
-    exp_diff = np.sum(weights * diff)
-    
-    return exp_diff
-
-def weighted_area_difference(x, y1, y2, weight_func=None):
-    """
-    Calculate weighted area difference between two curves.
-    
-    Parameters:
-    x: array of x values (0-1 range)
-    y1, y2: arrays of y values for the two curves
-    weight_func: function that takes x and returns weights
-    
-    Returns:
-    The weighted area difference
-    """
-    if weight_func is None:
-        # Default weight function: linear increase with x
-        weights = x
-    else:
-        weights = weight_func(x)
-    
-    # Calculate point-wise differences
-    diff = y1 - y2
-    
-    # Apply weights to differences
-    weighted_diff = diff * weights
-    
-    # Calculate the area using trapezoid rule
-    area = trapezoid(weighted_diff, x)
-    
-    return area
-
 
 
 def dose_at_volume_percent(dose_array: np.ndarray,
@@ -142,6 +87,158 @@ def dose_at_volume_cc(dose_array: np.ndarray,
     # Return the dose at the n_voxels-th hottest voxel
     return float(sorted_doses[n_voxels - 1])
 
+def dose_at_volume_max(
+    dose_array: np.ndarray,
+    structure_mask: np.ndarray,
+    volume_percent: float,
+    dose_threshold_percent: float,
+    prescription_gy: float
+) -> float:
+    """
+    Check if dose at a given volume percentage is at most the threshold.
+    Parameters:
+    -----------
+    dose_array : np.ndarray
+        3D dose distribution (Gy)
+    structure_mask : np.ndarray
+        3D binary mask for the structure
+    volume_percent : float
+        Percentage of volume (0-100). Use 0.01 for max dose checks.
+    dose_threshold_percent : float
+        Maximum allowed dose as percentage of prescription (0-200+)
+    prescription_gy : float
+        Prescription dose in Gy
+    Returns:
+    --------
+    float
+        Ratio where < 1.0 = passed, > 1.0 = failed
+        ratio = actual_dose / threshold_dose
+    Example:
+    --------
+    # Check if D2% <= 107% of prescription (hot spot constraint)
+    ratio = dose_at_volume_max(dose, ptv_mask, 2.0, 107.0, 42.7)
+    # ratio = 0.95 means actual D2% is 95% of allowed maximum (passed)
+    # Check if max dose <= 105% of prescription
+    ratio = dose_at_volume_max(dose, bladder_mask, 0.01, 105.0, 42.7)
+    """
+    actual_dose = dose_at_volume_percent(dose_array, structure_mask, volume_percent)
+    threshold_dose = dose_threshold_percent / 100.0 * prescription_gy
+    return actual_dose / threshold_dose if threshold_dose > 0 else float('inf')
+
+
+def dose_at_volume_min(
+    dose_array: np.ndarray,
+    structure_mask: np.ndarray,
+    volume_percent: float,
+    dose_threshold_percent: float,
+    prescription_gy: float
+) -> float:
+    """
+    Check if dose at a given volume percentage is at least the threshold.
+    Parameters:
+    -----------
+    dose_array : np.ndarray
+        3D dose distribution (Gy)
+    structure_mask : np.ndarray
+        3D binary mask for the structure
+    volume_percent : float
+        Percentage of volume (0-100)
+    dose_threshold_percent : float
+        Minimum required dose as percentage of prescription (0-100)
+    prescription_gy : float
+        Prescription dose in Gy
+    Returns:
+    --------
+    float
+        Ratio where < 1.0 = passed, > 1.0 = failed
+        ratio = threshold_dose / actual_dose
+    Example:
+    --------
+    # Check if D95% >= 90% of prescription (coverage constraint)
+    ratio = dose_at_volume_min(dose, ptv_mask, 95.0, 90.0, 42.7)
+    # ratio = 0.98 means actual D95% is above minimum (passed)
+    # Check if D99% >= 95% of prescription
+    ratio = dose_at_volume_min(dose, ptv_mask, 99.0, 95.0, 42.7)
+    """
+    actual_dose = dose_at_volume_percent(dose_array, structure_mask, volume_percent)
+    threshold_dose = dose_threshold_percent / 100.0 * prescription_gy
+    return threshold_dose / actual_dose if actual_dose > 0 else float('inf')
+
+
+def volume_at_dose_max(
+    dose_array: np.ndarray,
+    structure_mask: np.ndarray,
+    dose_threshold_percent: float,
+    volume_threshold_percent: float,
+    prescription_gy: float
+) -> float:
+    """
+    Check if volume receiving a given dose is at most the threshold.
+    Parameters:
+    -----------
+    dose_array : np.ndarray
+        3D dose distribution (Gy)
+    structure_mask : np.ndarray
+        3D binary mask for the structure
+    dose_threshold_percent : float
+        Dose level as percentage of prescription (0-100+)
+    volume_threshold_percent : float
+        Maximum allowed volume percentage (0-100)
+    prescription_gy : float
+        Prescription dose in Gy
+    Returns:
+    --------
+    float
+        Ratio where < 1.0 = passed, > 1.0 = failed
+        ratio = actual_volume / threshold_volume
+    Example:
+    --------
+    # Check if V(90% of Rx) <= 15% (OAR sparing constraint)
+    ratio = volume_at_dose_max(dose, rectum_mask, 90.0, 15.0, 42.7)
+    # ratio = 0.85 means 12.75% of volume receives the dose (passed)
+    # Check if V(75% of Rx) <= 35%
+    ratio = volume_at_dose_max(dose, bladder_mask, 75.0, 35.0, 42.7)
+    """
+    threshold_dose = dose_threshold_percent / 100.0 * prescription_gy
+    actual_volume = volume_at_dose(dose_array, structure_mask, threshold_dose)
+    return actual_volume / volume_threshold_percent if volume_threshold_percent > 0 else float('inf')
+
+
+def volume_at_dose_min(
+    dose_array: np.ndarray,
+    structure_mask: np.ndarray,
+    dose_threshold_percent: float,
+    volume_threshold_percent: float,
+    prescription_gy: float
+) -> float:
+    """
+    Check if volume receiving a given dose is at least the threshold.
+    Parameters:
+    -----------
+    dose_array : np.ndarray
+        3D dose distribution (Gy)
+    structure_mask : np.ndarray
+        3D binary mask for the structure
+    dose_threshold_percent : float
+        Dose level as percentage of prescription (0-100+)
+    volume_threshold_percent : float
+        Minimum required volume percentage (0-100)
+    prescription_gy : float
+        Prescription dose in Gy
+    Returns:
+    --------
+    float
+        Ratio where < 1.0 = passed, > 1.0 = failed
+        ratio = threshold_volume / actual_volume
+    Example:
+    --------
+    # Check if V(100% of Rx) >= 99% (target coverage constraint)
+    ratio = volume_at_dose_min(dose, ptv_mask, 100.0, 99.0, 42.7)
+    # ratio = 0.99 means 100% of volume receives the dose (passed)
+    """
+    threshold_dose = dose_threshold_percent / 100.0 * prescription_gy
+    actual_volume = volume_at_dose(dose_array, structure_mask, threshold_dose)
+    return volume_threshold_percent / actual_volume if actual_volume > 0 else float('inf')
 
 def volume_at_dose(dose_array: np.ndarray,
                    structure_mask: np.ndarray,
@@ -434,10 +531,68 @@ def result_validation(patient: Patient,
     results = {}
     
     # Validate clinical criteria if requested
-    if compute_clinical_criteria and (optimization_config is not None):
-        clinical_results = validate_clinical_criteria(
-            patient, optimization_config, pred_dose
-        )
+    if compute_clinical_criteria:
+        prescription_gy = 6.1
+        pred_dose_np = pred_dose.cpu().detach().numpy()
+
+        clinical_results = dict()
+        
+        # 1. At least 38.43 Gy dose at 99.00% volume (D99% >= 90%)
+        ratio = dose_at_volume_min(pred_dose_np, patient.structures['PTVT_42.7'], 99.0, 90.0, prescription_gy)
+        clinical_results["PTV_D99% >= 90%"] = ratio
+        
+        # 2. At most 45.69 Gy dose at 2.00% volume (D2% <= 107%)
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['PTVT_42.7'], 2.0, 107.0, prescription_gy)
+        clinical_results["PTV_D2% <= 107%"] = ratio
+        
+        # 1. At most 15.00% volume at 38.50 Gy dose (V90.16% <= 15%)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 90.16, 15.0, prescription_gy)
+        clinical_results["Bladder_V90.16% <= 15%"] = ratio
+        
+        # 2. At most 35.00% volume at 32.00 Gy dose (V74.94% <= 35%)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 74.94, 35.0, prescription_gy)
+        clinical_results["Bladder_V74.94% <= 35%"] = ratio
+        
+        # 3. At most 40.00% volume at 28.00 Gy dose (V65.57% <= 40%)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 65.57, 40.0, prescription_gy)
+        clinical_results["Bladder_V65.57% <= 40%"] = ratio
+        
+        # 4. At most 50.00% volume at 24.50 Gy dose (V57.38% <= 50%)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 57.38, 50.0, prescription_gy)
+        clinical_results["Bladder_V57.38% <= 50%"] = ratio
+        
+        # 5. At most 45.00 Gy dose at 0% volume (Dmax <= 105.39%)
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['Bladder'], 0.01, 105.39, prescription_gy)
+        clinical_results["Bladder_Dmax <= 105.39%"] = ratio
+        
+        # 1. At most 15.00% volume at 38.50 Gy dose (V90.16% <= 15%)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 90.16, 15.0, prescription_gy)
+        clinical_results["Rectum_V90.16% <= 15%"] = ratio
+        
+        # 2. At most 35.00% volume at 32.00 Gy dose (V74.94% <= 35%)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 74.94, 35.0, prescription_gy)
+        clinical_results["Rectum_V74.94% <= 35%"] = ratio
+        
+        # 3. At most 40.00% volume at 28.00 Gy dose (V65.57% <= 40%)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 65.57, 40.0, prescription_gy)
+        clinical_results["Rectum_V65.57% <= 40%"] = ratio
+        
+        # 4. At most 45.00 Gy dose at 0% volume (Dmax <= 105.39%)
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['Rectum'], 0.01, 105.39, prescription_gy)
+        clinical_results["Rectum_Dmax <= 105.39%"] = ratio
+        
+        # 1. At most 29.90 Gy dose at 0% volume (Dmax <= 70.02%)
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['FemoralHead_L'], 0.01, 70.02, prescription_gy)
+        clinical_results["FemoralHead_L_Dmax <= 70.02%"] = ratio
+        
+        # 1. At most 29.90 Gy dose at 0% volume (Dmax <= 70.02%)
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['FemoralHead_R'], 0.01, 70.02, prescription_gy)
+        clinical_results["FemoralHead_R_Dmax <= 70.02%"] = ratio
+        
+        # 1. At most 46.97 Gy dose at 0.01 cm³ volume (Dmax <= 110.02%)
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['External'], 0.01, 110.02, prescription_gy)
+        clinical_results["External_Dmax <= 110.02%"] = ratio
+
         results['clinical_criteria'] = clinical_results
         
     if compute_gamma:
