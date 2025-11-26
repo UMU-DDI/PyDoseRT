@@ -347,7 +347,8 @@ def make_animation(experiment,
             engine.eval()
             pred_depths, pred_map, _, pred_dose  = engine.compute_single_beam(
                 beam, 
-                ct_image=ct_volume
+                ct_image=ct_volume,
+                return_intermediates=True
             )
         # pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))
         
