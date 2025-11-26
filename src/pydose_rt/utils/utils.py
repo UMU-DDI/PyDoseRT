@@ -141,21 +141,21 @@ def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
     c = sorted_ratios[median_idx]
     return c
 
-def get_shapes(machine: MachineConfig, ct_shape: tuple[int, int, int] = None, number_of_cps: int = None, kernel_size: int = None, field_size: tuple[int, int] = None):
+def get_shapes(machine: MachineConfig, ct_shape: tuple[int, int, int] = None, number_of_beams: int = None, kernel_size: int = None, field_size: tuple[int, int] = None):
     shapes = dict()
-    if number_of_cps is None:
+    if number_of_beams is None:
         return
     
-    shapes["MLCs"] = (1, number_of_cps, machine.number_of_leaf_pairs, 2)
-    shapes["jaws"] = (1, number_of_cps, 2)
-    shapes["MUs"] = (1, number_of_cps)
+    shapes["MLCs"] = (1, number_of_beams, machine.number_of_leaf_pairs, 2)
+    shapes["jaws"] = (1, number_of_beams, 2)
+    shapes["MUs"] = (1, number_of_beams)
     if ct_shape is not None:
-        shapes["fluence_volumes"] = (number_of_cps, ct_shape[0], ct_shape[1], ct_shape[2], 1)
-        shapes["radiological_depths"] = (number_of_cps, ct_shape[1], 1)
+        shapes["fluence_volumes"] = (number_of_beams, ct_shape[0], ct_shape[1], ct_shape[2], 1)
+        shapes["radiological_depths"] = (number_of_beams, ct_shape[1], 1)
         if kernel_size is not None:
-            shapes["kernels"] = (kernel_size, kernel_size, number_of_cps, ct_shape[1])
+            shapes["kernels"] = (kernel_size, kernel_size, number_of_beams, ct_shape[1])
     if field_size is not None:
-        shapes["fluence_maps"] = (number_of_cps, field_size[0], field_size[1])
+        shapes["fluence_maps"] = (number_of_beams, field_size[0], field_size[1])
 
     return shapes
 
@@ -427,13 +427,13 @@ def compute_valid_leaf_mask_minh(
     margin_mm: float = 0,
 ) -> torch.BoolTensor:
     """
-    Returns a (B, number_of_cps, num_leafs) mask marking which leaves ever intercept the PTV for each batch.
+    Returns a (B, number_of_beams, num_leafs) mask marking which leaves ever intercept the PTV for each batch.
     Assumes leaves move along the z-axis (H axis).
     """
     if ptv_mask.ndim == 3:
         ptv_mask = ptv_mask.unsqueeze(0)  # [1, W, D, H]
     B = ptv_mask.shape[0]
-    number_of_cps = config.number_of_cps
+    number_of_beams = config.number_of_beams
     num_leafs = config.number_of_leaf_pairs
 
     (H, D, W) = config.ct_array_shape
@@ -448,7 +448,7 @@ def compute_valid_leaf_mask_minh(
     device = ptv_mask.device
 
     all_valid_leaf = torch.zeros(
-        (B, number_of_cps, num_leafs), dtype=torch.uint8, device=device
+        (B, number_of_beams, num_leafs), dtype=torch.uint8, device=device
     )
 
     for b in range(B):
@@ -482,11 +482,11 @@ def compute_valid_leaf_mask_minh(
             z_leaf_centers <= (z_max + margin_mm)
         )
         valid_leaf_per_beam = (
-            valid_leaf_1d.unsqueeze(0).expand(number_of_cps, -1).clone()
+            valid_leaf_1d.unsqueeze(0).expand(number_of_beams, -1).clone()
         )
         all_valid_leaf[b] = valid_leaf_per_beam
 
-    return all_valid_leaf  # shape: (B, number_of_cps, num_leafs)
+    return all_valid_leaf  # shape: (B, number_of_beams, num_leafs)
 
 
 

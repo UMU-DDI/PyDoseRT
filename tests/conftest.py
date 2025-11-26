@@ -122,19 +122,19 @@ def default_kernel_size():
     return 15
 
 @pytest.fixture
-def default_number_of_cps():
+def default_number_of_beams():
     """Fixture for default number of control points"""
     return 1
  
 @pytest.fixture
-def default_gantry_angles(default_number_of_cps, default_device, default_dtype):
+def default_gantry_angles(default_number_of_beams, default_device, default_dtype):
     """Fixture for default gantry angles"""
-    return torch.zeros(default_number_of_cps, device=default_device, dtype=default_dtype)
+    return torch.zeros(default_number_of_beams, device=default_device, dtype=default_dtype)
 
 @pytest.fixture
-def default_collimator_angles(default_number_of_cps, default_device, default_dtype):
+def default_collimator_angles(default_number_of_beams, default_device, default_dtype):
     """Fixture for default gantry angles"""
-    return torch.zeros(default_number_of_cps, device=default_device, dtype=default_dtype)
+    return torch.zeros(default_number_of_beams, device=default_device, dtype=default_dtype)
  
 @pytest.fixture
 def default_beam(default_machine_config, default_field_size, default_iso_center, default_device, default_dtype):
@@ -150,10 +150,10 @@ def default_beam(default_machine_config, default_field_size, default_iso_center,
     )
  
 @pytest.fixture
-def default_beam_sequence(default_machine_config, default_number_of_cps, default_field_size, default_iso_center, default_sid, default_device, default_dtype):
+def default_beam_sequence(default_machine_config, default_number_of_beams, default_field_size, default_iso_center, default_sid, default_device, default_dtype):
     """Fixture for a default BeamSequence"""
     return BeamSequence.create(
-        gantry_angles=[0.0] * default_number_of_cps,
+        gantry_angles=[0.0] * default_number_of_beams,
         number_of_leaf_pairs=default_machine_config.number_of_leaf_pairs,
         field_size=default_field_size,
         iso_center=default_iso_center,

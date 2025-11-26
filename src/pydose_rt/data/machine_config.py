@@ -61,11 +61,11 @@ class MachineConfig(BaseSettings):
         default=150.0,
         description="Head scatter characteristic decay distance in mm (typical: 100-200)",
     )
-    head_scatter_x: list[tuple[float, float]] = Field(
+    head_scatter_x: Optional[list[tuple[float, float]]] = Field(
         default=None,
         description="Head scatter measurements in the MLC direction."
     )
-    head_scatter_y: list[tuple[float, float]] = Field(
+    head_scatter_y: Optional[list[tuple[float, float]]] = Field(
         default=None,
         description="Head scatter measurements in the jaw direction."
     )

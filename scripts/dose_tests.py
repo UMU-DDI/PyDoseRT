@@ -48,7 +48,7 @@ for beam_data in mlcs:
     if (beams[0]['angle'] != 0):
         continue
 
-    config = MachineConfig(ct_array_shape=ct_image.GetSize(), resolution=np.divide(ct_image.GetSpacing(), 10), field_size=(40, 40), number_of_leaf_pairs=80, tpr_20_10=0.72, number_of_cps=1, starting_angle=0.5*math.radians(float(beams[0]['angle'])))
+    config = MachineConfig(ct_array_shape=ct_image.GetSize(), resolution=np.divide(ct_image.GetSpacing(), 10), field_size=(40, 40), number_of_leaf_pairs=80, tpr_20_10=0.72, number_of_beams=1, starting_angle=0.5*math.radians(float(beams[0]['angle'])))
     
     dose_layer = AccumulateDose3DLayer(config, 25)
     

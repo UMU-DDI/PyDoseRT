@@ -24,7 +24,7 @@ for head_scatter_range in head_scatter_ranges:
             ct_array_shape = (500, 500, 500)
             machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", mlc_leakage_amplitude=0.0, head_scatter_amplitude=1.0, head_scatter_range_mm=head_scatter_range)
             phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)
-            number_of_cps=1
+            number_of_beams=1
             starting_angle=0
             iso_center=(0.0, 150.0, 0.0)
             kernel_size=501

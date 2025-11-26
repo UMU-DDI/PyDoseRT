@@ -31,10 +31,10 @@ def fluence_map_layer(default_machine_config, default_resolution, default_field_
         (0.7, 0.05),
     ]
 )
-def test_fluence_map_leaves_center_per_width(fluence_map_layer, default_machine_config, default_number_of_cps, default_field_size, default_dtype, default_device, center, width):
+def test_fluence_map_leaves_center_per_width(fluence_map_layer, default_machine_config, default_number_of_beams, default_field_size, default_dtype, default_device, center, width):
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps, 
+                        number_of_beams=default_number_of_beams, 
                         field_size=default_field_size)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=default_dtype, device=default_device)
     expected = (center * default_field_size[0] / 2) + default_field_size[0] / 2
@@ -67,10 +67,10 @@ def test_fluence_map_leaves_center_per_width(fluence_map_layer, default_machine_
         (0.0, 1.0),
     ]
 )
-def test_fluence_map_leaves_open_per_width(fluence_map_layer, default_machine_config, default_number_of_cps, default_field_size, default_dtype, default_device, center, width):
+def test_fluence_map_leaves_open_per_width(fluence_map_layer, default_machine_config, default_number_of_beams, default_field_size, default_dtype, default_device, center, width):
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps, 
+                        number_of_beams=default_number_of_beams, 
                         field_size=default_field_size)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=default_dtype, device=default_device)
     y_mlc[:, :, :, 0] = (center * default_field_size[0] / 2) - (width * default_field_size[0] / 2)  # Set left positions
@@ -102,10 +102,10 @@ def test_fluence_map_leaves_open_per_width(fluence_map_layer, default_machine_co
         (0.0, 1.0),
     ]
 )
-def test_fluence_map_jaws_open_per_width(fluence_map_layer, default_machine_config, default_number_of_cps, default_dtype, default_device, default_field_size, center, width):
+def test_fluence_map_jaws_open_per_width(fluence_map_layer, default_machine_config, default_number_of_beams, default_dtype, default_device, default_field_size, center, width):
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps, 
+                        number_of_beams=default_number_of_beams, 
                         field_size=default_field_size)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=default_dtype, device=default_device)
     y_mlc[:, :, :, 0] = - default_field_size[0] / 2
@@ -129,10 +129,10 @@ def test_fluence_map_jaws_open_per_width(fluence_map_layer, default_machine_conf
 
     assert ones == pytest.approx(width, abs=0.01)
 
-def test_fluence_map_output_shape(fluence_map_layer, default_machine_config, default_number_of_cps, default_dtype, default_device, default_field_size):
+def test_fluence_map_output_shape(fluence_map_layer, default_machine_config, default_number_of_beams, default_dtype, default_device, default_field_size):
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps, 
+                        number_of_beams=default_number_of_beams, 
                         field_size=default_field_size)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=default_dtype, device=default_device)
     expected = shapes["fluence_maps"]
@@ -141,10 +141,10 @@ def test_fluence_map_output_shape(fluence_map_layer, default_machine_config, def
 
     assert fluence_map.shape == expected, f"Expected shape {expected}, but got {fluence_map.shape}"
 
-def test_fluence_map_leaves_gradients_closing(fluence_map_layer, default_machine_config, default_number_of_cps, default_field_size, default_dtype, default_device):
+def test_fluence_map_leaves_gradients_closing(fluence_map_layer, default_machine_config, default_number_of_beams, default_field_size, default_dtype, default_device):
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps, 
+                        number_of_beams=default_number_of_beams, 
                         field_size=default_field_size)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=default_dtype, device=default_device)
     y_mlc[..., 0] = 0.0
@@ -163,10 +163,10 @@ def test_fluence_map_leaves_gradients_closing(fluence_map_layer, default_machine
 
     assert grad_max > 0.0, "Gradients don't close fluence map"
 
-def test_fluence_map_leaves_gradients_opening(fluence_map_layer, default_machine_config, default_number_of_cps, default_field_size, default_dtype, default_device):
+def test_fluence_map_leaves_gradients_opening(fluence_map_layer, default_machine_config, default_number_of_beams, default_field_size, default_dtype, default_device):
     """Test that fluence map behaves correctly based on input width."""
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps, 
+                        number_of_beams=default_number_of_beams, 
                         field_size=default_field_size)
     y_mlc = torch.zeros(shapes["MLCs"], dtype=default_dtype, device=default_device)
     y_mlc[..., 0] = 0.5 # Set left positions

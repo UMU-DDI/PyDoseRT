@@ -17,11 +17,11 @@ def fluence_volume_layer(default_machine_config, default_resolution, default_ct_
 
 
 # ----- Tests -----
-def test_fluence_volume_output_shape(fluence_volume_layer, default_machine_config, default_field_size, default_ct_array_shape, default_number_of_cps, default_dtype, default_device):
+def test_fluence_volume_output_shape(fluence_volume_layer, default_machine_config, default_field_size, default_ct_array_shape, default_number_of_beams, default_dtype, default_device):
     """Test that fluence map behaves correctly based on input width."""
     # Arrange
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps,
+                        number_of_beams=default_number_of_beams,
                         field_size=default_field_size,
                         ct_shape=default_ct_array_shape)
     fluence_map = torch.zeros(shapes["fluence_maps"], dtype=default_dtype, device=default_device)

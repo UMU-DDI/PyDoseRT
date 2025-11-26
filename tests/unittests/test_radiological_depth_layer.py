@@ -15,10 +15,10 @@ def radiological_depth_layer(default_machine_config, default_resolution, default
     return RadiologicalDepthLayer(default_machine_config, default_resolution, default_ct_array_shape, default_gantry_angles)
 
 
-def test_radiological_depth_output_shape(radiological_depth_layer, default_machine_config, default_number_of_cps, default_ct_array_shape, default_device):
+def test_radiological_depth_output_shape(radiological_depth_layer, default_machine_config, default_number_of_beams, default_ct_array_shape, default_device):
     """Test that fluence map behaves correctly based on input width."""
     expected = get_shapes(default_machine_config, 
-                          number_of_cps=default_number_of_cps,
+                          number_of_beams=default_number_of_beams,
                           ct_shape=default_ct_array_shape)["radiological_depths"]
     ct_array = torch.zeros(
         (

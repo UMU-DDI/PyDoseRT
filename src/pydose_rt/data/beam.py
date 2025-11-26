@@ -373,7 +373,7 @@ class BeamSequence:
             >>> dose = engine.compute_beam_sequence(beam_seq, ct_image)
         """
         # Validate shapes
-        expected_cp = dose_engine.number_of_cps
+        expected_cp = dose_engine.number_of_beams
         expected_leafs = dose_engine.machine_config.number_of_leaf_pairs
 
         # Check leaf_positions shape [CP, N, 2]
@@ -616,7 +616,7 @@ class BeamSequence:
             yield self[i]
 
     @property
-    def num_control_points(self) -> int:
+    def num_beams(self) -> int:
         """Number of control points (alias for __len__)."""
         return len(self)
 

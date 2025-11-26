@@ -15,9 +15,9 @@ def fluence_volume_layer(default_machine_config, default_resolution, default_ct_
     return FluenceVolumeLayer(default_machine_config, default_resolution, default_ct_array_shape)
 
 
-def test_fluence_volume_benchmark(benchmark, default_machine_config, default_field_size, default_dtype, default_device, default_number_of_cps, fluence_volume_layer):
+def test_fluence_volume_benchmark(benchmark, default_machine_config, default_field_size, default_dtype, default_device, default_number_of_beams, fluence_volume_layer):
     shapes = get_shapes(default_machine_config, 
-                        number_of_cps=default_number_of_cps,
+                        number_of_beams=default_number_of_beams,
                         field_size=default_field_size)
 
     y_mlc = torch.zeros(shapes["fluence_maps"], dtype=default_dtype, device=default_device)
