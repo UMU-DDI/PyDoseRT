@@ -6,7 +6,6 @@ import pytest
 import os
 import torch
 from pydose_rt.data import MachineConfig, loaders
-from pydose_rt.objectives.metrics import validate_unit_dose
 from pydose_rt import DoseEngine
 import SimpleITK as sitk
 
@@ -38,10 +37,10 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
 
-    ref_dose, calibration_factor = validate_unit_dose(machine_config, patient, 110, 1, downsampling_factor, device, dtype)
-    if (np.abs(ref_dose - 1.0) > 0.001):
-        print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
-        machine_config.mean_photon_energy_MeV = calibration_factor
+    # ref_dose, calibration_factor = validate_unit_dose(machine_config, patient, 110, 1, downsampling_factor, device, dtype)
+    # if (np.abs(ref_dose - 1.0) > 0.001):
+    #     print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
+    #     machine_config.mean_photon_energy_MeV = calibration_factor
         
     ct_image = patient.ct_array
     dose = patient.dose
