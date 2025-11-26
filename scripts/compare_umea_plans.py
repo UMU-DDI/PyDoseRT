@@ -14,7 +14,7 @@ dtype=torch.float32
 do_plot = True
 
 head_scatter_ranges = [1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0]
-mlc_scatter_range_mms = [20]
+mlc_leakage_range_mms = [20]
 field_sizes = [50, 100, 200, 400]
 
 for head_scatter_range in head_scatter_ranges:
@@ -22,7 +22,7 @@ for head_scatter_range in head_scatter_ranges:
         for field_size in field_sizes:
             resolution = (1.0, 1.0, 1.0)
             ct_array_shape = (500, 500, 500)
-            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", mlc_scatter_amplitude=0.0, head_scatter_amplitude=1.0, head_scatter_range_mm=head_scatter_range)
+            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", mlc_leakage_amplitude=0.0, head_scatter_amplitude=1.0, head_scatter_range_mm=head_scatter_range)
             phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)
             number_of_cps=1
             starting_angle=0
@@ -87,6 +87,6 @@ for head_scatter_range in head_scatter_ranges:
                 # plt.show()
             
             del machine_config, dose_engine, dose, phantom
-        # print(f"Scatter amplitude: {mlc_scatter_amplitude}\tScatter range: {mlc_scatter_range_mm}\tResults: {np.mean(results)}")
+        # print(f"Scatter amplitude: {mlc_leakage_amplitude}\tScatter range: {mlc_leakage_range_mm}\tResults: {np.mean(results)}")
 
                 

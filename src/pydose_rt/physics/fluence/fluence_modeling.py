@@ -87,7 +87,7 @@ def apply_source_penumbra(fluence, source_size_mm=3.0, pixel_size_mm=1.0):
     return fluence_with_penumbra
 
 
-def apply_mlc_scatter(fluence, scatter_amplitude=0.02, scatter_range_mm=30.0, pixel_size_mm=1.0):
+def apply_mlc_leakage(fluence, scatter_amplitude=0.02, scatter_range_mm=30.0, pixel_size_mm=1.0):
     """
     Apply MLC scatter tail that decays with distance from field edges.
     Physical basis:
@@ -309,7 +309,7 @@ def precompute_source_penumbra_kernel(desired_penumbra_fwhm_mm: float,
     return kernel_1d.view(1, 1, 1, kernel_size)
 
 
-def precompute_mlc_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
+def precompute_mlc_leakage_kernel(scatter_range_mm: float, pixel_size_mm: float,
                                   device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     """
     Precompute the MLC scatter convolution kernel as 1D (for separable convolution).
@@ -454,7 +454,7 @@ def apply_precomputed_kernel(fluence: torch.Tensor, kernel: torch.Tensor,
     return fluence_convolved
 
 
-def apply_precomputed_mlc_scatter(fluence: torch.Tensor, kernel: torch.Tensor,
+def apply_precomputed_mlc_leakage(fluence: torch.Tensor, kernel: torch.Tensor,
                                   scatter_amplitude: float) -> torch.Tensor:
     """
     Apply MLC scatter using precomputed kernel.

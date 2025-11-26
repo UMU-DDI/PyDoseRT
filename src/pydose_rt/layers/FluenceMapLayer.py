@@ -25,11 +25,11 @@ from pydose_rt.data import MachineConfig
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
 from pydose_rt.physics.fluence.fluence_modeling import (
     precompute_source_penumbra_kernel,
-    precompute_mlc_scatter_kernel,
+    precompute_mlc_leakage_kernel,
     precompute_head_scatter_kernel,
     precompute_tongue_and_groove_mask,
     apply_precomputed_kernel,
-    apply_precomputed_mlc_scatter,
+    apply_precomputed_mlc_leakage,
     apply_precomputed_head_scatter,
     apply_precomputed_tongue_and_groove,
     make_interpolator
@@ -119,16 +119,16 @@ class FluenceMapLayer(nn.Module):
         self.register_buffer("source_penumbra_kernel", source_penumbra_kernel)
 
         # Precompute MLC scatter kernel if amplitude > 0
-        if self.machine_config.mlc_scatter_amplitude > 0:
-            mlc_scatter_kernel = precompute_mlc_scatter_kernel(
-                scatter_range_mm=self.machine_config.mlc_scatter_range_mm,
+        if self.machine_config.mlc_leakage_amplitude > 0:
+            mlc_leakage_kernel = precompute_mlc_leakage_kernel(
+                scatter_range_mm=self.machine_config.mlc_leakage_range_mm,
                 pixel_size_mm=1.0,
                 device=self.device,
                 dtype=self.dtype
             )
-            self.register_buffer("mlc_scatter_kernel", mlc_scatter_kernel)
+            self.register_buffer("mlc_leakage_kernel", mlc_leakage_kernel)
         else:
-            self.mlc_scatter_kernel = None
+            self.mlc_leakage_kernel = None
 
         # Precompute head scatter kernel if amplitude > 0
         if self.machine_config.head_scatter_amplitude > 0:
@@ -260,11 +260,11 @@ class FluenceMapLayer(nn.Module):
         ).to(self.dtype)
 
         # Apply MLC scatter using precomputed kernel
-        if self.mlc_scatter_kernel is not None:
-            fluence_map = apply_precomputed_mlc_scatter(
+        if self.mlc_leakage_kernel is not None:
+            fluence_map = apply_precomputed_mlc_leakage(
                 fluence_map,
-                kernel=self.mlc_scatter_kernel,
-                scatter_amplitude=self.machine_config.mlc_scatter_amplitude
+                kernel=self.mlc_leakage_kernel,
+                scatter_amplitude=self.machine_config.mlc_leakage_amplitude
             ).to(self.dtype)
 
         # Apply head scatter using precomputed kernel

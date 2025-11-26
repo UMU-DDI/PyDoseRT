@@ -41,11 +41,11 @@ class MachineConfig(BaseSettings):
         default=600.0,
         description="The maximum dynamic arc dose rate defined in MU/min.",
     )
-    mlc_scatter_amplitude: float = Field(
+    mlc_leakage_amplitude: float = Field(
         default=0.0,
         description="Relative MLC scatter contribution at field edge (unitless, typical: 0.01-0.03)",
     )
-    mlc_scatter_range_mm: float = Field(
+    mlc_leakage_range_mm: float = Field(
         default=30.0,
         description="Characteristic decay distance for MLC scatter tail in mm (typical: 20-50)",
     )
