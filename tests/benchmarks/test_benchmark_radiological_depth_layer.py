@@ -15,7 +15,7 @@ def radiological_depth_layer(default_machine_config, default_treatment_config):
 def radiological_depth_layer_beams(default_machine_config, default_resolution, default_ct_array_shape, request):
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
     gantry_angles = np.linspace(0, 360, int(request.param))
-    return RadiologicalDepthLayer(default_machine_config, default_resolution, default_ct_array_shape, gantry_angles, default_machine_config.lookup_table), gantry_angles
+    return RadiologicalDepthLayer(default_machine_config, default_resolution, default_ct_array_shape, gantry_angles), gantry_angles
 
 
 @pytest.mark.parametrize(

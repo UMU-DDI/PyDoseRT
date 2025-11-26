@@ -7,7 +7,7 @@ from pydose_rt import DoseEngine
 from pydose_rt.data import MachineConfig, BeamSequence
 import torch
 
-def test_dose_engine_layer(benchmark, default_ct_array_shape, default_resolution, default_gantry_angles, default_number_of_cps, default_kernel_size, default_field_size, default_collimator_angles, default_iso_center, default_sid, default_device, default_dtype):
+def test_dose_engine_layer(benchmark, default_ct_array_shape, default_resolution, default_gantry_angles, default_number_of_cps, default_kernel_size, default_field_size, default_machine_config, default_collimator_angles, default_iso_center, default_sid, default_device, default_dtype):
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/test.json")
     shapes = get_shapes(machine_config,
                         default_ct_array_shape,
@@ -15,24 +15,17 @@ def test_dose_engine_layer(benchmark, default_ct_array_shape, default_resolution
                         kernel_size = default_kernel_size,
                         field_size=default_field_size)
     beam_sequence = BeamSequence.from_tensors(torch.zeros(shapes["MLCs"][1:], dtype=default_dtype, device=default_device), torch.ones(shapes["MUs"][1:], dtype=default_dtype, device=default_device), torch.zeros(shapes["jaws"][1:], dtype=default_dtype, device=default_device), default_gantry_angles, default_collimator_angles, default_iso_center, default_sid, default_field_size)
-    dose_layer = DoseEngine(default_ct_array_shape, 
-                            default_resolution, 
-                            machine_config,
-                            beam_sequence,
+
+    dose_layer = DoseEngine(default_machine_config,
                             default_kernel_size,
-                            default_device,
-                            default_dtype)
+                            device=default_device,
+                            dtype=default_dtype)
     
 
-    ct_array = torch.zeros(
-        (
-            1,
-            default_ct_array_shape[0],
-            default_ct_array_shape[1],
-            default_ct_array_shape[2],
-        ),
+    ct_array = torch.zeros(default_ct_array_shape,
         dtype=dose_layer.dtype,
         device=dose_layer.device
     )
+    ct_array.resolution = default_resolution
 
-    benchmark(lambda: dose_layer.compute_beam_sequence(beam_sequence, ct_image=ct_array))
+    benchmark(lambda: dose_layer.compute_dose(beam_sequence, ct_image=ct_array))
