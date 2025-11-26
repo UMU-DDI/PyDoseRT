@@ -56,7 +56,7 @@ if remote:
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
     max_iter = 1000
 else:
-    base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/{patient_name}")
+    base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
     ct_folder = base / "[CT] Deformed CT"
     rtplan_path = next((base / "[RP] CT").iterdir())
@@ -81,7 +81,7 @@ else:
     downsampling_factor = (1, 2, 2)
 
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
+    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
     max_iter = 10
 
 
@@ -128,10 +128,9 @@ for test_i in range(n_tests):
         dose_target = patient.get_masked_dose("External").unsqueeze(0)
         
         engine = DoseEngine(
-            ct_array_shape=patient.ct_array.shape, 
-            resolution=patient.resolution, 
             machine_config=machine_config,
-            beam_input=beam_sequence.to_delivery(), 
+            image_template=patient.density_image,
+            beam_template=beam_sequence.to_delivery(), 
             downsampling_factor=downsampling_factor,
             kernel_size=kernel_size, 
             dtype=dtype, 
@@ -143,7 +142,6 @@ for test_i in range(n_tests):
             dtype=dtype,
             field_size=beam_sequence.field_size
         )
-        engine.train()
         
         patience = 0
         epoch = 0
@@ -166,7 +164,7 @@ for test_i in range(n_tests):
             optimizer.zero_grad(set_to_none=True)
             
             # Forward
-            dose_pred = engine.compute_beam_sequence(
+            dose_pred = engine.compute_dose(
                 beam_sequence.to_delivery(),
                 ct_image=ct_volume
             )

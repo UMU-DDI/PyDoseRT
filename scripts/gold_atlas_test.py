@@ -48,7 +48,7 @@ for patient_name in sorted(os.listdir(base_path)):
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
-                    dose_paths=rtdose_path, 
+                    dose_path=rtdose_path, 
                     plan_path=rtplan_path, 
                     struct_path=rtstruct_path,
                     struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],

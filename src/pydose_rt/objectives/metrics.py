@@ -206,7 +206,7 @@ def validate_clinical_criteria(patient: Patient,
     dose = dose.cpu().detach().numpy()
 
     # Calculate voxel volume in cc
-    resolution = patient.resolution
+    resolution = patient.dose.resolution
     voxel_volume_cc = np.prod(resolution) / 1000.0  # Convert mm³ to cc
 
     results = {}
@@ -442,7 +442,7 @@ def result_validation(patient: Patient,
         
     if compute_gamma:
         axes = tuple(
-            np.arange(patient.dose.shape[i]) * patient.resolution[i]
+            np.arange(patient.dose.shape[i]) * patient.dose.resolution[i]
             for i in range(3)
         )
         

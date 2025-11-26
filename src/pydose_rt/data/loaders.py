@@ -17,7 +17,7 @@ from typing import List, Dict, Any, Tuple, Literal
 
 def load_dicom(
     ct_folder: Path,
-    dose_paths: List[Path] | Path | None,
+    dose_path: List[Path] | Path | None,
     plan_path: Path | None,
     struct_path: Path | None,
     struct_names: List[str] | None = None,
@@ -54,12 +54,12 @@ def load_dicom(
     ct_series, ref = load_ct_series(ct_folder)
     structures = load_structures(ct_series, ct_folder, struct_path, struct_names=struct_names)
 
-    if isinstance(dose_paths, Path):
-        dose_paths = [ dose_paths ]
+    if isinstance(dose_path, Path):
+        dose_path = [ dose_path ]
 
     doses = dict()
-    for dose_path in dose_paths:
-        dose, plan_ref = load_dose(dose_path)
+    for path in dose_path:
+        dose, plan_ref = load_dose(path)
         doses[plan_ref] = dose
     dose = list(doses.values())[0]
     # If RTPLAN is available, use it to determine isocenter

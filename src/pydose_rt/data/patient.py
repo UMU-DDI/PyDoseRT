@@ -26,11 +26,11 @@ class Patient:
     dose: Optional[torch.Tensor] = None
 
     def __init__(self, ct_tensor=None, attenuation_tensor = None, structures: Optional[dict[str, torch.Tensor]] = dict(), dose: torch.Tensor = None, resolution=None):
-        self._ct_tensor = ct_tensor
-        self._attenuation_tensor = attenuation_tensor
-        self.structures = structures
-        self.dose = dose
         self._resolution = resolution
+        self._ct_tensor = self.set_resolution(ct_tensor) if ct_tensor is not None else None
+        self._attenuation_tensor = self.set_resolution(attenuation_tensor) if attenuation_tensor is not None else None
+        self.structures = structures
+        self.dose = self.set_resolution(dose)
 
     def __post_init__(self):
         # Enforce that structures and dose have same shape as density_image
@@ -49,6 +49,10 @@ class Patient:
                 f"but expected {base_shape} (same as density_image)."
             )
         
+    def set_resolution(self, x: torch.Tensor):
+        x.resolution = self._resolution
+        return x
+    
     @property
     def density_image(self) -> torch.Tensor:
         """
@@ -58,17 +62,16 @@ class Patient:
             density_image = convert_HU_to_density(self._ct_tensor)
         elif self._attenuation_tensor is not None:
             density_image = self._attenuation_tensor
-        density_image.resolution = self._resolution
-
-        return density_image
+            
+        return self.set_resolution(density_image)
     
     def to(self, target: torch.device | str | torch.dtype) -> 'Patient':
         """Move all tensors to a different device or dtype."""
         return Patient(
-            ct_tensor=self._ct_tensor.to(target) if self._ct_tensor is not None else None, 
-            attenuation_tensor = self._attenuation_tensor.to(target) if self._attenuation_tensor is not None else None, 
+            ct_tensor=self.set_resolution(self._ct_tensor.to(target)) if self._ct_tensor is not None else None, 
+            attenuation_tensor = self.set_resolution(self._attenuation_tensor.to(target)) if self._attenuation_tensor is not None else None, 
             structures={k: v.to(target) > 0 for k, v in self.structures.items()} if self.structures else {},
-            dose=self.dose.to(target) if self.dose is not None else None,
+            dose=self.set_resolution(self.dose.to(target)) if self.dose is not None else None,
             resolution=self._resolution
         )
     
@@ -85,7 +88,7 @@ class Patient:
     def physical_size(self) -> torch.Size:
         return np.multiply(
             np.array(self.density_image.shape, dtype=np.float32),
-            np.array(self.resolution, dtype=np.float32),
+            np.array(self._resolution, dtype=np.float32),
         )
 
     def get_masked_dose(self, mask_name=None) -> torch.Tensor:

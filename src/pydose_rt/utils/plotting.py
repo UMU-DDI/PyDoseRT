@@ -300,8 +300,7 @@ def make_animation(experiment,
     Modified version with tight square layout - two squares stacked vertically
     """
     mask_external = list(patient_data.structures.values())[-1]
-    ct_volume = patient_data.ct_array.unsqueeze(0)
-    dose_layer.eval()
+    ct_volume = patient_data.density_image.unsqueeze(0)
 
     # Get the base colormap (jet)
     alpha_max = 1.0
@@ -311,11 +310,10 @@ def make_animation(experiment,
     alpha = np.clip(np.interp(values, [0, 1], [0.0, alpha_max]), 0, alpha_max)
     colors[:, -1] = alpha
     jet_alpha = ListedColormap(colors)
-    dose_layer.eval()
-    num_cps = dose_layer.number_of_cps
-    slice_idx = patient_data.ct_array.shape[0] // 2
+    num_cps = dose_layer.number_of_beams
+    slice_idx = patient_data.density_image.shape[0] // 2
     ct_data = ct_volume.cpu().detach().numpy()[0, slice_idx, :, :]
-    dose_data = np.zeros(patient_data.ct_array.shape[1:])
+    dose_data = np.zeros(patient_data.density_image.shape[1:])
     beam_sequence = beam_sequence.to_delivery()
     # Create output directory if needed
     os.makedirs("out", exist_ok=True)
@@ -334,20 +332,10 @@ def make_animation(experiment,
 
         # Get dose and map for current control point
         with torch.no_grad():
-            engine = DoseEngine(
-                ct_array_shape=patient_data.ct_array.shape, 
-                resolution=patient_data.resolution, 
-                machine_config=machine_config,
-                beam_input=beam, 
-                downsampling_factor=(1, 1, 1),
-                kernel_size=31, 
-                dtype=torch.float32, 
-                device=dose_layer.device
-            )
-            engine.eval()
-            pred_depths, pred_map, _, pred_dose  = engine.compute_single_beam(
+            pred_depths, pred_map, _, pred_dose  = dose_layer.compute_dose(
                 beam, 
                 ct_image=ct_volume,
+                overwrite=True,
                 return_intermediates=True
             )
         # pred_dose = torch.where(mask_external, pred_dose, torch.zeros_like(pred_dose))

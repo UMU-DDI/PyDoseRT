@@ -361,6 +361,7 @@ class DoseEngine:
         self,
         beam_input: BeamSequence | Beam,
         ct_image: torch.Tensor | None = None,
+        return_intermediates: bool = False,
         overwrite: bool = False
     ) -> torch.Tensor:
         """
@@ -398,6 +399,7 @@ class DoseEngine:
             mus=mus,
             jaw_positions=jaw_positions,
             ct_image=ct_tensor,
+            return_intermediates=return_intermediates
         )
 
     def compute_dose_sequential(
