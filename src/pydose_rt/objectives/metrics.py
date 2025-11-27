@@ -529,6 +529,7 @@ def result_validation(patient: Patient,
                       compute_clinical_criteria: bool = True,
                       global_normalisation = None):
     results = {}
+    patient = patient.to('cpu')
     
     # Validate clinical criteria if requested
     if compute_clinical_criteria:
@@ -542,23 +543,23 @@ def result_validation(patient: Patient,
         clinical_results["PTV_D99% >= 90%"] = ratio
         
         # 2. At most 45.69 Gy dose at 2.00% volume (D2% <= 107%)
-        ratio = dose_at_volume_max(pred_dose_np, patient.structures['PTVT_42.7'], 2.0, 107.0, prescription_gy)
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['PTVT_42.7'], 2.0, 105.0, prescription_gy)
         clinical_results["PTV_D2% <= 107%"] = ratio
         
         # 1. At most 15.00% volume at 38.50 Gy dose (V90.16% <= 15%)
-        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 90.16, 15.0, prescription_gy)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 90.0, 15.0, prescription_gy)
         clinical_results["Bladder_V90.16% <= 15%"] = ratio
         
         # 2. At most 35.00% volume at 32.00 Gy dose (V74.94% <= 35%)
-        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 74.94, 35.0, prescription_gy)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 75.0, 35.0, prescription_gy)
         clinical_results["Bladder_V74.94% <= 35%"] = ratio
         
         # 3. At most 40.00% volume at 28.00 Gy dose (V65.57% <= 40%)
-        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 65.57, 40.0, prescription_gy)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 65.0, 40.0, prescription_gy)
         clinical_results["Bladder_V65.57% <= 40%"] = ratio
         
         # 4. At most 50.00% volume at 24.50 Gy dose (V57.38% <= 50%)
-        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 57.38, 50.0, prescription_gy)
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 57.5, 50.0, prescription_gy)
         clinical_results["Bladder_V57.38% <= 50%"] = ratio
         
         # 5. At most 45.00 Gy dose at 0% volume (Dmax <= 105.39%)

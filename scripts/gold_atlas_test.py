@@ -35,7 +35,7 @@ import torch
 # rtstruct_path = next((f for f in Path(ct_folder).iterdir() if "RS" in f.name.upper() or "RTSTRUCT" in f.name.upper()), None)
 # rtplan_path = f"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/{patient_name}_plans/1ARC/RP1.2.752.243.1.1.20251031145134399.7000.37887.dcm"
 # rtdose_path = f"/media/bolo/f4616a95-e470-4c0f-a21e-a75a8d283b9e/RAW/ARTP_umea/{patient_name}_plans/1ARC/RD1.2.752.243.1.1.20251031145134399.8000.21005.dcm"
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/NODES/')
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/')
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
@@ -43,7 +43,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float16
-        kernel_size = 51
+        kernel_size = 25
         downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
@@ -70,14 +70,16 @@ for patient_name in sorted(os.listdir(base_path)):
         for beam_sequence in beam_sequences:
             beam_sequence = beam_sequence.to(device).to(dtype)
             # dose_engine = DoseEngine(patient.ct_array.shape, patient.resolution, machine_config, beam_sequence, kernel_size, device, dtype, downsampling_factor)
-            dose_engine = DoseEngine(kernel_size=15,
+            dose_engine = DoseEngine(kernel_size=55,
                                      machine_config=machine_config,
                                      image_template=patient.density_image,
                                      beam_template=beam_sequence
                                     )
-            # dose_engine.calibrate()
+            
+            dose_engine.calibrate(calibration_mu=machine_config.calibration_mu,
+                                  original_beam_template=None)
 
-            dose_pred = dose_engine.compute_dose(beam_sequence, ct_image=patient.density_image)
+            dose_pred = dose_engine.compute_dose_sequential(beam_sequence, ct_image=patient.density_image)
             doses.append(dose_pred.detach())
         dose_pred = sum(doses)
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
@@ -94,7 +96,7 @@ for patient_name in sorted(os.listdir(base_path)):
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred[0], optimization, compute_gamma=True, compute_clinical_criteria=False, global_normalisation=2.2)
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=2.2)
         # print([c['passed'] for s in res["clinical_criteria"].values() for c in s['criteria']])
         print(f"Patient {patient_name}:\t{res['gamma_pass_rate']}\t{res['mean_gamma']}")
 
