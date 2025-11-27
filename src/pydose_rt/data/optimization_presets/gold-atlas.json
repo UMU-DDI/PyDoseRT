@@ -1,27 +1,22 @@
 {
   "prescription_gy": 6.1,
-  "structures": [
-    {
-      "name": "CTVT",
+  "structures": {
+    "CTVT": {
       "color": "red",
-      "constraints": {
-        "lower_bound_gy": 42.7, 
-        "higher_bound_gy": 44.8,
-        "lower_bound_target_percent": 98.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 1500.0
-      }
+      "lower_bound_gy": 42.7,
+      "higher_bound_gy": 44.8,
+      "lower_bound_target_percent": 98.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 1500.0,
+      "clinical_criteria": []
     },
-    {
-      "name": "PTVT_42.7",
+    "PTVT_42.7": {
       "color": "black",
-      "constraints": {
-        "lower_bound_gy": 38.43,
-        "higher_bound_gy": 45.69,
-        "lower_bound_target_percent": 99.0,
-        "higher_bound_target_percent": 2.0,
-        "weight": 1000.0
-      },
+      "lower_bound_gy": 38.43,
+      "higher_bound_gy": 45.69,
+      "lower_bound_target_percent": 99.0,
+      "higher_bound_target_percent": 2.0,
+      "weight": 1000.0,
       "clinical_criteria": [
         {
           "criterion_type": "dose_at_volume",
@@ -39,16 +34,13 @@
         }
       ]
     },
-    {
-      "name": "FemoralHead_L",
+    "FemoralHead_L": {
       "color": "green",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 29.9,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 0.1
-      },
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 29.9,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
       "clinical_criteria": [
         {
           "criterion_type": "dose_at_volume",
@@ -59,16 +51,13 @@
         }
       ]
     },
-    {
-      "name": "FemoralHead_R",
+    "FemoralHead_R": {
       "color": "blue",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 29.9,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 0.1
-      },
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 29.9,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
       "clinical_criteria": [
         {
           "criterion_type": "dose_at_volume",
@@ -79,16 +68,13 @@
         }
       ]
     },
-    {
-      "name": "Bladder",
+    "Bladder": {
       "color": "yellow",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 38.5,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 85.0,
-        "weight": 0.1
-      },
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 38.5,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 85.0,
+      "weight": 0.1,
       "clinical_criteria": [
         {
           "criterion_type": "volume_at_dose",
@@ -127,16 +113,13 @@
         }
       ]
     },
-    {
-      "name": "Rectum",
+    "Rectum": {
       "color": "pink",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 38.5,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 85.0,
-        "weight": 0.1
-      },
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 38.5,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 85.0,
+      "weight": 0.1,
       "clinical_criteria": [
         {
           "criterion_type": "volume_at_dose",
@@ -168,16 +151,13 @@
         }
       ]
     },
-    {
-      "name": "External",
+    "External": {
       "color": "orange",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 46.97,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 0.1
-      },
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 46.97,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
       "clinical_criteria": [
         {
           "criterion_type": "dose_at_volume_cc",
@@ -188,5 +168,5 @@
         }
       ]
     }
-  ]
+  }
 }

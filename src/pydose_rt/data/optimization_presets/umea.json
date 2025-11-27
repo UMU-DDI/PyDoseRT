@@ -1,71 +1,59 @@
 {
   "prescription_gy": 42.7,
-  "structures": [
-    {
-      "name": "CTV",
+  "structures": {
+    "CTV": {
       "color": "red",
-      "constraints": {
-        "lower_bound_gy": 42.7, 
-        "higher_bound_gy": 44.8,
-        "lower_bound_target_percent": 98.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 1500.0
-      }
+      "lower_bound_gy": 42.7,
+      "higher_bound_gy": 44.8,
+      "lower_bound_target_percent": 98.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 1500.0,
+      "clinical_criteria": []
     },
-    {
-      "name": "PTVT_42.7",
+    "PTVT_42.7": {
       "color": "black",
-      "constraints": {
-        "lower_bound_gy": 42.7,
-        "higher_bound_gy": 42.7,
-        "lower_bound_target_percent": 95.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 1000.0
-      }
+      "lower_bound_gy": 42.7,
+      "higher_bound_gy": 42.7,
+      "lower_bound_target_percent": 95.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 1000.0,
+      "clinical_criteria": []
     },
-    {
-      "name": "FemoralHead_L",
+    "FemoralHead_L": {
       "color": "green",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 28.9,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 0.1
-      }
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 28.9,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
+      "clinical_criteria": []
     },
-    {
-      "name": "FemoralHead_R",
+    "FemoralHead_R": {
       "color": "blue",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 28.9,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 100.0,
-        "weight": 0.1
-      }
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 28.9,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
+      "clinical_criteria": []
     },
-    {
-      "name": "Bladder",
+    "Bladder": {
       "color": "purple",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 40.4,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 75.0,
-        "weight": 0.1
-      }
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 40.4,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 75.0,
+      "weight": 0.1,
+      "clinical_criteria": []
     },
-    {
-      "name": "External",
+    "External": {
       "color": "orange",
-      "constraints": {
-        "lower_bound_gy": 0.0,
-        "higher_bound_gy": 40.4,
-        "lower_bound_target_percent": 0.0,
-        "higher_bound_target_percent": 96.0,
-        "weight": 1.0
-      }
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 40.4,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 96.0,
+      "weight": 1.0,
+      "clinical_criteria": []
     }
-  ]
+  }
 }

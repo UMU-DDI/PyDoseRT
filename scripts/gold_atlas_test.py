@@ -38,9 +38,7 @@ for patient_name in sorted(os.listdir(base_path)):
                     struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
                     use_delivery=True
                     )
-        optimization = OptimizationConfig(
-            preset="src/pydose_rt/data/optimization_presets/umea.json"
-        )
+        optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
         machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
