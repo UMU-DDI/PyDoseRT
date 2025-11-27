@@ -1,29 +1,13 @@
-from comet_ml import Experiment
-from re import M
-import sys
 import os
-import torch.nn.functional as F
 
 from pydose_rt.data.optimization_config import OptimizationConfig
-sys.path.append('../')
-sys.path.append('../../')
-import pydicom
-import time
 from pathlib import Path
-import math
-import nibabel as nib
 
-from pydicom.data import get_testdata_file
 from pydose_rt.data import MachineConfig, Patient, OptimizationConfig, loaders
-# from pydose_rt.data import MachineConfig
 from pydose_rt.objectives.metrics import result_validation
 from pydose_rt.utils.utils import find_patient_paths
 import numpy as np
-from rt_utils import RTStructBuilder
-import matplotlib.pyplot as plt
-from scipy.ndimage import zoom, rotate
 from pydose_rt import DoseEngine
-import SimpleITK as sitk
 from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
 import torch
 

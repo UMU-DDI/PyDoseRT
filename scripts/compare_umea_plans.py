@@ -13,16 +13,16 @@ dtype=torch.float32
 
 do_plot = True
 
-head_scatter_ranges = [1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0]
+head_scatter_amplitudes = [0.1, 1.0, 5.0, 10.0, 20.0, 30.0, 50.0, 70.0, 90.0]
 mlc_leakage_range_mms = [20]
-field_sizes = [50, 100, 200, 400]
+field_sizes = [50]
 
-for head_scatter_range in head_scatter_ranges:
+for head_scatter_amplitude in head_scatter_amplitudes:
         results =  []
         for field_size in field_sizes:
             resolution = (1.0, 1.0, 1.0)
             ct_array_shape = (500, 500, 500)
-            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", mlc_leakage_amplitude=0.0, head_scatter_amplitude=1.0, head_scatter_range_mm=head_scatter_range)
+            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", mlc_leakage_amplitude=0.0, head_scatter_amplitude=1.0, head_scatter_range_mm=head_scatter_amplitude)
             phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)
             number_of_beams=1
             starting_angle=0
@@ -53,6 +53,7 @@ for head_scatter_range in head_scatter_ranges:
 
             measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
             measurements = [measurement for measurement in measurements if measurement["header_dict"]["FSZ"] == [str(field_size), str(field_size)]]
+            measurements = [measurement for measurement in measurements if float(measurement["header_dict"]["STS"][2]) - float(measurement["header_dict"]["EDS"][2]) == 0.0]
             # measurements = [measurement for measurement in measurements if (measurement["header_dict"]["STS"][2], measurement["header_dict"]["EDS"][2]) == ('100.0', '100.0')]
 
             if do_plot:
@@ -67,7 +68,10 @@ for head_scatter_range in head_scatter_ranges:
                 samples = sample_tensor_nearest(dose[0, ...], resolution, iso_center, measurement["coords_engine"])
                 samples = samples * measurement["dose"].max() / samples.max()
                 mape = np.mean(np.abs(samples - measurement["dose"])[measurement["dose"] > 0] /  measurement["dose"][measurement["dose"] > 0])
-                results.append(mape)
+                # results.append(mape)
+                thr_20 = 0.1 * measurement["dose"].max()
+                thr_80 = 0.9 * measurement["dose"].max()
+                results.append(np.abs(sum((samples > thr_20) * (samples < thr_80)) - sum((measurement["dose"] > thr_20) * (measurement["dose"] < thr_80))))
                 if (do_plot):
                     changing_vars = np.argwhere(np.var(measurement["coords_engine"], 0) != 0)
                     ticks = measurement["coords_engine"][:, changing_vars[0]]
@@ -82,11 +86,11 @@ for head_scatter_range in head_scatter_ranges:
                     axes[j].set_visible(False)
 
                 plt.tight_layout()
-                plt.savefig(f"out/profiles_{field_size}_{head_scatter_range}.png")
+                plt.savefig(f"out/profiles_{field_size}_{head_scatter_amplitude}.png")
                 plt.close()
                 # plt.show()
             
             del machine_config, dose_engine, dose, phantom
-        # print(f"Scatter amplitude: {mlc_leakage_amplitude}\tScatter range: {mlc_leakage_range_mm}\tResults: {np.mean(results)}")
+        print(f"Penumbra size: {head_scatter_amplitude}\t\tResults: {np.mean(results)}")
 
                 
