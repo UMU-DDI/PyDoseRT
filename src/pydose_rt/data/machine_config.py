@@ -77,11 +77,9 @@ class MachineConfig(BaseSettings):
         default=1.0,
         description="Width of tongue-and-groove region in mm (typical: 1-2)",
     )
-
     tpr_20_10: float = Field(
         description="The tissue phantom ratio TPR20/10"
     )
-
     calibration_mu: float = Field(
         default=100,
         description="The mu value for dose calibration in water."
@@ -89,10 +87,9 @@ class MachineConfig(BaseSettings):
     mean_photon_energy_MeV: float = Field(
         default=10.0, description="Mean photon energy in MeV"
     )
-
     leaf_widths: Optional[list[float]] = Field(
-        default=None, description="A list of the leaf widths" )
-        
+        default=None, description="A list of the leaf widths" 
+    )
     number_of_leaf_pairs: int = Field(description="The number of leafs")
 
     
@@ -191,10 +188,10 @@ class MachineConfig(BaseSettings):
             ),
         )
 
-    model_config = SettingsConfigDict(
-        env_prefix="AUTOPLAN_DM_",
-        case_sensitive=False,
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    # model_config = SettingsConfigDict(
+    #     env_prefix="AUTOPLAN_DM_",
+    #     case_sensitive=False,
+    #     env_file=".env",
+    #     env_file_encoding="utf-8",
+    #     extra="ignore",
+    # )
