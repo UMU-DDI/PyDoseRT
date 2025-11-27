@@ -25,7 +25,7 @@ class Patient:
     structures: Optional[dict[str, torch.Tensor]] = field(default_factory=dict)
     dose: Optional[torch.Tensor] = None
 
-    def __init__(self, ct_tensor=None, attenuation_tensor = None, structures: Optional[dict[str, torch.Tensor]] = dict(), dose: torch.Tensor = None, resolution=None):
+    def __init__(self, ct_tensor=None, attenuation_tensor = None, structures: Optional[dict[str, torch.Tensor]] = dict(), dose: torch.Tensor = None, resolution=None) -> 'Patient':
         self._resolution = resolution
         self._ct_tensor = self.set_resolution(ct_tensor) if ct_tensor is not None else None
         self._attenuation_tensor = self.set_resolution(attenuation_tensor) if attenuation_tensor is not None else None

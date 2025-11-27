@@ -66,96 +66,6 @@ def compute_l2_loss(dose_pred, masks, region_weights=None, number_regions=1):
     total_loss = torch.stack(loss_list).sum()
     return total_loss * number_regions
 
-
-# ======================================================================================
-# dvh loss
-# ======================================================================================
-
-
-class DVHLoss:
-    def __init__(self, constraints, k=1000, masks=None, region_weights=None):
-        self.lower_bound_gy = constraints["lower_bound_gy"]
-        self.higher_bound_gy = constraints["higher_bound_gy"]
-        self.lower_bound_target_percent = constraints["lower_bound_target_percent"]
-        self.higher_bound_target_percent = constraints["higher_bound_target_percent"]
-        self.k = k
-        self.masks = masks
-        self.region_weights = region_weights
-
-    def soft_fraction_above(self, dose, mask, threshold):
-        if not torch.is_tensor(threshold):
-            threshold = torch.tensor(threshold, dtype=dose.dtype, device=dose.device)
-        else:
-            threshold = threshold.to(dose.device, dtype=dose.dtype)
-        soft_indicator = torch.sigmoid(self.k * (dose - threshold))
-        numerator = (soft_indicator * mask).sum(dim=(2, 3, 4))
-        denominator = mask.sum(dim=(2, 3, 4)) + 1e-8
-        fraction = numerator / denominator  # shape: [B, 1]
-        return fraction.squeeze(1)  # shape: [B]
-
-    def get(self, y_true, y_pred, factor=100):
-        if self.masks is None:
-            raise ValueError("Masks dictionary must be provided.")
-
-        loss_lower_bound_target = []
-        loss_higher_bound_target = []
-        weight_list = []
-
-        for region, mask in self.masks.items():
-            if self.region_weights is not None:
-                if isinstance(self.region_weights, dict):
-                    weight = (mask * self.region_weights[region]).max()
-                else:
-                    weight = (mask * self.region_weights).max()
-            else:
-                weight = 1.0
-            weight_list.append(weight)
-
-            lb_target = self.lower_bound_target_percent.get(region, 0) / factor
-            lb_gy = self.lower_bound_gy.get(region, None)
-            if lb_gy is None:
-                raise ValueError(f"Lower bound Gy not provided for region {region}")
-            frac_lb = self.soft_fraction_above(y_pred, mask, lb_gy)
-            # Ensure lb_target is a tensor on the same device as frac_lb
-            if not torch.is_tensor(lb_target):
-                lb_target = torch.tensor(
-                    lb_target, dtype=frac_lb.dtype, device=frac_lb.device
-                )
-            else:
-                lb_target = lb_target.to(frac_lb.device, dtype=frac_lb.dtype)
-            loss_lb = (F.relu(lb_target - frac_lb)) ** 2
-            loss_lb = loss_lb * weight
-            loss_lower_bound_target.append(loss_lb.mean())
-
-            hb_target = self.higher_bound_target_percent.get(region, 1) / factor
-            hb_gy = self.higher_bound_gy.get(region, None)
-            if hb_gy is None:
-                raise ValueError(f"Higher bound Gy not provided for region {region}")
-            frac_hb = self.soft_fraction_above(y_pred, mask, hb_gy)
-            # Ensure hb_target is a tensor on the same device as frac_hb
-            if not torch.is_tensor(hb_target):
-                hb_target = torch.tensor(
-                    hb_target, dtype=frac_hb.dtype, device=frac_hb.device
-                )
-            else:
-                hb_target = hb_target.to(frac_hb.device, dtype=frac_hb.dtype)
-            # SAT: I replaced this original line:
-            # loss_hb = (F.relu(frac_hb - (1 - hb_target))) ** 2
-            loss_hb = F.relu(frac_hb - hb_target)**2
-            loss_hb = loss_hb * weight
-            loss_higher_bound_target.append(loss_hb.mean())
-
-        loss_lower_bound_target = torch.stack(loss_lower_bound_target).sum()
-        loss_higher_bound_target = torch.stack(loss_higher_bound_target).sum()
-
-        weight_sum = sum(weight_list)
-        if weight_sum == 0:
-            weight_sum = 1.0
-        loss_lower_bound_target = loss_lower_bound_target / weight_sum
-        loss_higher_bound_target = loss_higher_bound_target / weight_sum
-        return loss_lower_bound_target, loss_higher_bound_target
-
-
 # ======================================================================================
 # mu loss
 # ======================================================================================
@@ -358,7 +268,7 @@ def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, b
 def leaf_range_loss(leafs, field_size=400, threshold_mm=150.0):
     """
     Penalize leaf tip differences (max - min) that exceed threshold.
-    
+
     Args:
         leafs: [B, 2, CP, num_leafs] - leaf positions (normalized 0-1)
         config: machine config with field_size
@@ -366,14 +276,170 @@ def leaf_range_loss(leafs, field_size=400, threshold_mm=150.0):
     """
     # Convert threshold from mm to normalized units
     threshold_normalized = threshold_mm / field_size
-    
+
     # Compute range (max - min) for each leaf bank
     bank0_range = leafs[..., 0].max() - leafs[..., 0].min()
     bank1_range = leafs[..., 1].max() - leafs[..., 1].min()
-    
+
     # Penalize when range exceeds threshold
     # Using ReLU so we only penalize violations, and squaring for smooth gradients
     bank0_violation = torch.nn.LeakyReLU(negative_slope=0.01)(bank0_range - threshold_normalized) ** 2
     bank1_violation = torch.nn.LeakyReLU(negative_slope=0.01)(bank1_range - threshold_normalized) ** 2
-    
+
     return bank0_violation + bank1_violation
+
+
+# ======================================================================================
+# DVH Percentile Loss - Top-k volume targeting
+# ======================================================================================
+
+def dvh_percentile_loss(
+    dose_pred: torch.Tensor,
+    structure_mask: torch.Tensor,
+    target_dose: float,
+    volume_percent: float,
+    constraint_type: str = "at_least",
+    temperature: float = 0.1
+) -> torch.Tensor:
+    """
+    Loss that targets a specific percentile of the DVH curve (Dx%).
+
+    Selects the top-k% of voxels by dose and pushes them toward a target.
+    This is more precise than whole-structure losses for DVH optimization.
+
+    Args:
+        dose_pred: Predicted dose [B, 1, D, H, W] or [B, D, H, W]
+        structure_mask: Binary mask [B, 1, D, H, W] or [B, D, H, W]
+        target_dose: Target dose in Gy
+        volume_percent: Volume percentage (0-100).
+                       95.0 means "dose at 95% of volume" (D95%)
+                       0.0 means "maximum dose" (Dmax)
+        constraint_type: 'at_least' (for targets) or 'at_most' (for OARs)
+        temperature: Softness of top-k selection (lower = harder selection)
+
+    Returns:
+        Scalar loss tensor
+
+    Example:
+        # Push D95% of PTV to be >= prescription dose
+        loss = dvh_percentile_loss(dose, ptv_mask, 42.7, 95.0, "at_least")
+
+        # Push Dmax of bladder to be <= tolerance dose
+        loss = dvh_percentile_loss(dose, bladder_mask, 45.0, 0.0, "at_most")
+
+        # Push D2% of PTV to be <= hot spot limit
+        loss = dvh_percentile_loss(dose, ptv_mask, 45.7, 2.0, "at_most")
+    """
+    # Ensure inputs have channel dimension
+    if dose_pred.ndim == 4:
+        dose_pred = dose_pred.unsqueeze(1)
+    if structure_mask.ndim == 4:
+        structure_mask = structure_mask.unsqueeze(1)
+
+    # Extract doses within structure
+    structure_doses = dose_pred * structure_mask
+
+    # Flatten spatial dimensions
+    B, C = structure_doses.shape[:2]
+    structure_doses_flat = structure_doses.view(B, C, -1)  # [B, C, N]
+    structure_mask_flat = structure_mask.view(B, C, -1)  # [B, C, N]
+
+    # Count voxels in structure
+    n_voxels = structure_mask_flat.sum(dim=-1, keepdim=True).clamp(min=1)  # [B, C, 1]
+
+    # Calculate how many voxels to select
+    # For D95%, select top 5% (100-95)
+    # For Dmax, select top 0.1% (to be differentiable)
+    percentile_to_select = max(100.0 - volume_percent, 0.1)
+    k_voxels = torch.ceil(n_voxels * percentile_to_select / 100.0).long()  # [B, C, 1]
+
+    # Soft top-k selection using temperature-scaled softmax
+    # Higher doses get higher weights
+    weights = torch.softmax(structure_doses_flat / temperature, dim=-1)  # [B, C, N]
+    weights = weights * structure_mask_flat  # Only in structure
+    weights = weights / (weights.sum(dim=-1, keepdim=True) + 1e-8)  # Renormalize
+
+    # Weighted dose at this percentile
+    dose_at_percentile = (structure_doses_flat * weights).sum(dim=-1)  # [B, C]
+
+    # Target dose as tensor
+    if not torch.is_tensor(target_dose):
+        target_dose = torch.tensor(target_dose, dtype=dose_pred.dtype, device=dose_pred.device)
+
+    # Compute loss based on constraint type
+    if constraint_type == "at_least":
+        # For targets: penalize if dose is below target
+        # D95% >= target means we want dose_at_95% to be high
+        loss = F.relu(target_dose - dose_at_percentile) ** 2
+    else:  # at_most
+        # For OARs: penalize if dose exceeds target
+        # Dmax <= target means we want maximum dose to be low
+        loss = F.relu(dose_at_percentile - target_dose) ** 2
+
+    return loss.mean()
+
+
+def dvh_volume_at_dose_loss(
+    dose_pred: torch.Tensor,
+    structure_mask: torch.Tensor,
+    dose_threshold: float,
+    target_volume_percent: float,
+    constraint_type: str = "at_most",
+    temperature: float = 10.0
+) -> torch.Tensor:
+    """
+    Loss for volume-at-dose constraints (Vx Gy).
+
+    Computes the volume receiving at least a certain dose and compares to target.
+
+    Args:
+        dose_pred: Predicted dose [B, 1, D, H, W] or [B, D, H, W]
+        structure_mask: Binary mask [B, 1, D, H, W] or [B, D, H, W]
+        dose_threshold: Dose threshold in Gy
+        target_volume_percent: Target volume percentage (0-100)
+        constraint_type: 'at_most' (typical for OARs) or 'at_least' (rare)
+        temperature: Softness of threshold (higher = softer sigmoid)
+
+    Returns:
+        Scalar loss tensor
+
+    Example:
+        # V40Gy <= 15% for bladder
+        loss = dvh_volume_at_dose_loss(dose, bladder_mask, 40.0, 15.0, "at_most")
+
+        # V95% of prescription >= 99% for PTV
+        loss = dvh_volume_at_dose_loss(dose, ptv_mask, 40.6, 99.0, "at_least")
+    """
+    # Ensure inputs have channel dimension
+    if dose_pred.ndim == 4:
+        dose_pred = dose_pred.unsqueeze(1)
+    if structure_mask.ndim == 4:
+        structure_mask = structure_mask.unsqueeze(1)
+
+    # Convert dose threshold to tensor
+    if not torch.is_tensor(dose_threshold):
+        dose_threshold = torch.tensor(dose_threshold, dtype=dose_pred.dtype, device=dose_pred.device)
+
+    # Soft indicator: voxels above threshold
+    soft_indicator = torch.sigmoid(temperature * (dose_pred - dose_threshold))
+
+    # Volume fraction above threshold
+    numerator = (soft_indicator * structure_mask).sum(dim=(2, 3, 4))  # [B, C]
+    denominator = structure_mask.sum(dim=(2, 3, 4)).clamp(min=1)  # [B, C]
+    volume_fraction = (numerator / denominator) * 100.0  # Convert to percentage
+
+    # Target volume as tensor
+    if not torch.is_tensor(target_volume_percent):
+        target_volume_percent = torch.tensor(
+            target_volume_percent, dtype=dose_pred.dtype, device=dose_pred.device
+        )
+
+    # Compute loss based on constraint type
+    if constraint_type == "at_most":
+        # V40Gy <= 15% means we want volume_fraction to be low
+        loss = F.relu(volume_fraction - target_volume_percent) ** 2
+    else:  # at_least
+        # V42.7Gy >= 99% means we want volume_fraction to be high
+        loss = F.relu(target_volume_percent - volume_fraction) ** 2
+
+    return loss.mean()

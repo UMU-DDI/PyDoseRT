@@ -35,6 +35,9 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
     dtype = dtype
     downsampling_factor = (1, 2, 2)
 
+    patient = patient.to(device).to(dtype)
+    beam_sequence = beam_sequence.to(device).to(dtype)
+
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
 
     # ref_dose, calibration_factor = validate_unit_dose(machine_config, patient, 110, 1, downsampling_factor, device, dtype)
@@ -42,16 +45,8 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
     #     print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
     #     machine_config.mean_photon_energy_MeV = calibration_factor
         
-    ct_image = patient.density_image
-    dose = patient.dose
-    masks = patient.structures
-
-    dose_volume = dose
-    ct_volume = ct_image
-    external_mask = masks["External"]
-    ct_volume = np.where(external_mask, ct_volume, -1000.0)
-
-    ct_slices = np.array(np.expand_dims(ct_volume, 0))
+    ct_volume = patient.get_masked_ct("External").unsqueeze(0)
+    dose_target = patient.get_masked_dose("External").cpu().detach().numpy()
 
     dose_layer = DoseEngine(machine_config=machine_config,
                             kernel_size=kernel_size,
@@ -59,14 +54,10 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
                             beam_template=beam_sequence,
                             downsampling_factor=downsampling_factor)
 
-    dose_pred = dose_layer.compute_beam_sequence(beam_sequence, ct_image=torch.tensor(ct_slices, dtype=dose_layer.dtype, device=device))
+    dose_pred = dose_layer.compute_dose(beam_sequence, ct_image=ct_volume)
+    dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
     dose_pred = dose_pred.cpu().detach().numpy()
 
-
-    dose_pred = np.where(external_mask, dose_pred, 0.0)
-    scale = np.quantile(dose_volume[masks["CTV"] > 0], 0.9) / np.quantile(dose_pred[0, masks["CTV"] > 0], 0.9)
-    dose_pred = dose_pred * scale
-    mae_map = np.abs(dose_pred[0] - dose_volume[0].cpu().detach().numpy())
-    actual = np.mean(mae_map[masks["External"] > 0])
+    actual = np.mean(np.abs(dose_target - dose_pred))
 
     assert expected >= actual, "The dose engine did not perform well enough for real plan."
