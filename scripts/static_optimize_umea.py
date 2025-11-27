@@ -148,7 +148,7 @@ for test_i in range(n_tests):
         
         patience = 0
         epoch = 0
-        lr = 10**np.random.uniform(-3, 0) # 0.1
+        lr = 10**np.random.uniform(-2, 1) # 0.1
         lr_decay = 1e-4
         optimizer = torch.optim.AdamW(beam_sequence.parameters(), lr=lr, weight_decay=lr_decay)
 
