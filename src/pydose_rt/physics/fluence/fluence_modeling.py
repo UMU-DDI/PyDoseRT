@@ -205,72 +205,6 @@ def apply_head_scatter(fluence, scatter_amplitude=0.035, scatter_range_mm=150.0,
 
 
 
-def apply_tongue_and_groove(fluence, leaf_boundaries_mm, field_size_mm,
-                            tg_reduction=0.08, tg_width_mm=1.0, pixel_size_mm=1.0):
-    """
-    Apply tongue-and-groove effect at MLC leaf boundaries.
-
-    Physical basis:
-    - Leaf sides have tongue-and-groove interlocking design
-    - Creates 5-10% reduction in fluence at leaf boundaries
-    - Width typically 1-2mm
-    - Reduces interleaf leakage but creates dead zones
-
-    Args:
-        fluence: [B, 1, H, W] fluence map
-        leaf_boundaries_mm: List of leaf boundary positions in mm (H coordinates)
-        field_size_mm: Total field size in H direction (mm)
-        tg_reduction: Fractional reduction at leaf boundary (unitless, typical: 0.05-0.10)
-        tg_width_mm: Width of tongue-and-groove region (mm, typical: 1-2)
-        pixel_size_mm: Pixel size in fluence map
-
-    Returns:
-        fluence_with_tg: [B, 1, H, W] fluence map with T&G effect applied
-    """
-    B, _, H, W = fluence.shape
-    device = fluence.device
-
-
-    # Create T&G mask
-    tg_mask = torch.ones((1, 1, H, 1), device=device, dtype=fluence.dtype)
-
-
-    # Convert leaf boundaries to pixel coordinates
-    pixel_per_mm = 1.0 / pixel_size_mm
-    field_center_pixel = H / 2.0
-
-
-    # For each leaf boundary, apply reduction
-    for boundary_mm in leaf_boundaries_mm:
-        # Convert mm to pixel index (centered)
-        boundary_pixel = field_center_pixel + boundary_mm * pixel_per_mm
-
-
-        # Create Gaussian reduction centered at boundary
-        h_coords = torch.arange(H, device=device, dtype=fluence.dtype)
-        dist_from_boundary = torch.abs(h_coords - boundary_pixel)
-
-
-        # Gaussian profile with width tg_width_mm
-        sigma_pixels = (tg_width_mm * pixel_per_mm) / 2.355  # FWHM to sigma
-        reduction_profile = tg_reduction * torch.exp(-dist_from_boundary**2 / (2 * sigma_pixels**2))
-        reduction_profile = reduction_profile.view(1, 1, H, 1)
-
-
-        tg_mask = tg_mask - reduction_profile
-
-
-    # Clamp mask to [0, 1]
-    tg_mask = torch.clamp(tg_mask, min=0.0, max=1.0)
-
-
-    # Apply T&G mask to fluence
-    fluence_with_tg = fluence * tg_mask
-
-
-    return fluence_with_tg
-
-
 # ============================================================================
 # Precomputation functions for efficient forward passes
 # ============================================================================
@@ -373,47 +307,6 @@ def precompute_head_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float
     return kernel_1d
 
 
-def precompute_tongue_and_groove_mask(leaf_boundaries_mm: list, field_size_mm: float,
-                                      tg_reduction: float, tg_width_mm: float,
-                                      pixel_size_mm: float, H: int,
-                                      device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    """
-    Precompute the tongue-and-groove reduction mask.
-
-    Args:
-        leaf_boundaries_mm: List of leaf boundary positions in mm
-        field_size_mm: Total field size in H direction (mm)
-        tg_reduction: Fractional reduction at leaf boundary
-        tg_width_mm: Width of tongue-and-groove region (mm)
-        pixel_size_mm: Pixel size in fluence map
-        H: Height of fluence map in pixels
-        device: Device to create mask on
-        dtype: Data type for mask
-
-    Returns:
-        tg_mask: [1, 1, H, 1] reduction mask
-    """
-    tg_mask = torch.ones((1, 1, H, 1), device=device, dtype=dtype)
-
-    pixel_per_mm = 1.0 / pixel_size_mm
-    field_center_pixel = H / 2.0
-
-    for boundary_mm in leaf_boundaries_mm:
-        boundary_pixel = field_center_pixel + boundary_mm * pixel_per_mm
-
-        h_coords = torch.arange(H, device=device, dtype=dtype)
-        dist_from_boundary = torch.abs(h_coords - boundary_pixel)
-
-        sigma_pixels = (tg_width_mm * pixel_per_mm) / 2.355
-        reduction_profile = tg_reduction * torch.exp(-dist_from_boundary**2 / (2 * sigma_pixels**2))
-        reduction_profile = reduction_profile.view(1, 1, H, 1)
-
-        tg_mask = tg_mask - reduction_profile
-
-    tg_mask = torch.clamp(tg_mask, min=0.0, max=1.0)
-
-    return tg_mask
-
 
 # ============================================================================
 # Fast application functions using precomputed kernels/masks
@@ -495,19 +388,6 @@ def apply_precomputed_head_scatter(fluence: torch.Tensor, kernel: torch.Tensor,
     fluence_with_head_scatter = fluence + scatter_amplitude * scatter_contribution * field_size_factor
     return fluence_with_head_scatter
 
-
-def apply_precomputed_tongue_and_groove(fluence: torch.Tensor, tg_mask: torch.Tensor) -> torch.Tensor:
-    """
-    Apply tongue-and-groove effect using precomputed mask.
-
-    Args:
-        fluence: [B, 1, H, W] fluence map
-        tg_mask: [1, 1, H, 1] precomputed T&G mask
-
-    Returns:
-        fluence_with_tg: [B, 1, H, W] fluence map with T&G effect
-    """
-    return fluence * tg_mask
 
 def make_interpolator(point_dict):
     # Sort keys and values into tensors

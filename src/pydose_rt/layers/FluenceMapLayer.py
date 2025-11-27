@@ -27,11 +27,9 @@ from pydose_rt.physics.fluence.fluence_modeling import (
     precompute_source_penumbra_kernel,
     precompute_mlc_leakage_kernel,
     precompute_head_scatter_kernel,
-    precompute_tongue_and_groove_mask,
     apply_precomputed_kernel,
     apply_precomputed_mlc_leakage,
     apply_precomputed_head_scatter,
-    apply_precomputed_tongue_and_groove,
     make_interpolator
 )
 
@@ -144,37 +142,6 @@ class FluenceMapLayer(nn.Module):
         else:
             self.head_scatter_kernel = None
 
-        # Precompute tongue-and-groove mask if reduction > 0
-        if self.machine_config.tongue_groove_reduction > 0:
-            # Calculate leaf boundary positions
-            leaf_boundaries_mm = []
-            if self.machine_config.leaf_widths is not None:
-                cumulative_pos = -self.field_size[0] / 2.0
-                for width in self.machine_config.leaf_widths[:-1]:
-                    cumulative_pos += width
-                    leaf_boundaries_mm.append(cumulative_pos)
-            else:
-                # Uniform leaf widths
-                n_leaves = self.machine_config.number_of_leaf_pairs
-                leaf_width = self.field_size[0] / n_leaves
-                for i in range(1, n_leaves):
-                    boundary_pos = -self.field_size[0] / 2.0 + i * leaf_width
-                    leaf_boundaries_mm.append(boundary_pos)
-
-            tg_mask = precompute_tongue_and_groove_mask(
-                leaf_boundaries_mm=leaf_boundaries_mm,
-                field_size_mm=self.field_size[0],
-                tg_reduction=self.machine_config.tongue_groove_reduction,
-                tg_width_mm=self.machine_config.tongue_groove_width_mm,
-                pixel_size_mm=1.0,
-                H=self.field_size[0],
-                device=self.device,
-                dtype=self.dtype
-            )
-            self.register_buffer("tg_mask", tg_mask)
-        else:
-            self.tg_mask = None
-
 
     def forward(
         self, leaf_positions: torch.Tensor, 
@@ -244,13 +211,6 @@ class FluenceMapLayer(nn.Module):
         # ============================================================================
         # Apply precomputed physics augmentation effects
         # ============================================================================
-
-        # Apply tongue-and-groove effect using precomputed mask
-        if self.tg_mask is not None:
-            fluence_map = apply_precomputed_tongue_and_groove(
-                fluence_map,
-                tg_mask=self.tg_mask
-            ).to(self.dtype)
 
         # Apply source penumbra using precomputed kernel
         fluence_map = apply_precomputed_kernel(

@@ -69,14 +69,6 @@ class MachineConfig(BaseSettings):
         default=None,
         description="Head scatter measurements in the jaw direction."
     )
-    tongue_groove_reduction: float = Field(
-        default=0.0,
-        description="Tongue-and-groove fractional reduction at leaf boundaries (typical: 0.05-0.10)",
-    )
-    tongue_groove_width_mm: float = Field(
-        default=1.0,
-        description="Width of tongue-and-groove region in mm (typical: 1-2)",
-    )
     tpr_20_10: float = Field(
         description="The tissue phantom ratio TPR20/10"
     )
@@ -187,11 +179,3 @@ class MachineConfig(BaseSettings):
                 dtype=np.float32,
             ),
         )
-
-    # model_config = SettingsConfigDict(
-    #     env_prefix="AUTOPLAN_DM_",
-    #     case_sensitive=False,
-    #     env_file=".env",
-    #     env_file_encoding="utf-8",
-    #     extra="ignore",
-    # )
