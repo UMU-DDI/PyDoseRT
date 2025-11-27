@@ -433,11 +433,13 @@ class DoseEngine:
         self._add_beam_information(beam_sequence, overwrite=True)
         return total_dose
 
-    def calibrate(self, calibration_mu: float = None) -> None: # Keep in dose engine
+    def calibrate(self, 
+                  calibration_mu: float = None,
+                  original_beam_template: BeamSequence | None = None) -> None: # Keep in dose engine
         if not self.layers_initialized:
             raise Exception("Layers must be fully initialized for calibration.")
-        
-        center_x, center_y, center_z = torch.divide(self.input_shape, 2).astype(torch.int32)
+
+        center_x, center_y, center_z = tuple(s // 2 for s in self.input_shape)
         iso_y = - (100 - center_y * self.input_resolution[1])
         center_y_iso = center_y - int(iso_y / self.input_resolution[1])
         iso_center = (0.0, iso_y, 0.0)
@@ -445,20 +447,27 @@ class DoseEngine:
         if calibration_mu is None:
             calibration_mu = self.machine_config.calibration_mu
         beam.mu = calibration_mu * beam.mu
-        
+        water_attenuation = torch.ones(self.input_shape).to(self.device).to(self.dtype)
         # Calculate dose
-        dose = self.compute_single_beam(
-            beam
+
+        dose = self.compute_dose(
+            beam,
+            ct_image=water_attenuation,
+            overwrite=True
             )
 
         # Get center dose (at 10cm depth - index 50 for 100 voxels)
-        center_dose = dose[0, center_x, center_y_iso, center_z].detach().cpu().numpy()
+        center_dose = dose[0, center_x, center_y_iso, center_z].detach().cpu().numpy().item()
 
         # Calculate calibration factor
         # This gives the factor to normalize to 1 Gy per MU at reference conditions
         calibration_factor = self.machine_config.mean_photon_energy_MeV / center_dose
 
-        if (torch.abs(center_dose - 1.0) > 0.001):
+        if (abs(center_dose - 1.0) > 0.001):
             print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
-        pass
+
+        if original_beam_template is not None:
+            self._add_beam_information(original_beam_template)
+        else:
+            self.layers_initialized = False
