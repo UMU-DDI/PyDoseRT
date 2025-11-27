@@ -250,7 +250,7 @@ for test_i in range(n_tests):
         beam_sequence.mus = pred_mus_valid
         beam_sequence.jaw_positions = pred_jaws_valid
 
-        results = result_validation(patient.to('cpu'), machine_config, beam_sequence.to('cpu'), dose_pred[0].to('cpu'), optimization, compute_gamma=False, compute_clinical_criteria=True)
+        results = result_validation(patient, machine_config, beam_sequence.to('cpu'), dose_pred[0].to('cpu'), optimization, compute_gamma=False, compute_clinical_criteria=True)
         experiment.log_metrics(
             {
                 "results": results,

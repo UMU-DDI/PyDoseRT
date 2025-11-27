@@ -535,65 +535,81 @@ def result_validation(patient: Patient,
     if compute_clinical_criteria:
         prescription_gy = 6.1
         pred_dose_np = pred_dose.cpu().detach().numpy()
+        passed_tests = 0
 
         clinical_results = dict()
         
         # 1. At least 38.43 Gy dose at 99.00% volume (D99% >= 90%)
         ratio = dose_at_volume_min(pred_dose_np, patient.structures['PTVT_42.7'], 99.0, 90.0, prescription_gy)
         clinical_results["PTV_D99% >= 90%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
-        # 2. At most 45.69 Gy dose at 2.00% volume (D2% <= 107%)
+        # 2. At most 45.69 Gy dose at 2.00% volume (D2% <= 105%)
         ratio = dose_at_volume_max(pred_dose_np, patient.structures['PTVT_42.7'], 2.0, 105.0, prescription_gy)
-        clinical_results["PTV_D2% <= 107%"] = ratio
+        clinical_results["PTV_D2% <= 105%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 1. At most 15.00% volume at 38.50 Gy dose (V90.16% <= 15%)
         ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 90.0, 15.0, prescription_gy)
-        clinical_results["Bladder_V90.16% <= 15%"] = ratio
+        clinical_results["Bladder_V90% <= 15%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 2. At most 35.00% volume at 32.00 Gy dose (V74.94% <= 35%)
         ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 75.0, 35.0, prescription_gy)
-        clinical_results["Bladder_V74.94% <= 35%"] = ratio
+        clinical_results["Bladder_V75% <= 35%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 3. At most 40.00% volume at 28.00 Gy dose (V65.57% <= 40%)
         ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 65.0, 40.0, prescription_gy)
-        clinical_results["Bladder_V65.57% <= 40%"] = ratio
+        clinical_results["Bladder_V65% <= 40%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 4. At most 50.00% volume at 24.50 Gy dose (V57.38% <= 50%)
         ratio = volume_at_dose_max(pred_dose_np, patient.structures['Bladder'], 57.5, 50.0, prescription_gy)
-        clinical_results["Bladder_V57.38% <= 50%"] = ratio
+        clinical_results["Bladder_V57.5% <= 50%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 5. At most 45.00 Gy dose at 0% volume (Dmax <= 105.39%)
-        ratio = dose_at_volume_max(pred_dose_np, patient.structures['Bladder'], 0.01, 105.39, prescription_gy)
-        clinical_results["Bladder_Dmax <= 105.39%"] = ratio
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['Bladder'], 0.01, 105.0, prescription_gy)
+        clinical_results["Bladder_Dmax <= 105%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 1. At most 15.00% volume at 38.50 Gy dose (V90.16% <= 15%)
-        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 90.16, 15.0, prescription_gy)
-        clinical_results["Rectum_V90.16% <= 15%"] = ratio
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 90.0, 15.0, prescription_gy)
+        clinical_results["Rectum_V90% <= 15%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 2. At most 35.00% volume at 32.00 Gy dose (V74.94% <= 35%)
-        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 74.94, 35.0, prescription_gy)
-        clinical_results["Rectum_V74.94% <= 35%"] = ratio
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 75.0, 35.0, prescription_gy)
+        clinical_results["Rectum_V75% <= 35%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 3. At most 40.00% volume at 28.00 Gy dose (V65.57% <= 40%)
-        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 65.57, 40.0, prescription_gy)
-        clinical_results["Rectum_V65.57% <= 40%"] = ratio
+        ratio = volume_at_dose_max(pred_dose_np, patient.structures['Rectum'], 65.0, 40.0, prescription_gy)
+        clinical_results["Rectum_V65% <= 40%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 4. At most 45.00 Gy dose at 0% volume (Dmax <= 105.39%)
-        ratio = dose_at_volume_max(pred_dose_np, patient.structures['Rectum'], 0.01, 105.39, prescription_gy)
-        clinical_results["Rectum_Dmax <= 105.39%"] = ratio
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['Rectum'], 0.01, 105.0, prescription_gy)
+        clinical_results["Rectum_Dmax <= 105%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 1. At most 29.90 Gy dose at 0% volume (Dmax <= 70.02%)
-        ratio = dose_at_volume_max(pred_dose_np, patient.structures['FemoralHead_L'], 0.01, 70.02, prescription_gy)
-        clinical_results["FemoralHead_L_Dmax <= 70.02%"] = ratio
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['FemoralHead_L'], 0.01, 70.0, prescription_gy)
+        clinical_results["FemoralHead_L_Dmax <= 70%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 1. At most 29.90 Gy dose at 0% volume (Dmax <= 70.02%)
-        ratio = dose_at_volume_max(pred_dose_np, patient.structures['FemoralHead_R'], 0.01, 70.02, prescription_gy)
-        clinical_results["FemoralHead_R_Dmax <= 70.02%"] = ratio
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['FemoralHead_R'], 0.01, 70.0, prescription_gy)
+        clinical_results["FemoralHead_R_Dmax <= 70%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
         
         # 1. At most 46.97 Gy dose at 0.01 cm³ volume (Dmax <= 110.02%)
-        ratio = dose_at_volume_max(pred_dose_np, patient.structures['External'], 0.01, 110.02, prescription_gy)
-        clinical_results["External_Dmax <= 110.02%"] = ratio
+        ratio = dose_at_volume_max(pred_dose_np, patient.structures['External'], 0.01, 110.0, prescription_gy)
+        clinical_results["External_Dmax <= 110%"] = ratio
+        passed_tests += 1 if ratio < 1.0 else 0
 
+        clinical_results["passed_test"] = passed_tests / 14
         results['clinical_criteria'] = clinical_results
         
     if compute_gamma:
