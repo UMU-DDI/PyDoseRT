@@ -209,7 +209,7 @@ def print_results(
     _imshow_fullwidth(ax, _dose_slice_axial(dose_pred.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, axial)')
-    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
+    for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
         roi = masks[idx]
         overlay_mask_outline(roi.cpu().detach().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
 
@@ -218,7 +218,7 @@ def print_results(
     _imshow_fullwidth(ax, _dose_slice_coronal(dose_pred.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, coronal)')
-    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
+    for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
         roi = masks[idx]
         overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
@@ -229,7 +229,7 @@ def print_results(
     _imshow_fullwidth(ax, _dose_slice_axial(y_dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, axial)')
-    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
+    for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
         roi = masks[idx]
         overlay_mask_outline(roi.cpu().detach().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
 
@@ -240,13 +240,13 @@ def print_results(
     _imshow_fullwidth(ax, _dose_slice_coronal(y_dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, coronal)')
-    for idx, color in enumerate([structure.color for structure in treatment.structures][:-1]):
+    for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
         roi = masks[idx]
         overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 10) DVH (line plot; same panel height as others for uniformity)
     ax = fig.add_subplot(gs[9])
-    for idx, (color, roi_name) in enumerate([(structure.color, structure.name) for structure in treatment.structures]):
+    for idx, (color, roi_name) in enumerate([(struct["color"], struct_name) for struct_name, struct in treatment.structures.items()]):
         roi = masks[idx]
         dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
@@ -257,7 +257,7 @@ def print_results(
         cumulative_hist_normalized = np.divide(cumulative_hist, cumulative_hist.max())
         ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="solid", label=roi_name, color=color)
 
-    for idx, color in enumerate([structure.color for structure in treatment.structures]):
+    for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()]):
         roi = masks[idx]
         dose_values = y_dose[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:

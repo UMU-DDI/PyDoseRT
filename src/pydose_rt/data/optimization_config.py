@@ -150,7 +150,6 @@ class OptimizationConfig:
 
         self.structures[structure]["clinical_criteria"].append(criterion)
 
-    @property
     def get_parameters(self, parameter_name: str) -> Dict[str, float]:
         """Get weights for all structures as a dict."""
         return {name: struct.get(parameter_name)
