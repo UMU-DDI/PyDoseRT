@@ -254,16 +254,35 @@ def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_
     return all_losses
 
 def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true, beam_sequence, weights):
+    dose_pred = dose_pred * 7
     raw_losses = []
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.1, 95.0, "at_least"), optimization.structures["PTVT_42.7"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.2, 100.0, "at_most"), optimization.structures["PTVT_42.7"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_L"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_L"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_R"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_R"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 5.5, 15.0, "at_most"), optimization.structures["Rectum"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 4, 40.0, "at_most"), optimization.structures["Rectum"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Bladder"], 4, 40.0, "at_most"), optimization.structures["Bladder"]["weight"]))
-    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[0, patient.structures["External"]])), optimization.structures["External"]["weight"]))
+    # PTV_Prostata_gol_4270
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 38.43, 99.0, "at_least"), optimization.structures["PTVT_42.7"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 45.69, 98.0, "at_most"), optimization.structures["PTVT_42.7"]["weight"]))
+
+
+    # Bladder
+    raw_losses.append(scale_loss(dvh_volume_at_dose_loss(dose_pred, patient.structures["Bladder"], 38.50, 15.00, "at_most"), optimization.structures["Bladder"]["weight"]))
+    raw_losses.append(scale_loss(dvh_volume_at_dose_loss(dose_pred, patient.structures["Bladder"], 32.00, 35.00, "at_most"), optimization.structures["Bladder"]["weight"]))
+    raw_losses.append(scale_loss(dvh_volume_at_dose_loss(dose_pred, patient.structures["Bladder"], 28.00, 40.00, "at_most"), optimization.structures["Bladder"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Bladder"], 45.00, 0.0, "at_most"), optimization.structures["Bladder"]["weight"]))
+    raw_losses.append(scale_loss(dvh_volume_at_dose_loss(dose_pred, patient.structures["Bladder"], 24.50, 50.00, "at_most"), optimization.structures["Bladder"]["weight"]))
+
+    # FemoralHead_L
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_L"], 29.90, 0.0, "at_most"), optimization.structures["FemoralHead_L"]["weight"]))
+
+    # FemoralHead_R
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_R"], 29.90, 0.0, "at_most"), optimization.structures["FemoralHead_R"]["weight"]))
+
+    # Rectum
+    raw_losses.append(scale_loss(dvh_volume_at_dose_loss(dose_pred, patient.structures["Rectum"], 38.50, 15.00, "at_most"), optimization.structures["Rectum"]["weight"]))
+    raw_losses.append(scale_loss(dvh_volume_at_dose_loss(dose_pred, patient.structures["Rectum"], 32.00, 35.00, "at_most"), optimization.structures["Rectum"]["weight"]))
+    raw_losses.append(scale_loss(dvh_volume_at_dose_loss(dose_pred, patient.structures["Rectum"], 28.00, 40.00, "at_most"), optimization.structures["Rectum"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 45.00, 0.0, "at_most"), optimization.structures["Rectum"]["weight"]))
     
+    # Body
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["External"], 46.97, 0.0, "at_most"), optimization.structures["External"]["weight"]))
+
     jaw_loss = torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))**2)
     bank_loss = leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap)
     raw_losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
@@ -349,8 +368,12 @@ def dvh_percentile_loss(
         loss = dvh_percentile_loss(dose, ptv_mask, 45.7, 2.0, "at_most")
     """
     # Ensure inputs have channel dimension
+    if dose_pred.ndim == 3:
+        dose_pred = dose_pred.unsqueeze(0)
     if dose_pred.ndim == 4:
         dose_pred = dose_pred.unsqueeze(1)
+    if structure_mask.ndim == 3:
+        structure_mask = structure_mask.unsqueeze(0)
     if structure_mask.ndim == 4:
         structure_mask = structure_mask.unsqueeze(1)
 
@@ -366,13 +389,14 @@ def dvh_percentile_loss(
     n_voxels = structure_mask_flat.sum(dim=-1, keepdim=True).clamp(min=1)  # [B, C, 1]
 
     # Calculate how many voxels to select
-    # For D95%, select top 5% (100-95)
-    # For Dmax, select top 0.1% (to be differentiable)
+    # For D95%, select bottom 5% (100-95)
+    # For Dmax, select top 0.1% (100-0)
     percentile_to_select = max(100.0 - volume_percent, 0.1)
-    k_voxels = torch.ceil(n_voxels * percentile_to_select / 100.0).long()  # [B, C, 1]
 
     # Soft top-k selection using temperature-scaled softmax
-    # Higher doses get higher weights
+    # Higher doses get higher weights (selects hot voxels)
+    # NOTE: This works for both "at_least" and "at_most" by pushing the hot end,
+    # which affects the overall distribution including the cold end
     weights = torch.softmax(structure_doses_flat / temperature, dim=-1)  # [B, C, N]
     weights = weights * structure_mask_flat  # Only in structure
     weights = weights / (weights.sum(dim=-1, keepdim=True) + 1e-8)  # Renormalize
@@ -385,14 +409,28 @@ def dvh_percentile_loss(
         target_dose = torch.tensor(target_dose, dtype=dose_pred.dtype, device=dose_pred.device)
 
     # Compute loss based on constraint type
+    # Use asymmetric smooth penalties that ALWAYS provide gradients
+    # This avoids dead zones where ReLU would give zero gradient
+
+    diff = dose_at_percentile - target_dose
+
     if constraint_type == "at_least":
-        # For targets: penalize if dose is below target
-        # D95% >= target means we want dose_at_95% to be high
-        loss = F.relu(target_dose - dose_at_percentile) ** 2
+        # For targets: D95% >= target
+        # Penalize heavily if below target, lightly if above
+        # This ensures we always have gradient to push toward target
+        loss = torch.where(
+            diff < 0,  # Below target (bad)
+            (-diff) ** 2,  # Heavy penalty
+            0.1 * diff ** 2  # Light penalty (still provides gradient)
+        )
     else:  # at_most
-        # For OARs: penalize if dose exceeds target
-        # Dmax <= target means we want maximum dose to be low
-        loss = F.relu(dose_at_percentile - target_dose) ** 2
+        # For OARs: Dmax <= target
+        # Penalize heavily if above target, lightly if below
+        loss = torch.where(
+            diff > 0,  # Above target (bad)
+            diff ** 2,  # Heavy penalty
+            0.1 * (-diff) ** 2  # Light penalty (still provides gradient)
+        )
 
     return loss.mean()
 
@@ -429,8 +467,12 @@ def dvh_volume_at_dose_loss(
         loss = dvh_volume_at_dose_loss(dose, ptv_mask, 40.6, 99.0, "at_least")
     """
     # Ensure inputs have channel dimension
+    if dose_pred.ndim == 3:
+        dose_pred = dose_pred.unsqueeze(0)
     if dose_pred.ndim == 4:
         dose_pred = dose_pred.unsqueeze(1)
+    if structure_mask.ndim == 3:
+        structure_mask = structure_mask.unsqueeze(0)
     if structure_mask.ndim == 4:
         structure_mask = structure_mask.unsqueeze(1)
 
@@ -453,11 +495,24 @@ def dvh_volume_at_dose_loss(
         )
 
     # Compute loss based on constraint type
+    # Use asymmetric smooth penalties that ALWAYS provide gradients
+    diff = volume_fraction - target_volume_percent
+
     if constraint_type == "at_most":
         # V40Gy <= 15% means we want volume_fraction to be low
-        loss = F.relu(volume_fraction - target_volume_percent) ** 2
+        # Penalize heavily if above target, lightly if below
+        loss = torch.where(
+            diff > 0,  # Above target (bad)
+            diff ** 2,  # Heavy penalty
+            0.1 * (-diff) ** 2  # Light penalty (still provides gradient)
+        )
     else:  # at_least
         # V42.7Gy >= 99% means we want volume_fraction to be high
-        loss = F.relu(target_volume_percent - volume_fraction) ** 2
+        # Penalize heavily if below target, lightly if above
+        loss = torch.where(
+            diff < 0,  # Below target (bad)
+            (-diff) ** 2,  # Heavy penalty
+            0.1 * diff ** 2  # Light penalty (still provides gradient)
+        )
 
     return loss.mean()

@@ -14,11 +14,11 @@ dtype=torch.float32
 do_plot = True
 
 penumbra_fwhms = [1.0]
-head_scatter_amplitudes = [0.1, 0.5, 1.0, 1.5, 2.0]
+head_scatter_amplitudes = [0.1]#, 0.5, 1.0, 1.5, 2.0]
 head_scatter_ranges = [30.0]
 mlc_leakage_amplitudes = [0.0]
 mlc_leakage_ranges = [1.0]
-field_sizes = [50, 100, 150, 200]
+field_sizes = [400]
 
 for penumbra_fwhm in penumbra_fwhms:
     for head_scatter_amplitude in head_scatter_amplitudes:
@@ -31,7 +31,7 @@ for penumbra_fwhm in penumbra_fwhms:
 
                         measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
                         measurements = [measurement for measurement in measurements if measurement["header_dict"]["FSZ"] == [str(field_size), str(field_size)]]
-                        measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][2]) == 100.0) and (float(measurement["header_dict"]["EDS"][2]) == 100.0)]
+                        # measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][2]) == 100.0) and (float(measurement["header_dict"]["EDS"][2]) == 100.0)]
 
                         resolution = (1.0, 1.0, 1.0)
                         ct_array_shape = (500, 500, 500)
@@ -39,8 +39,8 @@ for penumbra_fwhm in penumbra_fwhms:
                         phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)
                         number_of_beams=1
                         starting_angle=0
-                        iso_center=(0.0, 150.0, 0.0)
-                        kernel_size=501
+                        iso_center=(0.0, 149.5, 0.0)
+                        kernel_size=1001
                         beam = Beam.create(
                             gantry_angle_deg=0.0, 
                             number_of_leaf_pairs=60, 
