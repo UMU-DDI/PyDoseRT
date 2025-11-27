@@ -471,3 +471,4 @@ class DoseEngine:
             self._add_beam_information(original_beam_template)
         else:
             self.layers_initialized = False
+            self.number_of_beams = None
