@@ -137,27 +137,42 @@ class Beam:
         """Return a new Beam with detached tensors (no gradient tracking)."""
         return Beam(
             gantry_angle=self.gantry_angle,
+            collimator_angle=self.collimator_angle,
             mu=self.mu.detach(),
             leaf_positions=self.leaf_positions.detach(),
             jaw_positions=self.jaw_positions.detach(),
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid,
+            ssd=self.ssd
         )
 
     def clone(self) -> Beam:
         """Return a deep copy of this Beam."""
         return Beam(
             gantry_angle=self.gantry_angle,
+            collimator_angle=self.collimator_angle,
             mu=self.mu.clone(),
             leaf_positions=self.leaf_positions.clone(),
             jaw_positions=self.jaw_positions.clone(),
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid,
+            ssd=self.ssd
         )
 
     def to(self, device: torch.device | str) -> Beam:
         """Move beam tensors to a different device."""
         return Beam(
             gantry_angle=self.gantry_angle,
+            collimator_angle=self.collimator_angle,
             mu=self.mu.to(device),
             leaf_positions=self.leaf_positions.to(device),
             jaw_positions=self.jaw_positions.to(device),
+            field_size=self.field_size,
+            iso_center=self.iso_center,
+            sid=self.sid,
+            ssd=self.ssd
         )
 
 
