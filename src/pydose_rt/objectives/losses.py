@@ -257,7 +257,6 @@ def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true
     raw_losses = []
     raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.1, 95.0, "at_least"), optimization.structures["PTVT_42.7"]["weight"]))
     raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.2, 100.0, "at_most"), optimization.structures["PTVT_42.7"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["CTVT"], 6.2, 100.0, "at_most"), optimization.structures["CTVT"]["weight"]))
     raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_L"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_L"]["weight"]))
     raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_R"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_R"]["weight"]))
     raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 5.5, 15.0, "at_most"), optimization.structures["Rectum"]["weight"]))
