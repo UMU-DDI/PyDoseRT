@@ -201,6 +201,7 @@ for test_i in range(n_tests):
             loss = optimizer.step(closure)   # returns the last loss the closure returned
             # scheduler.step(loss)
             raw_losses = latest["raw_losses"]
+            raw_loss_dict = {f"loss_{i+1}": v for i, v in enumerate(raw_losses)}
             dose_pred = latest["dose_pred"]
             loss_val = latest["loss_val"]
             beam_sequence = latest["beam_sequence"]
@@ -229,6 +230,7 @@ for test_i in range(n_tests):
                     "loss": loss.item(),
                     "dose_mae": mae_loss,
                     "lr": lr_now,
+                    **raw_loss_dict,
                 },
                 epoch=epoch,
             )
