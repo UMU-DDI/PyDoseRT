@@ -10,7 +10,7 @@ import math
 import torch
 from pydose_rt.data import Patient, OptimizationConfig, MachineConfig, loaders, BeamSequence
 from pydose_rt import DoseEngine
-from pydose_rt.objectives.losses import dvh_percentile_loss, dvh_volume_at_dose_loss, scale_loss
+from pydose_rt.objectives.losses import dvh_percentile_loss, dvh_volume_at_dose_loss, scale_loss, compute_dvh_loss
 from pydose_rt.layers import BeamValidationLayer
 from pydose_rt.utils.plotting import *
 from pydose_rt.physics.kernels.pencil_beam_model import *
@@ -159,7 +159,7 @@ for test_i in range(n_tests):
                 "lr_decay": lr_decay,
                 "weights": weights,
                 "physical_size": patient.physical_size,
-                "roi_weights": optimization.get_parameters("weights")
+                "roi_weights": optimization.get_parameters("weight")
             }, nested_support=True
         )
 
@@ -174,16 +174,7 @@ for test_i in range(n_tests):
             dose_pred = torch.where(patient.structures["External"], dose_pred, torch.zeros_like(dose_pred))
 
             # Compute loss
-            # raw_losses = compute_mae_loss(patient, optimization, machine_config, dose_pred, dose_target, beam_sequence, weights)
-            raw_losses = []
-            raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.1, 95.0, "at_least"), optimization.structures["PTVT_42.7"]["weight"]))
-            raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.2, 100.0, "at_most"), optimization.structures["PTVT_42.7"]["weight"]))
-            raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_L"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_L"]["weight"]))
-            raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_R"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_R"]["weight"]))
-            raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 5.5, 15.0, "at_most"), optimization.structures["Rectum"]["weight"]))
-            raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 4, 40.0, "at_most"), optimization.structures["Rectum"]["weight"]))
-            raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Bladder"], 4, 40.0, "at_most"), optimization.structures["Bladder"]["weight"]))
-            raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[0, patient.structures["External"]])), optimization.structures["External"]["weight"]))
+            raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_target, beam_sequence, weights)
             loss = torch.stack(raw_losses).sum()
             
             # Backprop

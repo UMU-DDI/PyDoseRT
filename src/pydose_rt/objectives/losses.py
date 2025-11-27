@@ -253,6 +253,25 @@ def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_
     ]
     return all_losses
 
+def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true, beam_sequence, weights):
+    raw_losses = []
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.1, 95.0, "at_least"), optimization.structures["PTVT_42.7"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["PTVT_42.7"], 6.2, 100.0, "at_most"), optimization.structures["PTVT_42.7"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["CTVT"], 6.2, 100.0, "at_most"), optimization.structures["CTVT"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_L"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_L"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["FemoralHead_R"], 4.2, 0.0, "at_most"), optimization.structures["FemoralHead_R"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 5.5, 15.0, "at_most"), optimization.structures["Rectum"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Rectum"], 4, 40.0, "at_most"), optimization.structures["Rectum"]["weight"]))
+    raw_losses.append(scale_loss(dvh_percentile_loss(dose_pred, patient.structures["Bladder"], 4, 40.0, "at_most"), optimization.structures["Bladder"]["weight"]))
+    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[0, patient.structures["External"]])), optimization.structures["External"]["weight"]))
+    
+    jaw_loss = torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))**2)
+    bank_loss = leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap)
+    raw_losses.append(scale_loss(jaw_loss, weights["leaf_complexity_loss"]))
+    raw_losses.append(scale_loss(bank_loss, weights["leaf_reg_loss"]))
+
+    return raw_losses
+
 def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, beam_sequence, weights):
     losses = []
     for name, mask in patient.structures.items():
