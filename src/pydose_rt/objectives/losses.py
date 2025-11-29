@@ -329,144 +329,88 @@ def leaf_range_loss(leafs, field_size=400, threshold_mm=150.0):
 # ======================================================================================
 # DVH Percentile Loss - Top-k volume targeting
 # ======================================================================================
+import math
+import torch
+import torch.nn.functional as F
 
-def dvh_percentile_loss(
+
+def dvh_percentile_objective(
     dose_pred: torch.Tensor,
     structure_mask: torch.Tensor,
-    target_dose: float,
     volume_percent: float,
-    constraint_type: str = "at_least",
-    temperature: float = 0.1
+    p_norm: float = 1.0,
 ) -> torch.Tensor:
     """
-    Loss that targets a specific percentile of the DVH curve (Dx%).
-
-    Selects the top-k% of voxels by dose and pushes them toward a target.
-    This is more precise than whole-structure losses for DVH optimization.
-
-    Args:
-        dose_pred: Predicted dose [B, 1, D, H, W] or [B, D, H, W]
-        structure_mask: Binary mask [B, 1, D, H, W] or [B, D, H, W]
-        target_dose: Target dose in Gy
-        volume_percent: Volume percentage (0-100).
-                       95.0 means "dose at 95% of volume" (D95%)
-                       0.0 means "maximum dose" (Dmax)
-        constraint_type: 'at_least' (for targets) or 'at_most' (for OARs)
-        temperature: Softness of top-k selection (lower = harder selection)
+    Pure objective for D_p% (dose at p% volume).
 
     Returns:
-        Scalar loss tensor
+        D_p^p_norm  (scalar tensor)
 
-    Example:
-        # Push D95% of PTV to be >= prescription dose
-        loss = dvh_percentile_loss(dose, ptv_mask, 42.7, 95.0, "at_least")
+    You control direction with a sign outside:
+        - to push D_p UP:   use   loss += -w * dvh_percentile_objective(...)
+        - to push D_p DOWN: use   loss += +w * dvh_percentile_objective(...)
 
-        # Push Dmax of bladder to be <= tolerance dose
-        loss = dvh_percentile_loss(dose, bladder_mask, 45.0, 0.0, "at_most")
-
-        # Push D2% of PTV to be <= hot spot limit
-        loss = dvh_percentile_loss(dose, ptv_mask, 45.7, 2.0, "at_most")
+    Args:
+        dose_pred:       [B, 1, D, H, W] or [B, D, H, W] or [D, H, W]
+        structure_mask:  same shape (0/1 or bool)
+        volume_percent:  p in [0,100], e.g. 99 -> D99%, 0 -> D0% (≈ Dmax)
+        p_norm:          exponent on D_p (1.0 = linear, 2.0 = quadratic, etc.)
     """
-    # Ensure inputs have channel dimension
+    # Ensure channel dimension
     if dose_pred.ndim == 3:
-        dose_pred = dose_pred.unsqueeze(0)
+        dose_pred = dose_pred.unsqueeze(0)       # [1, D, H, W]
     if dose_pred.ndim == 4:
-        dose_pred = dose_pred.unsqueeze(1)
+        dose_pred = dose_pred.unsqueeze(1)       # [B, 1, D, H, W]
     if structure_mask.ndim == 3:
         structure_mask = structure_mask.unsqueeze(0)
     if structure_mask.ndim == 4:
         structure_mask = structure_mask.unsqueeze(1)
 
-    # Extract doses within structure
-    structure_doses = dose_pred * structure_mask
+    # Extract structure voxels
+    structure_doses = dose_pred[structure_mask > 0]  # [N_voxels]
+    if structure_doses.numel() == 0:
+        return torch.tensor(0.0, device=dose_pred.device, dtype=dose_pred.dtype)
 
-    # Flatten spatial dimensions
-    B, C = structure_doses.shape[:2]
-    structure_doses_flat = structure_doses.view(B, C, -1)  # [B, C, N]
-    structure_mask_flat = structure_mask.view(B, C, -1)  # [B, C, N]
+    # Sort descending
+    sorted_doses, _ = torch.sort(structure_doses, descending=True)
+    N = sorted_doses.numel()
 
-    # Count voxels in structure
-    n_voxels = structure_mask_flat.sum(dim=-1, keepdim=True).clamp(min=1)  # [B, C, 1]
+    # Compute index for D_p%
+    p = float(volume_percent) / 100.0
+    p = max(0.0, min(1.0, p))
+    idx = int(math.ceil(p * N)) - 1
+    if idx < 0:
+        idx = 0
+    if idx >= N:
+        idx = N - 1
 
-    # Calculate how many voxels to select
-    # For D95%, select bottom 5% (100-95)
-    # For Dmax, select top 0.1% (100-0)
-    percentile_to_select = max(100.0 - volume_percent, 0.1)
-
-    # Soft top-k selection using temperature-scaled softmax
-    # Higher doses get higher weights (selects hot voxels)
-    # NOTE: This works for both "at_least" and "at_most" by pushing the hot end,
-    # which affects the overall distribution including the cold end
-    weights = torch.softmax(structure_doses_flat / temperature, dim=-1)  # [B, C, N]
-    weights = weights * structure_mask_flat  # Only in structure
-    weights = weights / (weights.sum(dim=-1, keepdim=True) + 1e-8)  # Renormalize
-
-    # Weighted dose at this percentile
-    dose_at_percentile = (structure_doses_flat * weights).sum(dim=-1)  # [B, C]
-
-    # Target dose as tensor
-    if not torch.is_tensor(target_dose):
-        target_dose = torch.tensor(target_dose, dtype=dose_pred.dtype, device=dose_pred.device)
-
-    # Compute loss based on constraint type
-    # Use asymmetric smooth penalties that ALWAYS provide gradients
-    # This avoids dead zones where ReLU would give zero gradient
-
-    diff = dose_at_percentile - target_dose
-
-    if constraint_type == "at_least":
-        # For targets: D95% >= target
-        # Penalize heavily if below target, lightly if above
-        # This ensures we always have gradient to push toward target
-        loss = torch.where(
-            diff < 0,  # Below target (bad)
-            (-diff) ** 2,  # Heavy penalty
-            0.1 * diff ** 2  # Light penalty (still provides gradient)
-        )
-    else:  # at_most
-        # For OARs: Dmax <= target
-        # Penalize heavily if above target, lightly if below
-        loss = torch.where(
-            diff > 0,  # Above target (bad)
-            diff ** 2,  # Heavy penalty
-            0.1 * (-diff) ** 2  # Light penalty (still provides gradient)
-        )
-
-    return loss.mean()
-
-
-def dvh_volume_at_dose_loss(
+    D_p = sorted_doses[idx]  # scalar
+    return D_p ** p_norm
+def dvh_volume_objective(
     dose_pred: torch.Tensor,
     structure_mask: torch.Tensor,
     dose_threshold: float,
-    target_volume_percent: float,
-    constraint_type: str = "at_most",
-    temperature: float = 10.0
+    temperature: float = 10.0,
+    p_norm: float = 1.0,
 ) -> torch.Tensor:
     """
-    Loss for volume-at-dose constraints (Vx Gy).
-
-    Computes the volume receiving at least a certain dose and compares to target.
-
-    Args:
-        dose_pred: Predicted dose [B, 1, D, H, W] or [B, D, H, W]
-        structure_mask: Binary mask [B, 1, D, H, W] or [B, D, H, W]
-        dose_threshold: Dose threshold in Gy
-        target_volume_percent: Target volume percentage (0-100)
-        constraint_type: 'at_most' (typical for OARs) or 'at_least' (rare)
-        temperature: Softness of threshold (higher = softer sigmoid)
+    Pure objective for V_x (volume receiving at least x Gy).
 
     Returns:
-        Scalar loss tensor
+        V_x^p_norm  where V_x is in %, averaged over batch.
 
-    Example:
-        # V40Gy <= 15% for bladder
-        loss = dvh_volume_at_dose_loss(dose, bladder_mask, 40.0, 15.0, "at_most")
+    Again, direction is controlled outside:
+        - to push V_x DOWN: loss += +w * dvh_volume_objective(...)
+        - to push V_x UP:   loss += -w * dvh_volume_objective(...)
 
-        # V95% of prescription >= 99% for PTV
-        loss = dvh_volume_at_dose_loss(dose, ptv_mask, 40.6, 99.0, "at_least")
+    Args:
+        dose_pred:       [B, 1, D, H, W] or [B, D, H, W] or [D, H, W]
+        structure_mask:  same shape
+        dose_threshold:  x in V_x Gy (float, Gy)
+        temperature:     sigmoid slope (softness around dose_threshold)
+        p_norm:          exponent on V_x (%)
     """
-    # Ensure inputs have channel dimension
+    # Ensure channel dimension
     if dose_pred.ndim == 3:
         dose_pred = dose_pred.unsqueeze(0)
     if dose_pred.ndim == 4:
@@ -476,43 +420,285 @@ def dvh_volume_at_dose_loss(
     if structure_mask.ndim == 4:
         structure_mask = structure_mask.unsqueeze(1)
 
-    # Convert dose threshold to tensor
+    # Threshold as tensor
     if not torch.is_tensor(dose_threshold):
-        dose_threshold = torch.tensor(dose_threshold, dtype=dose_pred.dtype, device=dose_pred.device)
+        dose_threshold = torch.tensor(
+            dose_threshold, dtype=dose_pred.dtype, device=dose_pred.device
+        )
 
-    # Soft indicator: voxels above threshold
+    # Soft indicator for dose >= threshold
     soft_indicator = torch.sigmoid(temperature * (dose_pred - dose_threshold))
 
-    # Volume fraction above threshold
-    numerator = (soft_indicator * structure_mask).sum(dim=(2, 3, 4))  # [B, C]
-    denominator = structure_mask.sum(dim=(2, 3, 4)).clamp(min=1)  # [B, C]
-    volume_fraction = (numerator / denominator) * 100.0  # Convert to percentage
+    # Volume fraction in %
+    numerator = (soft_indicator * structure_mask).sum(dim=(2, 3, 4))  # [B, 1]
+    denominator = structure_mask.sum(dim=(2, 3, 4)).clamp(min=1)      # [B, 1]
+    volume_fraction = (numerator / denominator) * 100.0               # [%]
 
-    # Target volume as tensor
-    if not torch.is_tensor(target_volume_percent):
-        target_volume_percent = torch.tensor(
-            target_volume_percent, dtype=dose_pred.dtype, device=dose_pred.device
+    V_x = volume_fraction.mean()     # scalar (across batch)
+    return V_x ** p_norm
+
+import math
+import torch
+import torch.nn.functional as F
+
+
+def dvh_percentile_loss_with_threshold(
+    dose_pred: torch.Tensor,
+    structure_mask: torch.Tensor,
+    volume_percent: float,
+    alpha: float,            # +1: push Dp down,  -1: push Dp up
+    bound_value: float,      # Gy: threshold for Dp (e.g. 29.9 for Dmax<=29.9)
+    p_norm: float = 1.0,     # exponent on Dp, e.g. 1.0 or 2.0
+    slope: float = 0.1,      # 0 < slope <= 1: strength after constraint is satisfied
+) -> torch.Tensor:
+    """
+    Hybrid DVH percentile objective:
+
+        D_p% := dose at given volume_percent (e.g. 99 -> D99, 0 -> Dmax)
+        base_objective = D_p^p_norm
+
+    Direction:
+        alpha > 0  => minimizing loss pushes D_p DOWN (toward 0 Gy)
+        alpha < 0  => minimizing loss pushes D_p UP   (toward large dose)
+
+    Threshold logic with bound_value (in Gy):
+        - If alpha > 0 (push down), we interpret bound_value as an *upper bound*:
+              D_p >  bound_value  => full strength (scale = 1)
+              D_p <= bound_value  => weakened strength (scale = slope)
+        - If alpha < 0 (push up), we interpret bound_value as a *lower bound*:
+              D_p <  bound_value  => full strength (scale = 1)
+              D_p >= bound_value  => weakened strength (scale = slope)
+
+    No hinge / no sign flip at the threshold:
+        The objective always pushes in the same direction given by alpha,
+        but its *weight* changes once the constraint is satisfied.
+
+    Returns:
+        Scalar loss tensor.
+    """
+    # Ensure channel dimension
+    if dose_pred.ndim == 3:
+        dose_pred = dose_pred.unsqueeze(0)       # [1, D, H, W]
+    if dose_pred.ndim == 4:
+        dose_pred = dose_pred.unsqueeze(1)       # [B, 1, D, H, W]
+    if structure_mask.ndim == 3:
+        structure_mask = structure_mask.unsqueeze(0)
+    if structure_mask.ndim == 4:
+        structure_mask = structure_mask.unsqueeze(1)
+
+    # Extract structure voxels
+    structure_doses = dose_pred[structure_mask > 0]
+    if structure_doses.numel() == 0:
+        return torch.tensor(0.0, device=dose_pred.device, dtype=dose_pred.dtype)
+
+    # Sort descending to get D_p%
+    sorted_doses, _ = torch.sort(structure_doses, descending=True)
+    N = sorted_doses.numel()
+
+    p = float(volume_percent) / 100.0
+    p = max(0.0, min(1.0, p))
+    idx = int(math.ceil(p * N)) - 1
+    if idx < 0:
+        idx = 0
+    if idx >= N:
+        idx = N - 1
+
+    D_p = sorted_doses[idx]  # scalar (Gy)
+
+    # Base objective: D_p^p_norm (always ≥ 0)
+    base = D_p ** p_norm
+
+    # Determine scale depending on whether constraint is violated or satisfied
+    if not torch.is_tensor(bound_value):
+        bound_value = torch.tensor(
+            bound_value, dtype=dose_pred.dtype, device=dose_pred.device
         )
 
-    # Compute loss based on constraint type
-    # Use asymmetric smooth penalties that ALWAYS provide gradients
-    diff = volume_fraction - target_volume_percent
+    if alpha > 0:
+        # Push DOWN; bound_value is an upper bound.
+        # If D_p > bound_value: still violating => full strength.
+        # If D_p <= bound_value: satisfied => scaled by slope.
+        if D_p > bound_value:
+            scale = 1.0
+        else:
+            scale = slope
+    elif alpha < 0:
+        # Push UP; bound_value is a lower bound.
+        # If D_p < bound_value: violating => full strength.
+        # If D_p >= bound_value: satisfied => scaled by slope.
+        if D_p < bound_value:
+            scale = 1.0
+        else:
+            scale = slope
+    else:
+        # alpha == 0 => no contribution
+        return torch.tensor(0.0, device=dose_pred.device, dtype=dose_pred.dtype)
 
-    if constraint_type == "at_most":
-        # V40Gy <= 15% means we want volume_fraction to be low
-        # Penalize heavily if above target, lightly if below
-        loss = torch.where(
-            diff > 0,  # Above target (bad)
-            diff ** 2,  # Heavy penalty
-            0.1 * (-diff) ** 2  # Light penalty (still provides gradient)
-        )
-    else:  # at_least
-        # V42.7Gy >= 99% means we want volume_fraction to be high
-        # Penalize heavily if below target, lightly if above
-        loss = torch.where(
-            diff < 0,  # Below target (bad)
-            (-diff) ** 2,  # Heavy penalty
-            0.1 * diff ** 2  # Light penalty (still provides gradient)
+    # Final loss
+    loss = alpha * scale * base
+    return loss
+
+def dvh_volume_loss_with_threshold(
+    dose_pred: torch.Tensor,
+    structure_mask: torch.Tensor,
+    dose_threshold: float,        # Gy: x in V_x Gy
+    alpha: float,                 # +1: push Vx down,  -1: push Vx up
+    volume_bound_percent: float,  # %: threshold on Vx (e.g. 15 for V40Gy<=15%)
+    temperature: float = 10.0,    # sigmoid slope on dose
+    p_norm: float = 1.0,          # exponent on Vx
+    slope: float = 0.1,           # scale factor once constraint satisfied
+) -> torch.Tensor:
+    """
+    Hybrid DVH volume-at-dose objective:
+
+        V_x := volume fraction (%) of structure receiving >= dose_threshold
+
+        base_objective = V_x^p_norm
+
+    Direction:
+        alpha > 0  => minimizing loss pushes V_x DOWN  (less volume ≥ x Gy)
+        alpha < 0  => minimizing loss pushes V_x UP    (more volume ≥ x Gy)
+
+    Threshold logic with volume_bound_percent (in %):
+        - If alpha > 0 (push down), interpret volume_bound_percent as *upper bound*:
+              V_x >  bound  => full strength
+              V_x <= bound  => scaled by slope
+        - If alpha < 0 (push up), interpret volume_bound_percent as *lower bound*:
+              V_x <  bound  => full strength
+              V_x >= bound  => scaled by slope
+
+    Always pushes in same direction (no hinge), weight just changes after threshold.
+
+    Returns:
+        Scalar loss tensor.
+    """
+    # Ensure channel dimension
+    if dose_pred.ndim == 3:
+        dose_pred = dose_pred.unsqueeze(0)
+    if dose_pred.ndim == 4:
+        dose_pred = dose_pred.unsqueeze(1)
+    if structure_mask.ndim == 3:
+        structure_mask = structure_mask.unsqueeze(0)
+    if structure_mask.ndim == 4:
+        structure_mask = structure_mask.unsqueeze(1)
+
+    # Threshold as tensor
+    if not torch.is_tensor(dose_threshold):
+        dose_threshold = torch.tensor(
+            dose_threshold, dtype=dose_pred.dtype, device=dose_pred.device
         )
 
-    return loss.mean()
+    # Soft indicator: dose >= dose_threshold
+    soft_indicator = torch.sigmoid(temperature * (dose_pred - dose_threshold))
+
+    # Volume fraction above threshold (%)
+    numerator = (soft_indicator * structure_mask).sum(dim=(2, 3, 4))  # [B, 1]
+    denominator = structure_mask.sum(dim=(2, 3, 4)).clamp(min=1)      # [B, 1]
+    volume_fraction = (numerator / denominator) * 100.0               # [%]
+
+    # Average over batch/channels
+    V_x = volume_fraction.mean()   # scalar %
+
+    # Base objective
+    base = V_x ** p_norm
+
+    if not torch.is_tensor(volume_bound_percent):
+        volume_bound_percent = torch.tensor(
+            volume_bound_percent, dtype=dose_pred.dtype, device=dose_pred.device
+        )
+
+    if alpha > 0:
+        # Push DOWN; bound is upper bound.
+        if V_x > volume_bound_percent:
+            scale = 1.0
+        else:
+            scale = slope
+    elif alpha < 0:
+        # Push UP; bound is lower bound.
+        if V_x < volume_bound_percent:
+            scale = 1.0
+        else:
+            scale = slope
+    else:
+        return torch.tensor(0.0, device=dose_pred.device, dtype=dose_pred.dtype)
+
+    loss = alpha * scale * base
+    return loss
+
+def dvh_Dp_loss(
+    dose_pred,
+    mask,
+    p,                   # percentile (0–100)
+    target,
+    direction,           # "at_least" or "at_most"
+    violation_weight=10,
+    slack_weight=0.1
+):
+    """
+    Smooth hinge loss on D_p%.
+    Extremely stable. Always converges.
+    """
+    # Extract structure
+    if dose_pred.ndim == 3: dose_pred = dose_pred.unsqueeze(0).unsqueeze(0)
+    if dose_pred.ndim == 4: dose_pred = dose_pred.unsqueeze(1)
+    if mask.ndim == 3: mask = mask.unsqueeze(0).unsqueeze(0)
+    if mask.ndim == 4: mask = mask.unsqueeze(1)
+
+    vals = dose_pred[mask > 0]
+
+    if vals.numel() == 0:
+        return torch.tensor(0.0, device=dose_pred.device)
+
+    # Compute Dp
+    vals_sorted, _ = torch.sort(vals)
+    k = int((p/100.0) * (vals_sorted.numel() - 1))
+    Dp = vals_sorted[k]
+
+    # Smooth hinge
+    if direction == "at_least":
+        diff = target - Dp
+        violation = F.relu(diff)          # Dp < target
+        slack     = F.relu(-diff)         # Dp > target
+    else: # at_most
+        diff = Dp - target
+        violation = F.relu(diff)          # Dp > target
+        slack     = F.relu(-diff)         # Dp < target
+
+    return violation_weight * violation**2 + slack_weight * slack**2
+def dvh_Vx_loss(
+    dose_pred,
+    mask,
+    x,                     # dose threshold (Gy)
+    target_volume_percent,
+    direction,             # "at_least" or "at_most"
+    temperature=10.0,
+    violation_weight=10,
+    slack_weight=0.1
+):
+    """
+    Smooth hinge loss on V_x%.
+    Very stable, differentiable, converges well.
+    """
+    # Ensure shape
+    if dose_pred.ndim == 3: dose_pred = dose_pred.unsqueeze(0).unsqueeze(0)
+    if dose_pred.ndim == 4: dose_pred = dose_pred.unsqueeze(1)
+    if mask.ndim == 3: mask = mask.unsqueeze(0).unsqueeze(0)
+    if mask.ndim == 4: mask = mask.unsqueeze(1)
+
+    # Soft indicator dose >= x
+    soft_indicator = torch.sigmoid(temperature * (dose_pred - x))
+
+    num = (soft_indicator * mask).sum()
+    den = mask.sum().clamp(min=1)
+    Vx = (num / den) * 100.0  # percent
+
+    diff = Vx - target_volume_percent
+
+    if direction == "at_most":
+        violation = F.relu(diff)           # too much volume
+        slack     = F.relu(-diff)
+    else: # at_least
+        violation = F.relu(-diff)          # too little volume
+        slack     = F.relu(diff)
+
+    return violation_weight * violation**2 + slack_weight * slack**2
