@@ -50,6 +50,7 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
 
     dose_layer = DoseEngine(machine_config=machine_config,
                             kernel_size=kernel_size,
+                            resolution=patient._resolution,
                             image_template=patient.density_image, 
                             beam_template=beam_sequence,
                             downsampling_factor=downsampling_factor)

@@ -7,6 +7,7 @@ multiple beams, and can optionally perform upsampling and debugging visualizatio
 """
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from pydose_rt.layers.BeamValidationLayer import BeamValidationLayer
 from pydose_rt.layers.FluenceMapLayer import FluenceMapLayer
@@ -19,7 +20,7 @@ from pydose_rt.data import MachineConfig, Beam, BeamSequence
 from pydose_rt.geometry.rotations import rotate_2d_images
 
 
-class DoseEngine:
+class DoseEngine(nn.Module):
     """
     Implements the full dose calculation pipeline for radiotherapy.
 
@@ -45,6 +46,7 @@ class DoseEngine:
         self,
         machine_config: MachineConfig,
         kernel_size: int,
+        resolution: tuple[float, float, float],
         image_template: torch.Tensor | None = None,
         beam_template: BeamSequence | Beam | None = None,
         device: torch.device | str | None = None, # Inherit instead
@@ -57,13 +59,12 @@ class DoseEngine:
         Initializes the DoseEngine pipeline.
 
         Args:
-            ct_array_shape: Shape of the CT array (depth, height, width).
-            resolution: Voxel spacing in mm (depth, height, width).
             machine_config: Machine physics and MLC specifications.
+            kernel_size: Size of the dose kernel.
+            resolution: Voxel spacing in mm (depth, height, width).
             beam_input: Beam or BeamSequence defining the treatment geometry.
             device: PyTorch device for computation.
             dtype: Data type for tensors.
-            kernel_size: Size of the dose kernel.
             downsampling_factor: Downsampling factor for CT (default: (1, 1, 1)).
             adjust_values: Whether to adjust parameter values (default: False).
             verbose: Enable verbose output (default: False).
@@ -84,6 +85,7 @@ class DoseEngine:
         self.layers_initialized = False
 
         self.machine_config = machine_config
+        self.input_resolution = resolution
         if image_template is not None:
             self._add_data_information(image_template)
         self._add_beam_information(beam_template)
@@ -96,11 +98,10 @@ class DoseEngine:
         if new_density_image is None:
             return
         
-        if (self.input_shape is not None) and (self.input_resolution is not None):
+        if (self.input_shape is not None):
             return
         
         self.input_shape = new_density_image.shape
-        self.input_resolution = new_density_image.resolution
         self.precomputed_kernels = None
         self.precomputed_radiological_depths = None
         self._initialize_layers()

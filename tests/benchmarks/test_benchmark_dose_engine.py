@@ -16,16 +16,18 @@ def test_dose_engine_layer(benchmark, default_ct_array_shape, default_resolution
                         field_size=default_field_size)
     beam_sequence = BeamSequence.from_tensors(torch.zeros(shapes["MLCs"][1:], dtype=default_dtype, device=default_device), torch.ones(shapes["MUs"][1:], dtype=default_dtype, device=default_device), torch.zeros(shapes["jaws"][1:], dtype=default_dtype, device=default_device), default_gantry_angles, default_collimator_angles, default_iso_center, default_sid, default_field_size)
 
+    ct_array = torch.zeros(default_ct_array_shape,
+        dtype=default_dtype,
+        device=default_device
+    )
+
     dose_layer = DoseEngine(default_machine_config,
                             default_kernel_size,
+                            default_resolution,
+                            image_template=ct_array,
+                            beam_template=beam_sequence,
                             device=default_device,
                             dtype=default_dtype)
     
-
-    ct_array = torch.zeros(default_ct_array_shape,
-        dtype=dose_layer.dtype,
-        device=dose_layer.device
-    )
-    ct_array.resolution = default_resolution
 
     benchmark(lambda: dose_layer.compute_dose(beam_sequence, ct_image=ct_array))

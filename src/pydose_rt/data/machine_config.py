@@ -41,33 +41,29 @@ class MachineConfig(BaseSettings):
         default=600.0,
         description="The maximum dynamic arc dose rate defined in MU/min.",
     )
-    mlc_leakage_amplitude: float = Field(
-        default=0.0,
-        description="Relative MLC scatter contribution at field edge (unitless, typical: 0.01-0.03)",
-    )
-    mlc_leakage_range_mm: float = Field(
-        default=30.0,
-        description="Characteristic decay distance for MLC scatter tail in mm (typical: 20-50)",
-    )
-    penumbra_fwhm: float = Field(
+    penumbra_fwhm_mlc: float = Field(
         default=1.5,
-        description="Modelled penumbra width (FWHM) in mm.",
+        description="Modelled penumbra width (FWHM) in MLC direction (horizontal/width) in mm.",
     )
-    head_scatter_amplitude: float = Field(
+    penumbra_fwhm_jaw: float = Field(
+        default=1.5,
+        description="Modelled penumbra width (FWHM) in JAW direction (vertical/height) in mm.",
+    )
+    head_scatter_amplitude_mlc: float = Field(
         default=0.0,
-        description="Head scatter amplitude (unitless, typical: 0.03-0.05)",
+        description="Head scatter amplitude in MLC direction as fraction of dose (e.g., 0.04 = 4%)",
     )
-    head_scatter_range_mm: float = Field(
-        default=150.0,
-        description="Head scatter characteristic decay distance in mm (typical: 100-200)",
+    head_scatter_amplitude_jaw: float = Field(
+        default=0.0,
+        description="Head scatter amplitude in JAW direction as fraction of dose (e.g., 0.06 = 6%)",
     )
-    head_scatter_x: Optional[list[tuple[float, float]]] = Field(
-        default=None,
-        description="Head scatter measurements in the MLC direction."
+    head_scatter_sigma_mlc_mm: Optional[float] = Field(
+        default=45.0,
+        description="Head scatter Gaussian sigma in MLC direction in mm",
     )
-    head_scatter_y: Optional[list[tuple[float, float]]] = Field(
-        default=None,
-        description="Head scatter measurements in the jaw direction."
+    head_scatter_sigma_jaw_mm: float = Field(
+        default=49.0,
+        description="Head scatter Gaussian sigma in JAW direction in mm",
     )
     tpr_20_10: float = Field(
         description="The tissue phantom ratio TPR20/10"
@@ -83,6 +79,10 @@ class MachineConfig(BaseSettings):
         default=None, description="A list of the leaf widths" 
     )
     number_of_leaf_pairs: int = Field(description="The number of leafs")
+    profile_corrections: Optional[list[list[float]]] = Field(
+        default=None,
+        description="Off-axis correction data: [distances_mm, correction_ratios]"
+    )
 
     
     @staticmethod

@@ -24,13 +24,12 @@ import torch.nn as nn
 from pydose_rt.data import MachineConfig
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
 from pydose_rt.physics.fluence.fluence_modeling import (
-    precompute_source_penumbra_kernel,
-    precompute_mlc_leakage_kernel,
-    precompute_head_scatter_kernel,
+    create_radial_correction_map,
+    precompute_directional_head_scatter_kernels,
     apply_precomputed_kernel,
-    apply_precomputed_mlc_leakage,
-    apply_precomputed_head_scatter,
-    make_interpolator
+    apply_directional_precomputed_kernel,
+    apply_directional_head_scatter,
+    precompute_directional_source_penumbra_kernels,    
 )
 
 
@@ -108,39 +107,54 @@ class FluenceMapLayer(nn.Module):
         # Precompute physics augmentation kernels/masks for efficient forward pass
         # ============================================================================
 
-        # Precompute source penumbra kernel (always applied)
-        source_penumbra_kernel = precompute_source_penumbra_kernel(
-            desired_penumbra_fwhm_mm=self.machine_config.penumbra_fwhm,
-            device=self.device,
-            dtype=self.dtype
-        )
-        self.register_buffer("source_penumbra_kernel", source_penumbra_kernel)
+        # Precompute source penumbra kernels
+        # Use directional kernels if both MLC and JAW FWHM are specified
+        if hasattr(self.machine_config, 'penumbra_fwhm_mlc') and hasattr(self.machine_config, 'penumbra_fwhm_jaw'):
+            kernel_mlc, kernel_jaw = precompute_directional_source_penumbra_kernels(
+                penumbra_fwhm_mlc_mm=self.machine_config.penumbra_fwhm_mlc,
+                penumbra_fwhm_jaw_mm=self.machine_config.penumbra_fwhm_jaw,
+                device=self.device,
+                dtype=self.dtype
+            )
+            self.register_buffer("source_penumbra_kernel_mlc", kernel_mlc)
+            self.register_buffer("source_penumbra_kernel_jaw", kernel_jaw)
+            self.use_penumbra = True
 
-        # Precompute MLC scatter kernel if amplitude > 0
-        if self.machine_config.mlc_leakage_amplitude > 0:
-            mlc_leakage_kernel = precompute_mlc_leakage_kernel(
-                scatter_range_mm=self.machine_config.mlc_leakage_range_mm,
+        # Precompute head scatter kernels
+        # Use directional kernels if both MLC and JAW amplitudes are specified
+        if (hasattr(self.machine_config, 'head_scatter_amplitude_mlc') and
+            hasattr(self.machine_config, 'head_scatter_amplitude_jaw') and
+            (self.machine_config.head_scatter_amplitude_mlc > 0 or
+             self.machine_config.head_scatter_amplitude_jaw > 0)):
+            kernel_mlc, kernel_jaw, amp_mlc, amp_jaw = precompute_directional_head_scatter_kernels(
+                scatter_sigma_mlc_mm=self.machine_config.head_scatter_sigma_mlc_mm,
+                scatter_sigma_jaw_mm=self.machine_config.head_scatter_sigma_jaw_mm,
+                scatter_amplitude_mlc=self.machine_config.head_scatter_amplitude_mlc,
+                scatter_amplitude_jaw=self.machine_config.head_scatter_amplitude_jaw,
                 pixel_size_mm=1.0,
                 device=self.device,
                 dtype=self.dtype
             )
-            self.register_buffer("mlc_leakage_kernel", mlc_leakage_kernel)
+            self.register_buffer("head_scatter_kernel_mlc", kernel_mlc)
+            self.register_buffer("head_scatter_kernel_jaw", kernel_jaw)
+            self.head_scatter_amplitude_mlc = amp_mlc
+            self.head_scatter_amplitude_jaw = amp_jaw
+            self.use_head_scatter = True
         else:
-            self.mlc_leakage_kernel = None
+            self.use_head_scatter = None
 
-        # Precompute head scatter kernel if amplitude > 0
-        if self.machine_config.head_scatter_amplitude > 0:
-            self.head_scatter_interp_x = make_interpolator(self.machine_config.head_scatter_x)
-            self.head_scatter_interp_y = make_interpolator(self.machine_config.head_scatter_y)
-            head_scatter_kernel = precompute_head_scatter_kernel(
-                scatter_range_mm=self.machine_config.head_scatter_range_mm,
-                pixel_size_mm=1.0,
-                device=self.device,
-                dtype=self.dtype
-            )
-            self.register_buffer("head_scatter_kernel", head_scatter_kernel)
+        # Precompute off-axis profile correction
+        if hasattr(self.machine_config, 'profile_corrections') and (self.machine_config.profile_corrections is not None):
+            profile_correction_map = create_radial_correction_map(
+                self.machine_config.profile_corrections[0],
+                self.machine_config.profile_corrections[1],
+                self.field_size,
+                1.0
+            ).unsqueeze(0).unsqueeze(0).to(self.device).to(self.dtype).detach()
+            self.register_buffer("profile_correction_map", profile_correction_map)
+            self.use_profile_correction = True
         else:
-            self.head_scatter_kernel = None
+            self.use_profile_correction = False
 
 
     def forward(
@@ -212,31 +226,29 @@ class FluenceMapLayer(nn.Module):
         # Apply precomputed physics augmentation effects
         # ============================================================================
 
-        # Apply source penumbra using precomputed kernel
-        fluence_map = apply_precomputed_kernel(
-            fluence_map,
-            kernel=self.source_penumbra_kernel,
-            padding_mode='replicate'
-        ).to(self.dtype)
-
-        # Apply MLC scatter using precomputed kernel
-        if self.mlc_leakage_kernel is not None:
-            fluence_map = apply_precomputed_mlc_leakage(
+        # Apply source penumbra using precomputed kernel(s)
+        if self.use_penumbra:
+            fluence_map = apply_directional_precomputed_kernel(
                 fluence_map,
-                kernel=self.mlc_leakage_kernel,
-                scatter_amplitude=self.machine_config.mlc_leakage_amplitude
+                kernel_mlc=self.source_penumbra_kernel_mlc,
+                kernel_jaw=self.source_penumbra_kernel_jaw,
+                padding_mode='replicate'
             ).to(self.dtype)
 
-        # Apply head scatter using precomputed kernel
-        if self.head_scatter_kernel is not None:
-            mlc_field_sizes = torch.amax(torch.sum((mask[..., 0] > 0.5), 1), 1).detach() / 10.0
-            jaw_field_sizes = torch.amax(torch.sum((mask[..., 0] > 0.5), 2), 1).detach() / 10.0
-            S_c = self.head_scatter_interp_x(mlc_field_sizes) * self.head_scatter_interp_y(jaw_field_sizes)
-            fluence_map = apply_precomputed_head_scatter(
+        # Apply head scatter using precomputed kernel(s)
+        if self.use_head_scatter:
+            # New directional approach: independent 1D convolutions with separate amplitude scaling
+            fluence_map = apply_directional_head_scatter(
                 fluence_map,
-                kernel=self.head_scatter_kernel,
-                scatter_amplitude=self.machine_config.head_scatter_amplitude
+                kernel_mlc=self.head_scatter_kernel_mlc,
+                kernel_jaw=self.head_scatter_kernel_jaw,
+                amplitude_mlc=self.head_scatter_amplitude_mlc,
+                amplitude_jaw=self.head_scatter_amplitude_jaw,
+                padding_mode='constant'
             ).to(self.dtype)
+
+        if self.use_profile_correction:
+            fluence_map = fluence_map * self.profile_correction_map
 
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 
