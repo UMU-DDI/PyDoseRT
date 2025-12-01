@@ -41,29 +41,21 @@ class MachineConfig(BaseSettings):
         default=600.0,
         description="The maximum dynamic arc dose rate defined in MU/min.",
     )
-    penumbra_fwhm_mlc: float = Field(
-        default=1.5,
-        description="Modelled penumbra width (FWHM) in MLC direction (horizontal/width) in mm.",
+    penumbra_fwhm: Optional[list[float]] = Field(
+        default=None,
+        description="Modelled penumbra width in mm. Use two values for different fwhm in MLC and jaw directions, respectively.",
     )
-    penumbra_fwhm_jaw: float = Field(
-        default=1.5,
-        description="Modelled penumbra width (FWHM) in JAW direction (vertical/height) in mm.",
+    head_scatter_amplitude: Optional[list[float]] = Field(
+        default=None,
+        description="Head scatter amplitude as fraction of dose. Use two vales for different amplitudes in MLC and Jaw directions.",
     )
-    head_scatter_amplitude_mlc: float = Field(
-        default=0.0,
-        description="Head scatter amplitude in MLC direction as fraction of dose (e.g., 0.04 = 4%)",
-    )
-    head_scatter_amplitude_jaw: float = Field(
-        default=0.0,
-        description="Head scatter amplitude in JAW direction as fraction of dose (e.g., 0.06 = 6%)",
-    )
-    head_scatter_sigma_mlc_mm: Optional[float] = Field(
-        default=45.0,
+    head_scatter_sigma: Optional[list[float]] = Field(
+        default=None,
         description="Head scatter Gaussian sigma in MLC direction in mm",
     )
-    head_scatter_sigma_jaw_mm: float = Field(
-        default=49.0,
-        description="Head scatter Gaussian sigma in JAW direction in mm",
+    head_scatter_factor: Optional[list[list[float]]] = Field(
+        default=None,
+        description="Head scatter factors. Use two sets of values for different factors in the MLC and jaw directions.",
     )
     tpr_20_10: float = Field(
         description="The tissue phantom ratio TPR20/10"
@@ -82,6 +74,10 @@ class MachineConfig(BaseSettings):
     profile_corrections: Optional[list[list[float]]] = Field(
         default=None,
         description="Off-axis correction data: [distances_mm, correction_ratios]"
+    )
+    head_scatter_ssd_mm: float = Field(
+        default=50.0,
+        description="Source to scatter-source distance (flattening filter depth) in mm for head scatter model",
     )
 
     

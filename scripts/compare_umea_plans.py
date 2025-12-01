@@ -15,11 +15,11 @@ do_plot = True
 
 penumbra_fwhm_jaws = [None]
 penumbra_fwhm_mlcs = [None]
-head_scatter_amplitude_mlcs = [0.0459]
-head_scatter_amplitude_jaws = [0.0571]
-head_scatter_sigma_mlc_mms = [45.7]
-head_scatter_sigma_jaw_mms = [49.5]
-field_sizes = [100]
+head_scatter_amplitude_mlcs = [1.0, 1.5]
+head_scatter_amplitude_jaws = [1.0, 1.5]
+head_scatter_sigma_mlc_mms = [1.0, 1.5]
+head_scatter_sigma_jaw_mms = [1.0, 1.5]
+field_sizes = [50, 300]
 
 raw_measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
 for penumbra_fwhm_jaw in penumbra_fwhm_jaws:
@@ -35,11 +35,14 @@ for penumbra_fwhm_jaw in penumbra_fwhm_jaws:
                             measurements = raw_measurements.copy()
                             measurements = [measurement for measurement in measurements if measurement["header_dict"]["FSZ"] == [str(field_size), str(field_size)]]
                             measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == measurement["header_dict"]["STS"][2]]
-                            measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][2]) == 100.0) and (float(measurement["header_dict"]["EDS"][2]) == 100.0)]
+                            # measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][2]) == 100.0) and (float(measurement["header_dict"]["EDS"][2]) == 100.0)]
 
                             resolution = (1.0, 1.0, 1.0)
                             ct_array_shape = (500, 500, 500)
-                            machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json", head_scatter_amplitude_mlc=head_scatter_amplitude_mlc, head_scatter_sigma_mlc_mm=head_scatter_sigma_mlc_mm, head_scatter_amplitude_jaw=head_scatter_amplitude_jaw, head_scatter_sigma_jaw_mm=head_scatter_sigma_jaw_mm)
+                            machine_config = MachineConfig(
+                                preset="src/pydose_rt/data/machine_presets/umea_10MV.json", head_scatter_amplitude=[head_scatter_amplitude_mlc, head_scatter_amplitude_jaw], head_scatter_sigma=[head_scatter_sigma_mlc_mm, head_scatter_sigma_jaw_mm], 
+                                profile_corrections=None,
+                                )
                             phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)
                             number_of_beams=1
                             starting_angle=0

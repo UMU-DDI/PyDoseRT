@@ -26,10 +26,10 @@ from pydose_rt.geometry.projections import fractional_box_overlap, resample_flue
 from pydose_rt.physics.fluence.fluence_modeling import (
     create_radial_correction_map,
     precompute_directional_head_scatter_kernels,
-    apply_precomputed_kernel,
+    estimate_field_size_1d,
+    compute_head_scatter_factor,
     apply_directional_precomputed_kernel,
-    apply_directional_head_scatter,
-    precompute_directional_source_penumbra_kernels,    
+    precompute_directional_source_penumbra_kernels,
 )
 
 
@@ -109,40 +109,69 @@ class FluenceMapLayer(nn.Module):
 
         # Precompute source penumbra kernels
         # Use directional kernels if both MLC and JAW FWHM are specified
-        if hasattr(self.machine_config, 'penumbra_fwhm_mlc') and hasattr(self.machine_config, 'penumbra_fwhm_jaw'):
-            kernel_mlc, kernel_jaw = precompute_directional_source_penumbra_kernels(
-                penumbra_fwhm_mlc_mm=self.machine_config.penumbra_fwhm_mlc,
-                penumbra_fwhm_jaw_mm=self.machine_config.penumbra_fwhm_jaw,
-                device=self.device,
-                dtype=self.dtype
-            )
-            self.register_buffer("source_penumbra_kernel_mlc", kernel_mlc)
-            self.register_buffer("source_penumbra_kernel_jaw", kernel_jaw)
-            self.use_penumbra = True
+        self.use_penumbra = False
+        if hasattr(self.machine_config, 'penumbra_fwhm'):
+            if self.machine_config.penumbra_fwhm is not None:
+                if len(self.machine_config.penumbra_fwhm) == 1:
+                    penumbra_mlc = self.machine_config.penumbra_fwhm[0]
+                    penumbra_jaw = self.machine_config.penumbra_fwhm[0]
+                elif len(self.machine_config.penumbra_fwhm) == 2:
+                    penumbra_mlc = self.machine_config.penumbra_fwhm[0]
+                    penumbra_jaw = self.machine_config.penumbra_fwhm[1]
+                else:
+                    raise Exception("Penumbra parameters must not contain more than two elements.")
+                
+                kernel_mlc, kernel_jaw = precompute_directional_source_penumbra_kernels(
+                    penumbra_fwhm_mlc_mm=penumbra_mlc,
+                    penumbra_fwhm_jaw_mm=penumbra_jaw,
+                    device=self.device,
+                    dtype=self.dtype
+                )
+                self.register_buffer("source_penumbra_kernel_mlc", kernel_mlc)
+                self.register_buffer("source_penumbra_kernel_jaw", kernel_jaw)
+                self.use_penumbra = True
 
-        # Precompute head scatter kernels
-        # Use directional kernels if both MLC and JAW amplitudes are specified
-        if (hasattr(self.machine_config, 'head_scatter_amplitude_mlc') and
-            hasattr(self.machine_config, 'head_scatter_amplitude_jaw') and
-            (self.machine_config.head_scatter_amplitude_mlc > 0 or
-             self.machine_config.head_scatter_amplitude_jaw > 0)):
-            kernel_mlc, kernel_jaw, amp_mlc, amp_jaw = precompute_directional_head_scatter_kernels(
-                scatter_sigma_mlc_mm=self.machine_config.head_scatter_sigma_mlc_mm,
-                scatter_sigma_jaw_mm=self.machine_config.head_scatter_sigma_jaw_mm,
-                scatter_amplitude_mlc=self.machine_config.head_scatter_amplitude_mlc,
-                scatter_amplitude_jaw=self.machine_config.head_scatter_amplitude_jaw,
-                pixel_size_mm=1.0,
-                device=self.device,
-                dtype=self.dtype
-            )
-            self.register_buffer("head_scatter_kernel_mlc", kernel_mlc)
-            self.register_buffer("head_scatter_kernel_jaw", kernel_jaw)
-            self.head_scatter_amplitude_mlc = amp_mlc
-            self.head_scatter_amplitude_jaw = amp_jaw
-            self.use_head_scatter = True
-        else:
-            self.use_head_scatter = None
+        # Check if head scatter parameters are configured
+        # Head scatter is now applied using physics-based Sc(field_size) model
+        self.use_head_scatter = False
+        if (hasattr(self.machine_config, 'head_scatter_amplitude') and 
+            hasattr(self.machine_config, 'head_scatter_sigma')):
+            if self.machine_config.head_scatter_amplitude is  not None:
+                if len(self.machine_config.head_scatter_amplitude) == 1:
+                    head_scatter_amplitude_mlc = self.machine_config.head_scatter_amplitude[0]
+                    head_scatter_amplitude_jaw = self.machine_config.head_scatter_amplitude[0]
+                    head_scatter_sigma_mlc = self.machine_config.head_scatter_sigma[0]
+                    head_scatter_sigma_jaw = self.machine_config.head_scatter_sigma[0]
+                elif len(self.machine_config.head_scatter_amplitude) == 2:
+                    head_scatter_amplitude_mlc = self.machine_config.head_scatter_amplitude[0]
+                    head_scatter_amplitude_jaw = self.machine_config.head_scatter_amplitude[1]
+                    head_scatter_sigma_mlc = self.machine_config.head_scatter_sigma[0]
+                    head_scatter_sigma_jaw = self.machine_config.head_scatter_sigma[1]
+                else:
+                    raise Exception("Penumbra parameters must not contain more than two elements.")
+            
+                self.head_scatter_ssd_mm = getattr(self.machine_config, 'head_scatter_ssd_mm', 500.0)
+                kernel_mlc, kernel_jaw = precompute_directional_head_scatter_kernels(
+                    scatter_sigma_mlc_mm=head_scatter_sigma_mlc,
+                    scatter_sigma_jaw_mm=head_scatter_sigma_jaw,
+                    device=self.device,
+                    dtype=self.dtype
+                )
+                self.head_scatter_kernel_mlc = kernel_mlc * head_scatter_amplitude_mlc
+                self.head_scatter_kernel_jaw = kernel_jaw * head_scatter_amplitude_jaw
+                self.use_head_scatter = True
 
+        self.use_head_scatter_factor = False
+        if hasattr(self.machine_config, 'head_scatter_factor'):
+            if self.machine_config.head_scatter_factor is not None:
+                if len(self.machine_config.head_scatter_factor) == 1:
+                    self.head_scatter_factor_mlc = self.machine_config.head_scatter_factor[0]
+                    self.head_scatter_factor_jaw = self.machine_config.head_scatter_factor[0]
+                if len(self.machine_config.head_scatter_factor) == 2:
+                    self.head_scatter_factor_mlc = self.machine_config.head_scatter_factor[0]
+                    self.head_scatter_factor_jaw = self.machine_config.head_scatter_factor[1]
+                self.use_head_scatter_factor = True
+                
         # Precompute off-axis profile correction
         if hasattr(self.machine_config, 'profile_corrections') and (self.machine_config.profile_corrections is not None):
             profile_correction_map = create_radial_correction_map(
@@ -235,17 +264,42 @@ class FluenceMapLayer(nn.Module):
                 padding_mode='replicate'
             ).to(self.dtype)
 
-        # Apply head scatter using precomputed kernel(s)
+        if self.use_head_scatter_factor:
+            # Extract 1D profiles by averaging perpendicular direction
+            # MLC direction: average along height (JAW direction)
+            fluence_mlc_profile = fluence_map.mean(dim=2).squeeze(1)  # [B, W]
+
+            # JAW direction: average along width (MLC direction)
+            fluence_jaw_profile = fluence_map.mean(dim=3).squeeze(1)  # [B, H]
+
+            # Estimate effective field sizes
+            field_size_mlc_mm = estimate_field_size_1d(fluence_mlc_profile, 1.0)  # [B]
+            field_size_jaw_mm = estimate_field_size_1d(fluence_jaw_profile, 1.0)  # [B]
+
+            Sc_mlc = compute_head_scatter_factor(
+                field_size_mlc_mm / 10, self.head_scatter_factor_mlc[0], self.head_scatter_factor_mlc[1], self.head_scatter_ssd_mm
+            )  # [B]
+
+            Sc_jaw = compute_head_scatter_factor(
+                field_size_jaw_mm / 10, self.head_scatter_factor_jaw[0], self.head_scatter_factor_jaw[1], self.head_scatter_ssd_mm
+            )  # [B]
+
+            # Combine both directional factors
+            # For rectangular fields, we use geometric mean to avoid double-counting
+            # This is physically motivated: scatter sources in both directions contribute
+            Sc_combined = torch.sqrt(Sc_mlc * Sc_jaw)[:, None, None, None]  # [B]
+        else:
+            Sc_combined = torch.Tensor([1.0])
+
+        # Apply head scatter using physics-based Sc(field_size) model
         if self.use_head_scatter:
-            # New directional approach: independent 1D convolutions with separate amplitude scaling
-            fluence_map = apply_directional_head_scatter(
+            # Physics-based model: field-size-dependent multiplicative factor
+            fluence_map = apply_directional_precomputed_kernel(
                 fluence_map,
-                kernel_mlc=self.head_scatter_kernel_mlc,
-                kernel_jaw=self.head_scatter_kernel_jaw,
-                amplitude_mlc=self.head_scatter_amplitude_mlc,
-                amplitude_jaw=self.head_scatter_amplitude_jaw,
-                padding_mode='constant'
+                kernel_mlc=Sc_combined * self.head_scatter_kernel_mlc,
+                kernel_jaw=Sc_combined * self.head_scatter_kernel_jaw
             ).to(self.dtype)
+            
 
         if self.use_profile_correction:
             fluence_map = fluence_map * self.profile_correction_map
