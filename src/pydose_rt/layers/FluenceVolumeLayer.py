@@ -95,7 +95,7 @@ class FluenceVolumeLayer(nn.Module):
 
         # Precompute the physical depth (distance from source for each depth slice)
         depths = (
-            iso_center[1]
+            - iso_center[1]
             + self.SID
             - ((self.D - 1) / 2) * self.resolution[1]
             + torch.arange(D, dtype=self.dtype) * self.resolution[1]

@@ -441,8 +441,8 @@ class DoseEngine(nn.Module):
             raise Exception("Layers must be fully initialized for calibration.")
 
         center_x, center_y, center_z = tuple(s // 2 for s in self.input_shape)
-        iso_y = - (100 - center_y * self.input_resolution[1])
-        center_y_iso = center_y - int(iso_y / self.input_resolution[1])
+        iso_y = 100.0 - (center_y * self.input_resolution[1])
+        center_y_iso = int(center_y + iso_y // self.input_resolution[1])
         iso_center = (0.0, iso_y, 0.0)
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
         if calibration_mu is None:
