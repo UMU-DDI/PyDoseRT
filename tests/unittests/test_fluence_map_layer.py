@@ -9,9 +9,6 @@ from pydose_rt.data import MachineConfig
 from pydose_rt.layers import FluenceMapLayer
 from pydose_rt.utils.grad_monitor import GradMonitor
 from pydose_rt.utils.utils import get_shapes
-from pydose_rt.data import MachineConfig
-from pydose_rt.layers import FluenceMapLayer
-from pydose_rt.utils.grad_monitor import GradMonitor
  
 @pytest.fixture
 def fluence_map_layer(default_machine_config, default_resolution, default_field_size, default_device, default_dtype):

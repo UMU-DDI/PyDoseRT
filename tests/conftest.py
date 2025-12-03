@@ -79,6 +79,11 @@ def default_machine_config():
     """Fixture for the default MachineConfig"""
     return MachineConfig(
         preset="src/pydose_rt/data/machine_presets/test.json",
+
+        head_scatter_amplitude=None,
+        head_scatter_sigma=None,
+        penumbra_fwhm=None,
+        profile_corrections=None,
     )
  
 @pytest.fixture
