@@ -12,7 +12,8 @@ from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
 import torch
 
 all_results = []
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/NODES/')
+np_folder = "/home/bolo/Downloads/Josef_Testing/large/MrAlderson_test_loc_large_1/"
+base_path = Path('/home/bolo/Downloads/Josef_Testing/Data/') # /home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/NODES/
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
@@ -20,7 +21,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
-        kernel_size = 251
+        kernel_size = 151
         downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
@@ -31,14 +32,21 @@ for patient_name in sorted(os.listdir(base_path)):
                     struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
                     use_delivery=True
                     )
-        optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json",)
+        preprocessed_dose = np.load(np_folder + "Dose.npy")
+        preprocessed_beams = np.load(np_folder + "Beam.npy", allow_pickle=True)
+        preprocessed_ct = np.load(np_folder + "CT.npy")
+        preprocessed_structures = np.load(np_folder + "StructureSet.npy")
+        optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
         machine_config = MachineConfig(
             preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
-            # profile_corrections=None,
-            # head_scatter_amplitude=None,
-            # head_scatter_sigma=None
+            number_of_leaf_pairs=80,
+            leaf_widths=None,
+            head_scatter_amplitude=None,
+            head_scatter_sigma=None,
+            profile_corrections=None,
+            mlc_transmission=0.0
             )
             
         patient = patient.to(device).to(dtype)
@@ -63,15 +71,15 @@ for patient_name in sorted(os.listdir(base_path)):
 
             dose_pred = dose_engine.compute_dose_sequential(beam_sequence, ct_image=patient.density_image)
             doses.append(dose_pred.detach())
-        dose_pred = sum(doses)
-        dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
-        dose_pred = dose_pred * dose_volume[patient.structures["PTV_56"] > 0].mean() / dose_pred[patient.structures["PTV_56"] > 0].mean()
+        dose_pred = sum(doses)[0]
+        # dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
+        dose_pred = 1.14 * dose_pred# * dose_volume[patient.structures["PTV"] > 0].mean() / dose_pred[patient.structures["PTV"] > 0].mean()
 
         dose_max = max(dose_volume.max(), dose_pred.max()).item()
 
         mae_map = torch.abs(dose_pred - dose_volume)
-        mae_loss = np.mean(torch.mean(mae_map[patient.structures["External"]]).item())
-        res_string = f"Patient {patient_name}: MAE {str(np.round(mae_loss, 4))}"
+        mae_loss = np.mean(torch.mean(mae_map).item())
+        res_string = f"Patient {patient_name}:\tMAE {str(np.round(mae_loss, 4))}"
         print(res_string)
 
         # print(scale.item())
@@ -79,7 +87,7 @@ for patient_name in sorted(os.listdir(base_path)):
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=False, global_normalisation=2.2)
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=False, global_normalisation=None)
 
         # print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
         res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
