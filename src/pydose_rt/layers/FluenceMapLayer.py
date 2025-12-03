@@ -28,6 +28,7 @@ from pydose_rt.physics.fluence.fluence_modeling import (
     precompute_directional_head_scatter_kernels,
     estimate_field_size_1d,
     apply_directional_head_scatter,
+    get_output_factor,
     compute_head_scatter_factor,
     apply_directional_precomputed_kernel,
     precompute_directional_source_penumbra_kernels,
@@ -176,6 +177,8 @@ class FluenceMapLayer(nn.Module):
         else:
             self.use_profile_correction = False
 
+        self.mlc_transmission = self.machine_config.mlc_transmission
+
 
     def forward(
         self, leaf_positions: torch.Tensor, 
@@ -212,7 +215,7 @@ class FluenceMapLayer(nn.Module):
         sharpness = self.training_sharpness if self.training else None
 
         # ---------- new box (no sigmoids) ----------
-        mask = fractional_box_overlap(d, left_positions, right_positions, sharpness, min_value=0.015)
+        mask = fractional_box_overlap(d, left_positions, right_positions, sharpness, min_value=self.mlc_transmission)
         # -------------------------------------------
 
         # Reshape
@@ -270,7 +273,9 @@ class FluenceMapLayer(nn.Module):
         if self.use_profile_correction:
             fluence_map = fluence_map * self.profile_correction_map
 
+        OF = get_output_factor(fluence_map)
+        fluence_map = OF * fluence_map
+
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
-        fluence_map = 1.015 * fluence_map
 
         return fluence_map

@@ -46,6 +46,15 @@ def compute_profile_ratios(
     
     return sample_points, sampled_ratios
 
+def get_output_factor(fluence_map):
+
+    fluence_mlc_profile = fluence_map.mean(dim=2).squeeze(1)  # [B, W]
+    fluence_jaw_profile = fluence_map.mean(dim=3).squeeze(1)  # [B, H]
+    field_size_mlc_mm = estimate_field_size_1d(fluence_mlc_profile, 1.0)  # [B]
+    field_size_jaw_mm = estimate_field_size_1d(fluence_jaw_profile, 1.0)  # [B]
+    OF = 1.0
+
+    return OF
 
 def create_radial_correction_map(
     sample_distances_mm: np.ndarray,
