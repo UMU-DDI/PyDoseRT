@@ -49,8 +49,8 @@ class DoseEngine(nn.Module):
         resolution: tuple[float, float, float],
         image_template: torch.Tensor | None = None,
         beam_template: BeamSequence | Beam | None = None,
-        device: torch.device | str | None = None, # Inherit instead
-        dtype: torch.dtype = torch.float32, # Inherit instead
+        device: torch.device | str | None = None,
+        dtype: torch.dtype = None,
         downsampling_factor: tuple[int, int, int] = (1, 1, 1), # Remove preferrably
         adjust_values: bool = False, # Move to nn.Module
         verbose: bool = False,
@@ -74,10 +74,6 @@ class DoseEngine(nn.Module):
         self.downsampling_factor = downsampling_factor
 
         # Handle device default
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        elif isinstance(device, str):
-            device = torch.device(device)
         self.device = device
         self.dtype = dtype
         self.verbose = verbose
@@ -90,8 +86,6 @@ class DoseEngine(nn.Module):
             self._add_data_information(image_template)
         self._add_beam_information(beam_template)
         
-        if (self.layers_initialized):
-            self.precomputed_radiological_depths, self.precomputed_kernels = self.compute_kernels(image_template)
 
 
     def _add_data_information(self, new_density_image: torch.Tensor) -> None:
@@ -101,9 +95,14 @@ class DoseEngine(nn.Module):
         if (self.input_shape is not None):
             return
         
+        if self.dtype is None:
+            self.dtype = new_density_image.dtype
+        if self.device is None:
+            self.device = new_density_image.device
         self.input_shape = new_density_image.shape
         self.precomputed_kernels = None
         self.precomputed_radiological_depths = None
+        self.layers_initialized = False
         self._initialize_layers()
         return
         
@@ -124,15 +123,33 @@ class DoseEngine(nn.Module):
             self.gantry_angles = new_beam_data.gantry_angles
             self.collimator_angles = new_beam_data.collimator_angles.to(self.dtype).to(self.device)
 
+        if self.dtype is None:
+            self.dtype = new_beam_data.dtype
+        if self.device is None:
+            self.device = new_beam_data.device
         self.field_size = new_beam_data.field_size
         self.SID = new_beam_data.sid
         self.iso_center = new_beam_data.iso_center
         self.precomputed_kernels = None
         self.precomputed_radiological_depths = None
+        self.layers_initialized = False
         self._initialize_layers()
         return
     
+    def _set_device_dtype(self, device, dtype) -> None:
+        if self.dtype is None:
+            self.dtype = dtype
+        if self.device is None:
+            self.device = device
+        self._initialize_layers()
+
     def _initialize_layers(self) -> None:
+        if self.layers_initialized:
+            return
+        if self.dtype is None:
+            return
+        if self.device is None:
+            return
         if self.input_shape is None:
             return
         if self.input_resolution is None:
@@ -217,6 +234,32 @@ class DoseEngine(nn.Module):
 
         self.layers_initialized = True
 
+    @property
+    def iso_center_voxel(self) -> tuple[int, int, int]:
+        if self.iso_center is None:
+            return None
+
+        sx, sy, sz = self.input_shape
+        rx, ry, rz = self.input_resolution
+        X, Y, Z = self.iso_center  # physical coords, origin at isocenter corner
+
+        # Index of the "center" in voxel space corresponding to the isocenter corner
+        base_x = (sx - 1) / 2.0
+        base_y = (sy - 1) / 2.0
+        base_z = (sz - 1) / 2.0
+
+        # Convert physical coords to voxel indices and round to nearest voxel
+        ix = int(round(X / rx + base_x))
+        iy = int(round(Y / ry + base_y))
+        iz = int(round(Z / rz + base_z))
+
+        # Optionally clamp to valid voxel range
+        ix = max(0, min(sx - 1, ix))
+        iy = max(0, min(sy - 1, iy))
+        iz = max(0, min(sz - 1, iz))
+
+        return (ix, iy, iz)
+
     def compute_kernels(self, attenuation_map) -> tuple[torch.Tensor, torch.Tensor]:
         if attenuation_map.dim() == 3:
             attenuation_map = attenuation_map.unsqueeze(0)
@@ -268,6 +311,23 @@ class DoseEngine(nn.Module):
             assert ct_image.shape == expected_ct, \
                 f"CT shape mismatch: expected {expected_ct}, got {ct_image.shape}"
         
+        
+        devices = {leaf_positions.device, jaw_positions.device, mus.device}
+        if ct_image is not None:
+            devices.add(ct_image.device)
+
+        if len(devices) != 1:
+            raise ValueError(f"Device mismatch among tensors: {devices}")
+
+        # Check that all tensors share the same dtype
+        dtypes = {leaf_positions.dtype, jaw_positions.dtype, mus.dtype}
+        if ct_image is not None:
+            dtypes.add(ct_image.dtype)
+
+        if len(dtypes) != 1:
+            raise ValueError(f"Dtype mismatch among tensors: {dtypes}")
+        
+        
     def forward(
         self,
         leaf_positions: torch.Tensor,
@@ -289,6 +349,8 @@ class DoseEngine(nn.Module):
         Returns:
             Dose tensor [B, H, D, W].
         """
+
+        self._set_device_dtype(leaf_positions.device, leaf_positions.dtype)
         if not self.layers_initialized:
             raise Exception("Layers haven't been initialized yet. Dose engine cannot perform dose calculations.")
 
@@ -440,9 +502,7 @@ class DoseEngine(nn.Module):
         if not self.layers_initialized:
             raise Exception("Layers must be fully initialized for calibration.")
 
-        center_x, center_y, center_z = tuple(s // 2 for s in self.input_shape)
-        iso_y = 100.0 - (center_y * self.input_resolution[1])
-        center_y_iso = int(center_y + iso_y // self.input_resolution[1])
+        iso_y = 100.0 - ((self.input_shape[1] + 1) * self.input_resolution[1] / 2)
         iso_center = (0.0, iso_y, 0.0)
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
         if calibration_mu is None:
@@ -451,6 +511,10 @@ class DoseEngine(nn.Module):
         water_attenuation = torch.ones(self.input_shape).to(self.device).to(self.dtype)
         # Calculate dose
 
+        self.precomputed_kernels = None
+        self.precomputed_radiological_depths = None
+        self.layers_initialized = False
+
         dose = self.compute_dose(
             beam,
             ct_image=water_attenuation,
@@ -458,7 +522,7 @@ class DoseEngine(nn.Module):
             )
 
         # Get center dose (at 10cm depth - index 50 for 100 voxels)
-        center_dose = dose[0, center_x, center_y_iso, center_z].detach().cpu().numpy().item()
+        center_dose = dose[0, *self.iso_center_voxel].detach().cpu().numpy().item()
 
         # Calculate calibration factor
         # This gives the factor to normalize to 1 Gy per MU at reference conditions
@@ -468,6 +532,10 @@ class DoseEngine(nn.Module):
             print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
 
+        self.layers_initialized = False
+        self.precomputed_kernels = None
+        self.precomputed_radiological_depths = None
+        
         if original_beam_template is not None:
             self._add_beam_information(original_beam_template)
         else:
