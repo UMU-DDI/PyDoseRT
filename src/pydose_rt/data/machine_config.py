@@ -53,10 +53,6 @@ class MachineConfig(BaseSettings):
         default=None,
         description="Head scatter Gaussian sigma in MLC direction in mm",
     )
-    head_scatter_factor: Optional[list[list[float]]] = Field(
-        default=None,
-        description="Head scatter factors. Use two sets of values for different factors in the MLC and jaw directions.",
-    )
     tpr_20_10: float = Field(
         description="The tissue phantom ratio TPR20/10"
     )
