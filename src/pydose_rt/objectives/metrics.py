@@ -207,7 +207,23 @@ def result_validation(patient: Patient,
         clinical_results = dict(sum([[(k + "_" +  v['type'], v['ratio']) for v in v_list['criteria']] for k, v_list in validation_results.items()], []))
         clinical_results["passed_test"] = np.mean(np.array(list(clinical_results.values())) < 1.0)
         results['clinical_criteria'] = clinical_results
-        
+    
+        for mask_name in patient.structures.keys():
+            for percent in [0.98, 0.5, 0.02]:
+                results[f"{mask_name}_D_{percent}%"] = dose_at_volume_percent(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent) - dose_at_volume_percent(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent)
+
+        volume_cc = np.prod(patient._resolution) / 1000.0
+        for mask_name in patient.structures.keys():
+            for cc in [2, 0.5]:
+                results[f"{mask_name}_D_{cc}_cc"] = dose_at_volume_cc(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc) - dose_at_volume_cc(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc)
+
+        for mask_name in patient.structures.keys():
+            for vv in [np.round(0.5 * optimization_config.prescription_gy, 2), 
+                    np.round(0.36 * optimization_config.prescription_gy, 2), 
+                    np.round(0.4 * optimization_config.prescription_gy)]:
+                results[f"{mask_name}_V_{vv}_%"] = volume_at_dose(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), vv) - volume_at_dose(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), vv)
+
+            
     if compute_gamma:
         axes = tuple(
             np.arange(patient.dose.shape[i]) * patient.dose.resolution[i]
