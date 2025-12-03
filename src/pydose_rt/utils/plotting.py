@@ -420,61 +420,62 @@ def make_animation(experiment,
         experiment.log_video(video_path, overwrite=True)
     return
 
-def quick_plot(dose_volume, dose_pred, ct_volume, title, dose_max, out_path = None):
-    vmax = 1
+def quick_plot(patient, dose_pred, title, dose_max, out_path = None):
+    dose_volume = patient.dose
+    ct_volume = patient._ct_tensor
     mae_max = 0.1 * dose_max
     plt.figure()
-    slice_idx = dose_volume.shape[1] // 2 - 5
+    slice_idx = dose_volume.shape[0] // 2 - 5
     plt.subplot(331)
     # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_volume[0, slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.imshow(dose_volume[slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
     plt.axis('off')
     plt.colorbar()
     plt.subplot(332)
     plt.title(title)
     # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_pred[0, slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.imshow(dose_pred[slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
     plt.axis('off')
     plt.colorbar()
     plt.subplot(333)
-    plt.imshow(ct_volume[0, slice_idx, :, :].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[0, slice_idx, :, :].cpu().detach().numpy() - dose_pred[0, slice_idx, :, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
+    plt.imshow(ct_volume[slice_idx, :, :].cpu().detach().numpy(), cmap='gray')
+    plt.imshow(dose_volume[slice_idx, :, :].cpu().detach().numpy() - dose_pred[slice_idx, :, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
     plt.axis('off')
     plt.colorbar()
 
-    slice_idx = dose_volume.shape[2] // 2 - 5
+    slice_idx = dose_volume.shape[1] // 2 - 5
     plt.subplot(334)
     # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_volume[0, :, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.imshow(dose_volume[:, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
     plt.axis('off')
     plt.colorbar()
     plt.subplot(335)
     # plt.title(f"MAE {mae_loss}")
     # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_pred[0, :, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.imshow(dose_pred[:, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
     plt.axis('off')
     plt.colorbar()
     plt.subplot(336)
-    plt.imshow(ct_volume[0, :, slice_idx, :].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[0, :, slice_idx, :].cpu().detach().numpy() - dose_pred[0, :, slice_idx, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
+    plt.imshow(ct_volume[:, slice_idx, :].cpu().detach().numpy(), cmap='gray')
+    plt.imshow(dose_volume[:, slice_idx, :].cpu().detach().numpy() - dose_pred[:, slice_idx, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
     plt.axis('off')
     plt.colorbar()
 
-    slice_idx = dose_volume.shape[3] // 2 + 5
+    slice_idx = dose_volume.shape[2] // 2 + 5
     plt.subplot(337)
     # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_volume[0, :, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.imshow(dose_volume[:, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
     plt.axis('off')
     plt.colorbar()
     plt.subplot(338)
     # plt.title(f"MAE {mae_loss}")
     # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_pred[0, :, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
+    plt.imshow(dose_pred[:, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
     plt.axis('off')
     plt.colorbar()
     plt.subplot(339)
-    plt.imshow(ct_volume[0, :, :, slice_idx].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[0, :, :, slice_idx].cpu().detach().numpy() - dose_pred[0, :, :, slice_idx].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
+    plt.imshow(ct_volume[:, :, slice_idx].cpu().detach().numpy(), cmap='gray')
+    plt.imshow(dose_volume[:, :, slice_idx].cpu().detach().numpy() - dose_pred[:, :, slice_idx].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
     plt.axis('off')
     plt.colorbar()
 
