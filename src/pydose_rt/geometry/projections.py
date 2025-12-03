@@ -14,7 +14,7 @@ def soft_min(a, b, sharpness=10.0):
     # min(a, b) = -max(-a, -b)
     return -soft_max(-a, -b, sharpness)
 
-def fractional_box_overlap(d, left, right, sharpness=10.0) -> torch.Tensor:
+def fractional_box_overlap(d, left, right, sharpness=10.0, min_value=0.0, max_value=1.0) -> torch.Tensor:
     """
     Compute fractional overlap with smooth STE for stable gradient propagation.
     Forward pass: Uses geometric max/min for accurate overlap computation.
@@ -44,7 +44,7 @@ def fractional_box_overlap(d, left, right, sharpness=10.0) -> torch.Tensor:
     else:
         overlap_start_soft = soft_max(left, bin_start, sharpness)
         overlap_end_soft = soft_min(right, bin_end, sharpness)
-    soft = torch.clamp(overlap_end_soft - overlap_start_soft, min=0.0, max=1.0)
+    soft = torch.clamp(overlap_end_soft - overlap_start_soft, min=min_value, max=max_value)
     overlap = soft + (hard - soft).detach()
  
     return overlap.to(d.dtype)
