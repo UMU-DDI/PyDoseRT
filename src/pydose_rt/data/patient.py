@@ -144,11 +144,11 @@ class Phantom(Patient):
 
     def __init__(
         self,
-        density_image: np.ndarray,
+        ct_image: np.ndarray,
         resolution: tuple[float, float, float]
     ):
         super().__init__(
-            ct_tensor=density_image,
+            ct_tensor=ct_image,
             structures={},
             dose=None,
             resolution=resolution
@@ -163,10 +163,10 @@ class Phantom(Patient):
         """
         Alternate constructor: create a Phantom directly from a spherical phantom.
         """
-        density_image = torch.ones(shape)
+        ct_image = torch.zeros(shape)
 
         return cls(
-            density_image=density_image,
+            ct_image=ct_image,
             resolution=spacing
         )
 
@@ -195,9 +195,9 @@ class Phantom(Patient):
             (Z - center[0]) ** 2
         )
 
-        density_image = torch.from_numpy(np.expand_dims(np.where(distances <= radius_mm, ct_value, background_value), 0))
+        ct_image = torch.from_numpy(np.expand_dims(np.where(distances <= radius_mm, ct_value, background_value), 0))
 
         return cls(
-            density_image=density_image,
+            ct_image=ct_image,
             resolution=spacing
         )
