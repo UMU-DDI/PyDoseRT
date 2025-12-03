@@ -41,6 +41,10 @@ class MachineConfig(BaseSettings):
         default=600.0,
         description="The maximum dynamic arc dose rate defined in MU/min.",
     )
+    mlc_transmission: float = Field(
+        default=0.0,
+        description="Transmission rate for closed MLCs as a percentage of the open fluence.",
+    )
     penumbra_fwhm: Optional[list[float]] = Field(
         default=None,
         description="Modelled penumbra width in mm. Use two values for different fwhm in MLC and jaw directions, respectively.",
@@ -68,6 +72,10 @@ class MachineConfig(BaseSettings):
     )
     number_of_leaf_pairs: int = Field(description="The number of leafs")
     profile_corrections: Optional[list[list[float]]] = Field(
+        default=None,
+        description="Off-axis correction data: [distances_mm, correction_ratios]"
+    )
+    output_factors: Optional[list[list[float]]] = Field(
         default=None,
         description="Off-axis correction data: [distances_mm, correction_ratios]"
     )

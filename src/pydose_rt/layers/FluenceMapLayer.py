@@ -10,7 +10,7 @@ Typical usage example::
     from pydose_rt.data import MachineConfig
     import torch
     machine_config = MachineConfig(...)
-    layer = FluenceMapLayer(machine_config, device, dtype, resolution, field_size)
+    layer = FluenceMapLayer(machine_config, device, dtype, field_size)
     leaf_positions = torch.tensor(...)
     jaw_positions = torch.tensor(...)
     fluence_map = layer(leaf_positions, jaw_positions)
@@ -25,11 +25,9 @@ from pydose_rt.data import MachineConfig
 from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
 from pydose_rt.physics.fluence.fluence_modeling import (
     create_radial_correction_map,
-    precompute_directional_head_scatter_kernels,
-    estimate_field_size_1d,
-    apply_directional_head_scatter,
+    precompute_head_scatter_kernel,
+    apply_head_scatter_kernels,
     get_output_factor,
-    compute_head_scatter_factor,
     apply_directional_precomputed_kernel,
     precompute_directional_source_penumbra_kernels,
 )
@@ -53,7 +51,6 @@ class FluenceMapLayer(nn.Module):
     def __init__(
         self,
         machine_config: MachineConfig,
-        resolution: tuple[float, float, float],
         field_size: tuple[int, int] = (400, 400),
         device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
@@ -65,7 +62,6 @@ class FluenceMapLayer(nn.Module):
 
         Args:            
             machine_config (MachineConfig): Configuration object with machine parameters.
-            resolution (tuple[float, float, float]): Voxel spacing in mm.
             field_size (tuple[int, int]): Field size (width, height) in pixels.
             device (torch.device): Device on which computations are performed.
             dtype (type): Data type for tensors.
@@ -82,7 +78,6 @@ class FluenceMapLayer(nn.Module):
         self.device=device
         self.dtype=dtype
         self.machine_config = machine_config
-        self.resolution = resolution
         self.verbose = verbose
         self.training_sharpness = training_sharpness
         self.field_size = field_size
@@ -149,20 +144,18 @@ class FluenceMapLayer(nn.Module):
                     head_scatter_amplitude_jaw = self.machine_config.head_scatter_amplitude[1]
                     head_scatter_sigma_mlc = self.machine_config.head_scatter_sigma[0]
                     head_scatter_sigma_jaw = self.machine_config.head_scatter_sigma[1]
-                kernel_mlc, kernel_jaw, amp_mlc, amp_jaw = precompute_directional_head_scatter_kernels(
-                    scatter_sigma_mlc_mm=head_scatter_sigma_mlc,
-                    scatter_sigma_jaw_mm=head_scatter_sigma_jaw,
-                    scatter_amplitude_mlc=head_scatter_amplitude_mlc,
-                    scatter_amplitude_jaw=head_scatter_amplitude_jaw,
-                    pixel_size_mm=0.1,
-                    device=self.device,
-                    dtype=self.dtype
-                )
-                self.register_buffer("head_scatter_kernel_mlc", kernel_mlc)
-                self.register_buffer("head_scatter_kernel_jaw", kernel_jaw)
-                self.head_scatter_amplitude_mlc = amp_mlc
-                self.head_scatter_amplitude_jaw = amp_jaw
+                kernel_mlc = precompute_head_scatter_kernel(head_scatter_sigma_mlc, resolution_cm=0.1)
+                kernel_jaw = precompute_head_scatter_kernel(head_scatter_sigma_jaw, resolution_cm=0.1)
+                self.register_buffer("head_scatter_kernel_mlc", kernel_mlc.to(self.dtype).to(self.device))
+                self.register_buffer("head_scatter_kernel_jaw", kernel_jaw.to(self.dtype).to(self.device))
+                self.head_scatter_amplitude_mlc = head_scatter_amplitude_mlc
+                self.head_scatter_amplitude_jaw = head_scatter_amplitude_jaw
                 self.use_head_scatter = True
+
+        self.use_output_factor = False
+        if hasattr(self.machine_config, 'output_factors') and (self.machine_config.output_factors is not None):
+            self.output_factors = self.machine_config.output_factors
+            self.use_output_factor = True
 
         # Precompute off-axis profile correction
         if hasattr(self.machine_config, 'profile_corrections') and (self.machine_config.profile_corrections is not None):
@@ -261,20 +254,20 @@ class FluenceMapLayer(nn.Module):
         # Apply head scatter using precomputed kernel(s)
         if self.use_head_scatter:
             # New directional approach: independent 1D convolutions with separate amplitude scaling
-            fluence_map = apply_directional_head_scatter(
+            fluence_map = apply_head_scatter_kernels(
                 fluence_map,
-                kernel_mlc=self.head_scatter_kernel_mlc,
-                kernel_jaw=self.head_scatter_kernel_jaw,
-                amplitude_mlc=self.head_scatter_amplitude_mlc,
-                amplitude_jaw=self.head_scatter_amplitude_jaw,
-                padding_mode='constant'
+                self.head_scatter_kernel_mlc,
+                self.head_scatter_kernel_jaw,
+                self.head_scatter_amplitude_mlc,
+                self.head_scatter_amplitude_jaw
             ).to(self.dtype)
 
         if self.use_profile_correction:
             fluence_map = fluence_map * self.profile_correction_map
 
-        OF = get_output_factor(fluence_map)
-        fluence_map = OF * fluence_map
+        if self.use_output_factor:
+            OF = get_output_factor(fluence_map, self.output_factors)
+            fluence_map = OF * fluence_map
 
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 

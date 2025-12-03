@@ -183,7 +183,6 @@ class DoseEngine(nn.Module):
             self.machine_config,
             device = self.device,
             dtype=self.dtype,
-            resolution=self.resolution,
             field_size=self.field_size,
             verbose=self.verbose
         )
@@ -509,7 +508,6 @@ class DoseEngine(nn.Module):
             calibration_mu = self.machine_config.calibration_mu
         beam.mu = calibration_mu * beam.mu
         water_attenuation = torch.ones(self.input_shape).to(self.device).to(self.dtype)
-        # Calculate dose
 
         self.precomputed_kernels = None
         self.precomputed_radiological_depths = None

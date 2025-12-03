@@ -43,10 +43,46 @@ def compute_profile_ratios(
     # Sample at requested points
     sample_points = np.array(sample_points_mm)
     sampled_ratios = interpolator(sample_points)
+    sampled_ratios = sampled_ratios / sampled_ratios[0]
     
     return sample_points, sampled_ratios
 
-def get_output_factor(fluence_map):
+def precompute_head_scatter_kernel(sigma_cm, resolution_cm, kernel_half_width=5):
+    """
+    Create a 1D Gaussian kernel for convolution.
+    
+    Parameters:
+    -----------
+    sigma_cm : float
+        Standard deviation in cm
+    resolution_cm : float
+        Pixel resolution in cm
+    kernel_half_width : float
+        Number of sigmas to extend the kernel on each side
+        
+    Returns:
+    --------
+    kernel : numpy array
+        Normalized 1D Gaussian kernel
+    """
+    # Convert sigma to pixels
+    sigma_pixels = sigma_cm / resolution_cm
+    
+    # Kernel extent in pixels (e.g., 5 sigmas on each side)
+    n_pixels = int(np.ceil(kernel_half_width * sigma_pixels))
+    
+    # Create coordinate array
+    x = np.arange(-n_pixels, n_pixels + 1)
+    
+    # Gaussian kernel
+    kernel = np.exp(-0.5 * (x / sigma_pixels)**2)
+    
+    # Normalize so sum = 1
+    kernel = kernel / np.sum(kernel)
+    
+    return torch.from_numpy(kernel)
+
+def get_output_factor(fluence_map, output_factors):
 
     fluence_mlc_profile = fluence_map.mean(dim=2).squeeze(1)  # [B, W]
     fluence_jaw_profile = fluence_map.mean(dim=3).squeeze(1)  # [B, H]
@@ -54,7 +90,42 @@ def get_output_factor(fluence_map):
     field_size_jaw_mm = estimate_field_size_1d(fluence_jaw_profile, 1.0)  # [B]
     OF = 1.0
 
-    return OF
+    x = torch.Tensor(output_factors[0]).to(fluence_map.device).to(fluence_map.dtype)
+    y = torch.Tensor(output_factors[1]).to(fluence_map.device).to(fluence_map.dtype)
+
+    # Get insertion indices
+    idx_mlc = torch.searchsorted(x, field_size_mlc_mm, right=False)
+
+    # Clamp to valid range (so we can interpolate/extrapolate)
+    idx1_mlc = torch.clamp(idx_mlc, 1, len(x) - 1)
+    idx0_mlc = idx1_mlc - 1
+
+    x0 = x[idx0_mlc]
+    x1 = x[idx1_mlc]
+    y0 = y[idx0_mlc]
+    y1 = y[idx1_mlc]
+
+    # Linear interpolation
+    t = (field_size_mlc_mm - x0) / (x1 - x0)
+    OF_mlc = y0 + t * (y1 - y0)
+
+
+    # Get insertion indices
+    idx_mlc = torch.searchsorted(x, field_size_jaw_mm, right=False)
+
+    # Clamp to valid range (so we can interpolate/extrapolate)
+    idx1_mlc = torch.clamp(idx_mlc, 1, len(x) - 1)
+    idx0_mlc = idx1_mlc - 1
+
+    x0 = x[idx0_mlc]
+    x1 = x[idx1_mlc]
+    y0 = y[idx0_mlc]
+    y1 = y[idx1_mlc]
+
+    # Linear interpolation
+    t = (field_size_jaw_mm - x0) / (x1 - x0)
+    OF_jaw = y0 + t * (y1 - y0)
+    return (OF_mlc + OF_jaw) / 2
 
 def create_radial_correction_map(
     sample_distances_mm: np.ndarray,
@@ -209,110 +280,6 @@ class LearnableFluenceKernel(nn.Module):
         
         return fluence_corrected.squeeze(1)  # [B*G, H, W]
     
-def apply_source_penumbra(fluence, source_size_mm=3.0, pixel_size_mm=1.0):
-    """
-    Apply geometric penumbra from finite source size.
-    
-    Physical basis: 
-    - Linac bremsstrahlung target is ~2-5mm diameter
-    - Creates penumbra at MLC plane (typically ~100cm from source)
-    - Penumbra width ≈ source_size * (SDD/SAD) where SDD is distance to MLC
-    
-    Args:
-        fluence: [B, 1, H, W] fluence map
-        source_size_mm: Effective source diameter (typical: 2-5mm)
-        pixel_size_mm: Pixel size in fluence map
-    """
-    # Calculate Gaussian sigma from source FWHM
-    # FWHM = 2.355 * sigma
-    sigma_pixels = (source_size_mm / pixel_size_mm) / 2.355
-    
-    # Create Gaussian kernel
-    kernel_size = int(6 * sigma_pixels) + 1  # 6-sigma coverage
-    if kernel_size % 2 == 0:
-        kernel_size += 1
-        
-    x = torch.linspace(-(kernel_size//2), kernel_size//2, kernel_size, device=fluence.device)
-    kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
-    kernel_1d = kernel_1d / kernel_1d.sum()
-    
-    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
-    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
-    
-    # Convolve with replicate padding (better for edge behavior)
-    pad = kernel_size // 2
-    fluence_padded = F.pad(fluence, (pad, pad, pad, pad), mode='replicate')
-    fluence_with_penumbra = F.conv2d(fluence_padded, kernel_2d)
-    
-    return fluence_with_penumbra
-
-
-
-
-def apply_head_scatter(fluence, scatter_amplitude=0.035, scatter_range_mm=150.0, pixel_size_mm=1.0):
-    """
-    Apply head scatter (phantom scatter) - long-range scatter from linac head.
-
-    Physical basis:
-    - Photons scatter in linac head (flattening filter, collimators, air)
-    - Creates long-range dose contribution outside primary field
-    - Depends on field size (larger fields → more scatter)
-    - Decays slowly with distance (exponential)
-    - Typically 2-4% of primary dose at field edge, decaying to ~1% at 10cm out
-
-    Args:
-        fluence: [B, 1, H, W] fluence map
-        scatter_amplitude: Relative scatter contribution (unitless, typical: 0.03-0.05)
-        scatter_range_mm: Characteristic decay distance (mm, typical: 100-200)
-        pixel_size_mm: Pixel size in fluence map
-
-    Returns:
-        fluence_with_head_scatter: [B, 1, H, W] fluence map with head scatter added
-    """
-    # Calculate Gaussian sigma from scatter range
-    # Head scatter has longer range than MLC scatter
-    sigma_pixels = (scatter_range_mm / pixel_size_mm) / 2.0
-
-
-    # Create large Gaussian kernel for head scatter
-    kernel_size = int(6 * sigma_pixels) + 1
-    if kernel_size % 2 == 0:
-        kernel_size += 1
-
-
-    # Limit kernel size but allow larger than MLC scatter
-    kernel_size = min(kernel_size, 401)  # Max ~200mm range at 1mm/pixel
-
-
-    x = torch.linspace(-(kernel_size//2), kernel_size//2, kernel_size, device=fluence.device)
-    kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
-    kernel_1d = kernel_1d / kernel_1d.sum()
-
-
-    kernel_2d = kernel_1d[:, None] * kernel_1d[None, :]
-    kernel_2d = kernel_2d.view(1, 1, kernel_size, kernel_size)
-
-
-    # Convolve entire fluence map
-    pad = kernel_size // 2
-    fluence_padded = F.pad(fluence, (pad, pad, pad, pad), mode='constant', value=0)
-    scatter_contribution = F.conv2d(fluence_padded, kernel_2d)
-
-
-    # Calculate field size scaling factor
-    # Larger fields produce more scatter (proportional to open area)
-    open_area = torch.sum(fluence, dim=(2, 3), keepdim=True)  # [B, 1, 1, 1]
-    total_area = fluence.shape[2] * fluence.shape[3]
-    field_size_factor = open_area / total_area
-
-
-    # Add head scatter everywhere (not just blocked regions)
-    # Scale by field size
-    fluence_with_head_scatter = fluence + scatter_amplitude * scatter_contribution * field_size_factor
-
-
-    return fluence_with_head_scatter
-
 
 
 
@@ -403,102 +370,6 @@ def precompute_directional_source_penumbra_kernels(
 
     return kernel_mlc, kernel_jaw
 
-def precompute_head_scatter_kernel(scatter_range_mm: float, pixel_size_mm: float,
-                                   device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    """
-    Precompute the head scatter convolution kernel as 1D (for separable convolution).
-
-    Args:
-        scatter_range_mm: Characteristic decay distance (mm, typical: 100-200)
-        pixel_size_mm: Pixel size in fluence map
-        device: Device to create kernel on
-        dtype: Data type for kernel
-
-    Returns:
-        kernel: [1, 1, 1, K] 1D convolution kernel (for separable convolution)
-    """
-    sigma_pixels = (scatter_range_mm / pixel_size_mm) / 2.0
-
-    kernel_size = int(6 * sigma_pixels) + 1
-    if kernel_size % 2 == 0:
-        kernel_size += 1
-
-    kernel_size = min(kernel_size, 401)
-
-    x = torch.linspace(-(kernel_size//2), kernel_size//2, kernel_size, device=device, dtype=dtype)
-    kernel_1d = torch.exp(-x**2 / (2 * sigma_pixels**2))
-    kernel_1d = kernel_1d / kernel_1d.sum()
-
-    # Return 1D kernel for separable convolution
-    kernel_1d = kernel_1d.view(1, 1, 1, kernel_size)
-
-    return kernel_1d
-
-
-
-def precompute_directional_head_scatter_kernels(
-    scatter_sigma_mlc_mm: float,
-    scatter_sigma_jaw_mm: float,
-    scatter_amplitude_mlc: float,
-    scatter_amplitude_jaw: float,
-    pixel_size_mm: float,
-    device: torch.device,
-    dtype: torch.dtype
-) -> Tuple[torch.Tensor, torch.Tensor, float, float]:
-    """
-    Precompute two separate 1D Gaussian kernels for head scatter in MLC and JAW directions
-    with different sigma values and amplitudes.
-
-    Returns normalized kernels along with their amplitudes for independent application.
-    Each direction contributes independently to the total scatter.
-
-    Physical basis: Head scatter comes from photons scattering in the linac head
-    (flattening filter, collimators, air). The scatter profile can differ between
-    MLC and JAW directions due to different head geometries.
-
-    Args:
-        scatter_sigma_mlc_mm: Gaussian sigma for MLC direction scatter in mm
-        scatter_sigma_jaw_mm: Gaussian sigma for JAW direction scatter in mm
-        scatter_amplitude_mlc: Scatter amplitude as fraction of dose (e.g., 0.04 = 4%)
-        scatter_amplitude_jaw: Scatter amplitude as fraction of dose (e.g., 0.06 = 6%)
-        pixel_size_mm: Pixel size in fluence map
-        device: Device to create kernels on
-        dtype: Data type for kernel
-
-    Returns:
-        kernel_mlc: [1, 1, 1, K_mlc] Normalized 1D convolution kernel for MLC direction
-        kernel_jaw: [1, 1, K_jaw, 1] Normalized 1D convolution kernel for JAW direction
-        amplitude_mlc: MLC scatter amplitude (returned for application phase)
-        amplitude_jaw: JAW scatter amplitude (returned for application phase)
-    """
-    # MLC direction kernel (horizontal)
-    sigma_mlc_pixels = scatter_sigma_mlc_mm / pixel_size_mm
-    kernel_size_mlc = int(6 * sigma_mlc_pixels) + 1
-    if kernel_size_mlc % 2 == 0:
-        kernel_size_mlc += 1
-    kernel_size_mlc = min(kernel_size_mlc, 601)  # Allow large kernels for head scatter
-
-    x_mlc = torch.linspace(-(kernel_size_mlc//2), kernel_size_mlc//2,
-                           kernel_size_mlc, device=device, dtype=dtype)
-    kernel_mlc_1d = torch.exp(-(x_mlc**2) / (2 * sigma_mlc_pixels**2))
-    kernel_mlc_1d = kernel_mlc_1d / kernel_mlc_1d.sum()
-    kernel_mlc = kernel_mlc_1d.view(1, 1, 1, kernel_size_mlc)
-
-    # JAW direction kernel (vertical)
-    sigma_jaw_pixels = scatter_sigma_jaw_mm / pixel_size_mm
-    kernel_size_jaw = int(6 * sigma_jaw_pixels) + 1
-    if kernel_size_jaw % 2 == 0:
-        kernel_size_jaw += 1
-    kernel_size_jaw = min(kernel_size_jaw, 601)  # Allow large kernels for head scatter
-
-    x_jaw = torch.linspace(-(kernel_size_jaw//2), kernel_size_jaw//2,
-                           kernel_size_jaw, device=device, dtype=dtype)
-    kernel_jaw_1d = torch.exp(-(x_jaw**2) / (2 * sigma_jaw_pixels**2))
-    kernel_jaw_1d = kernel_jaw_1d / kernel_jaw_1d.sum()
-    kernel_jaw = kernel_jaw_1d.view(1, 1, kernel_size_jaw, 1)
-
-    return kernel_mlc, kernel_jaw, scatter_amplitude_mlc, scatter_amplitude_jaw
-
 
 
 # ============================================================================
@@ -542,58 +413,6 @@ def apply_directional_precomputed_kernel(
     fluence_convolved = F.conv2d(fluence_padded_jaw, kernel_jaw)
 
     return fluence_convolved
-
-def compute_head_scatter_factor(
-    field_size_cm: torch.Tensor,
-    amplitude: float,
-    sigma_cm: float,
-    ssd_cm: float = 50.0,
-    sad_cm: float = 100.0,
-    reference_field_cm: float = 10.0
-) -> torch.Tensor:
-    """
-    Compute the head scatter factor Sc using the physics-based erf model.
-
-    This implements the model from fit_field_scatter.ipynb:
-        Sc(s) = (1 + w * view_factor(s)) / (1 + w * view_factor(s_ref))
-    where:
-        view_factor(s) = erf(s_projected / σ)²
-        s_projected = s * (SSD / SAD)
-
-    Physical basis: Photons scatter from linac head components (flattening filter at ~50cm).
-    The view factor represents the integral of a Gaussian scatter source through the square aperture,
-    normalized to the reference field size.
-
-    Args:
-        field_size_cm: Effective field size in cm [B] or scalar
-        amplitude: Fitted amplitude parameter w (e.g., 0.045 = 4.5%)
-        sigma_cm: Fitted Gaussian width in cm (e.g., 4.57 cm)
-        ssd_cm: Source to scatter-source distance (flattening filter depth, default 50 cm)
-        sad_cm: Source to axis distance (isocenter, default 100 cm)
-        reference_field_cm: Reference field size for normalization (default 10 cm)
-
-    Returns:
-        Sc factor [B] or scalar - multiplicative correction factor
-    """
-    # Geometric projection to source plane
-    projection_factor = ssd_cm / sad_cm
-    s_projected = field_size_cm * projection_factor
-
-    # View factor: integral of Gaussian through square aperture
-    # erf is the cumulative distribution function, squaring for 2D square
-    view_factor = torch.erf(s_projected / sigma_cm) ** 2
-
-    # Calculate intensity with scatter
-    intensity = 1.0 + amplitude * view_factor
-
-    # Normalize to reference field
-    s_ref_projected = reference_field_cm * projection_factor
-    view_factor_ref = torch.erf(torch.tensor(s_ref_projected / sigma_cm, device=field_size_cm.device)) ** 2
-    intensity_ref = 1.0 + amplitude * view_factor_ref
-
-    Sc = intensity / intensity_ref
-
-    return Sc
 
 
 def estimate_field_size_1d(fluence_1d: torch.Tensor, pixel_size_mm: float = 1.0, threshold: float = 0.5) -> torch.Tensor:
@@ -655,44 +474,61 @@ def make_interpolator(point_dict):
     return interpolate
 
 
-def apply_directional_head_scatter(
-    fluence: torch.Tensor,
-    kernel_mlc: torch.Tensor,
-    kernel_jaw: torch.Tensor,
-    amplitude_mlc: float,
-    amplitude_jaw: float,
-    padding_mode: str = 'constant'
-) -> torch.Tensor:
+def apply_head_scatter_kernels(fluence_map, kernel_x, kernel_y, scatter_amplitude, scatter_fraction):
     """
-    Apply directional head scatter using normalized kernels with independent amplitude scaling.
-
-    Each direction (MLC and JAW) contributes independently to the total scatter. This avoids
-    the amplitude multiplication issue that occurs with pre-scaled separable convolution.
-
-    Args:
-        fluence: [B, 1, H, W] fluence map
-        kernel_mlc: [1, 1, 1, K_mlc] Normalized 1D convolution kernel for MLC direction
-        kernel_jaw: [1, 1, K_jaw, 1] Normalized 1D convolution kernel for JAW direction
-        amplitude_mlc: Scatter amplitude for MLC direction (e.g., 0.04 = 4%)
-        amplitude_jaw: Scatter amplitude for JAW direction (e.g., 0.06 = 6%)
-        padding_mode: Padding mode for convolution (default: 'constant')
-
+    Pure PyTorch implementation using conv2d (faster on GPU).
+    
+    Parameters:
+    -----------
+    fluence_map : torch.Tensor
+        2D fluence map [H, W] or [1, 1, H, W]
+    kernel_x, kernel_y : numpy.ndarray or torch.Tensor
+        1D convolution kernels
+    scatter_fraction : float
+        Scatter fraction S
+        
     Returns:
-        fluence_with_head_scatter: [B, 1, H, W] fluence map with head scatter added
+    --------
+    fluence_total : torch.Tensor
+        Total fluence with scatter
     """
-    # Apply MLC direction scatter (1D convolution along width dimension only)
-    kernel_mlc_size = kernel_mlc.shape[-1]
-    pad_mlc = kernel_mlc_size // 2
-    fluence_padded_mlc = F.pad(fluence, (pad_mlc, pad_mlc, 0, 0), mode=padding_mode)
-    scatter_mlc = F.conv2d(fluence_padded_mlc, kernel_mlc)
-
-    # Apply JAW direction scatter (1D convolution along height dimension only)
-    kernel_jaw_size = kernel_jaw.shape[-2]
-    pad_jaw = kernel_jaw_size // 2
-    fluence_padded_jaw = F.pad(fluence, (0, 0, pad_jaw, pad_jaw), mode=padding_mode)
-    scatter_jaw = F.conv2d(fluence_padded_jaw, kernel_jaw)
-
-    # Add both scatter contributions independently with their respective amplitudes
-    fluence_with_head_scatter = fluence + amplitude_mlc * scatter_mlc + amplitude_jaw * scatter_jaw
-
-    return fluence_with_head_scatter
+    device = fluence_map.device
+    dtype = fluence_map.dtype
+    
+    # Ensure input is 4D [N, C, H, W]
+    if fluence_map.ndim == 2:
+        fluence_map = fluence_map.unsqueeze(0).unsqueeze(0)
+    elif fluence_map.ndim == 3:
+        fluence_map = fluence_map.unsqueeze(0)
+    
+    # Convert kernels to torch tensors
+    if not isinstance(kernel_x, torch.Tensor):
+        kernel_x = torch.from_numpy(kernel_x).to(device=device, dtype=dtype)
+    if not isinstance(kernel_y, torch.Tensor):
+        kernel_y = torch.from_numpy(kernel_y).to(device=device, dtype=dtype)
+    
+    # Create 2D separable kernel by outer product
+    # Method 1: Convolve sequentially (more memory efficient)
+    
+    # Reshape kernel_x for horizontal convolution [out_ch, in_ch, height, width]
+    kernel_x_2d = kernel_x.view(1, 1, 1, -1)
+    
+    # Reshape kernel_y for vertical convolution
+    kernel_y_2d = kernel_y.view(1, 1, -1, 1)
+    
+    # Apply convolution in X direction
+    padding_x = kernel_x_2d.shape[3] // 2
+    fluence_conv = torch.nn.functional.conv2d(
+        fluence_map, kernel_x_2d, padding=(0, padding_x)
+    )
+    
+    # Apply convolution in Y direction
+    padding_y = kernel_y_2d.shape[2] // 2
+    fluence_conv = torch.nn.functional.conv2d(
+        fluence_conv, kernel_y_2d, padding=(padding_y, 0)
+    )
+    
+    # Combine primary and scattered
+    fluence_total = (1.0 - scatter_amplitude) * fluence_map + scatter_amplitude * fluence_conv / scatter_fraction
+    
+    return fluence_total
