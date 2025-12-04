@@ -13,7 +13,7 @@ dtype=torch.float32
 
 do_plot = True
 
-field_sizes = [300] # [50, 100, 150, 200, 300, 400]
+field_sizes = [50, 100, 150, 200, 300, 400]
 
 raw_measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
 results =  []

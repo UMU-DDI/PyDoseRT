@@ -9,7 +9,7 @@ import os
 import cv2
 from pydose_rt.data.beam import BeamSequence
 from pydose_rt.engine.dose_engine import DoseEngine
-from pydose_rt.data import MachineConfig, Patient
+from pydose_rt.data import Patient, OptimizationConfig
 
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1):
@@ -18,23 +18,16 @@ def overlay_mask_outline(mask_slice, color="red", linewidth=1):
 
 def print_results(
     experiment,
-    treatment,
-    raw_losses,
-    y_dose,
+    treatment: OptimizationConfig,
+    patient: Patient,
     beam_sequence: BeamSequence,
-    pred_mlc_grads,
-    pred_jaws_grads,
-    pred_mus_grads,
-    best_results,
     dose_pred,
-    true_ct,
-    masks,
-    mae_loss,
+    title,
     plot_ct=True,
-    dose_max=10.0,
     preset="umea",
     out_path=None
 ):
+    dose_max = max(patient.dose.max(), dose_pred.max()).item()
     def _hide_ticks(ax):
         ax.set_xticks([])
         ax.set_yticks([])
@@ -57,9 +50,6 @@ def print_results(
         _hide_ticks(ax)
 
     # Scales for gradients
-    scale_mlc  = float(np.max(np.abs(pred_mlc_grads)))  if np.any(pred_mlc_grads)  else 1.0
-    scale_jaws = float(np.max(np.abs(pred_jaws_grads))) if np.any(pred_jaws_grads) else 1.0
-    scale_mus  = float(np.max(np.abs(pred_mus_grads)))  if np.any(pred_mus_grads)  else 1.0
     pred_mlc = beam_sequence.leaf_positions.unsqueeze(0)
     pred_mus = beam_sequence.mus.unsqueeze(0)
     pred_jaws = beam_sequence.jaw_positions.unsqueeze(0)
@@ -84,8 +74,7 @@ def print_results(
         dose_alpha = 1.0
 
     fig.suptitle(
-        f"MAE - {str(mae_loss)} Gy\n"
-        f"Test #{len(best_results)}: {[str(np.round(v, 4)) for v in raw_losses]}",
+        title,
         y=0.995
     )
 
@@ -97,12 +86,6 @@ def print_results(
         pred_jaws.cpu().detach().numpy()[0, :, 0:1],
         cmap='gray', vmin=-200.0, vmax=200.0
     )
-    if (pred_jaws_grads is not None):
-        _imshow_fullwidth(
-            ax,
-            pred_jaws_grads[0, :, 0:1],
-            cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
-        )
 
     # --- 2) Jaws (widths)
     ax = fig.add_subplot(gs[1])
@@ -112,12 +95,6 @@ def print_results(
         pred_jaws.cpu().detach().numpy()[0, :, 1:2],
         cmap='gray', vmin=-200.0, vmax=200.0
     )
-    if (pred_jaws_grads is not None):
-        _imshow_fullwidth(
-            ax,
-            pred_jaws_grads[0, :, 1:2],
-            cmap='coolwarm', vmin=-scale_jaws, vmax=scale_jaws, alpha=alpha
-        )
 
     # --- 3) MLCs (centers)
     ax = fig.add_subplot(gs[2])
@@ -127,12 +104,6 @@ def print_results(
         np.transpose(pred_mlc.cpu().detach().numpy()[0, :, :, 0]),
         cmap='gray', vmin=-200.0, vmax=200.0
     )
-    if (pred_mlc_grads is not None):
-        _imshow_fullwidth(
-            ax,
-            np.transpose(pred_mlc_grads[0, :, :, 0]),
-            cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
-        )
 
     # --- 4) MLCs (widths)
     ax = fig.add_subplot(gs[3])
@@ -142,12 +113,6 @@ def print_results(
         np.transpose(pred_mlc.cpu().detach().numpy()[0, :, :, 1]),
         cmap='gray', vmin=-200.0, vmax=200.0
     )
-    if (pred_mlc_grads is not None):
-        _imshow_fullwidth(
-            ax,
-            np.transpose(pred_mlc_grads[0, :, :, 1]),
-            cmap='coolwarm', vmin=-scale_mlc, vmax=scale_mlc, alpha=alpha
-        )
 
     # --- 5) MUs
     ax = fig.add_subplot(gs[4])
@@ -157,12 +122,6 @@ def print_results(
         pred_mus.cpu().detach().numpy(),
         cmap='gray', vmin=0.0, vmax=None
     )
-    if (pred_mus_grads is not None):
-        _imshow_fullwidth(
-            ax,
-            pred_mus_grads,
-            cmap='coolwarm', vmin=-scale_mus, vmax=scale_mus, alpha=alpha
-        )
 
     if (preset == "lund"):
         axial_z = 49
@@ -197,12 +156,12 @@ def print_results(
     # If overlay_mask_outline expects already-sliced 2D arrays (as in your original code),
     # use these two helpers instead:
     def _dose_slice_axial(arr, z=44, x_start=0, x_end=256):
-        return arr[0, z, x_start:x_end, :]
+        return arr[z, x_start:x_end, :]
 
     def _dose_slice_coronal(arr, x=128, y_start=0, y_end=256, z_start=0, z_end=256):
         # coronal view, transpose to show (z, y) or (y, z) consistently
         # matching your original "np.transpose(...[0, 64:198, 128, :])"
-        return np.flipud(arr[0, z_start:z_end, y_start:y_end,x])
+        return np.flipud(arr[z_start:z_end, y_start:y_end,x])
 
     # --- 6) Dose distribution (pred, axial)
     ax = fig.add_subplot(gs[5])
@@ -210,8 +169,8 @@ def print_results(
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, axial)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(roi.cpu().detach().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
+        roi = list(patient.structures.values())[idx]
+        overlay_mask_outline(roi.cpu().detach().numpy()[axial_z, axial_xstart:axial_xend, :], color=color)
 
     # --- 7) Dose distribution (pred, sagittal)
     ax = fig.add_subplot(gs[6])
@@ -219,35 +178,35 @@ def print_results(
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, coronal)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
+        roi = list(patient.structures.values())[idx]
+        overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 8) Dose distribution (gt, axial)
     ax = fig.add_subplot(gs[7])
     if plot_ct:
-        _imshow_fullwidth(ax, _dose_slice_axial(true_ct.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='gray')
-    _imshow_fullwidth(ax, _dose_slice_axial(y_dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
+        _imshow_fullwidth(ax, _dose_slice_axial(patient.get_masked_ct("External").cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='gray')
+    _imshow_fullwidth(ax, _dose_slice_axial(patient.dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, axial)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(roi.cpu().detach().numpy()[0, axial_z, axial_xstart:axial_xend, :], color=color)
+        roi = list(patient.structures.values())[idx]
+        overlay_mask_outline(roi.cpu().detach().numpy()[axial_z, axial_xstart:axial_xend, :], color=color)
 
     # --- 9) Dose distribution (gt, sagittal)
     ax = fig.add_subplot(gs[8])
     if plot_ct:
-        _imshow_fullwidth(ax, _dose_slice_coronal(y_dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='gray')
-    _imshow_fullwidth(ax, _dose_slice_coronal(y_dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
+        _imshow_fullwidth(ax, _dose_slice_coronal(patient.dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='gray')
+    _imshow_fullwidth(ax, _dose_slice_coronal(patient.dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, coronal)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
-        roi = masks[idx]
-        overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[0, coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
+        roi = list(patient.structures.values())[idx]
+        overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
     # --- 10) DVH (line plot; same panel height as others for uniformity)
     ax = fig.add_subplot(gs[9])
     for idx, (color, roi_name) in enumerate([(struct["color"], struct_name) for struct_name, struct in treatment.structures.items()]):
-        roi = masks[idx]
+        roi = list(patient.structures.values())[idx]
         dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
             continue
@@ -258,8 +217,8 @@ def print_results(
         ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="solid", label=roi_name, color=color)
 
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()]):
-        roi = masks[idx]
-        dose_values = y_dose[roi > 0.0].cpu().detach().numpy()
+        roi = list(patient.structures.values())[idx]
+        dose_values = patient.dose[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
             continue
         bins = np.linspace(0, dose_max, 1000)
@@ -291,7 +250,6 @@ def print_results(
         plt.close()
 
 def make_animation(experiment, 
-                   machine_config: MachineConfig,
                    patient_data: Patient, 
                    dose_layer: DoseEngine, 
                    beam_sequence: BeamSequence, 
@@ -299,7 +257,6 @@ def make_animation(experiment,
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    mask_external = list(patient_data.structures.values())[-1]
     ct_volume = patient_data.density_image.unsqueeze(0)
 
     # Get the base colormap (jet)
@@ -420,64 +377,38 @@ def make_animation(experiment,
         experiment.log_video(video_path, overwrite=True)
     return
 
-def quick_plot(patient, dose_pred, title, dose_max, out_path = None):
-    dose_volume = patient.dose
-    ct_volume = patient._ct_tensor
+def quick_plot(patient, dose_pred, title, show_ct: bool = False, out_path = None):
+    dose_max = max(patient.dose.max(), dose_pred.max()).item()
+    dose_volume = patient.dose.cpu().detach().numpy()
+    ct_volume = patient._ct_tensor.cpu().detach().numpy()
+    dose_pred = dose_pred.cpu().detach().numpy()
     mae_max = 0.1 * dose_max
+    alpha = 0.6 if show_ct else 1.0
     plt.figure()
-    slice_idx = dose_volume.shape[0] // 2 - 5
-    plt.subplot(331)
-    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_volume[slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
-    plt.axis('off')
-    plt.colorbar()
-    plt.subplot(332)
-    plt.title(title)
-    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_pred[slice_idx, :, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
-    plt.axis('off')
-    plt.colorbar()
-    plt.subplot(333)
-    plt.imshow(ct_volume[slice_idx, :, :].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[slice_idx, :, :].cpu().detach().numpy() - dose_pred[slice_idx, :, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
-    plt.axis('off')
-    plt.colorbar()
 
-    slice_idx = dose_volume.shape[1] // 2 - 5
-    plt.subplot(334)
-    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_volume[:, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
-    plt.axis('off')
-    plt.colorbar()
-    plt.subplot(335)
-    # plt.title(f"MAE {mae_loss}")
-    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_pred[:, slice_idx, :].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
-    plt.axis('off')
-    plt.colorbar()
-    plt.subplot(336)
-    plt.imshow(ct_volume[:, slice_idx, :].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[:, slice_idx, :].cpu().detach().numpy() - dose_pred[:, slice_idx, :].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
-    plt.axis('off')
-    plt.colorbar()
+    for axis in range(3):
+        plot_idx = (axis * 3) + 1
+        slice_idx = dose_volume.shape[axis] // 2
+        plt.subplot(3, 3, plot_idx)
+        if show_ct:
+            plt.imshow(np.take(ct_volume, slice_idx, axis=axis), cmap='gray')
+        plt.imshow(np.take(dose_volume, slice_idx, axis=axis), cmap='jet', vmax=dose_max, alpha=alpha)
+        plt.axis('off')
+        plt.colorbar()
+        plt.subplot(3, 3, plot_idx + 1)
+        plt.title(title)
+        if show_ct:
+            plt.imshow(np.take(ct_volume, slice_idx, axis=axis), cmap='gray')
+        plt.imshow(np.take(dose_pred, slice_idx, axis=axis), cmap='jet', vmax=dose_max, alpha=alpha)
+        plt.axis('off')
+        plt.colorbar()
+        plt.subplot(3, 3, plot_idx + 2)
+        if show_ct:
+            plt.imshow(np.take(ct_volume, slice_idx, axis=axis), cmap='gray')
+        plt.imshow(np.take(dose_volume - dose_pred, slice_idx, axis=axis), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=alpha)
+        plt.axis('off')
+        plt.colorbar()
 
-    slice_idx = dose_volume.shape[2] // 2 + 5
-    plt.subplot(337)
-    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_volume[:, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
-    plt.axis('off')
-    plt.colorbar()
-    plt.subplot(338)
-    # plt.title(f"MAE {mae_loss}")
-    # plt.imshow(ct_volume[slice_idx, :, :], cmap='gray')
-    plt.imshow(dose_pred[:, :, slice_idx].cpu().detach().numpy(), cmap='jet', vmax=dose_max)
-    plt.axis('off')
-    plt.colorbar()
-    plt.subplot(339)
-    plt.imshow(ct_volume[:, :, slice_idx].cpu().detach().numpy(), cmap='gray')
-    plt.imshow(dose_volume[:, :, slice_idx].cpu().detach().numpy() - dose_pred[:, :, slice_idx].cpu().detach().numpy(), cmap='coolwarm', vmin=-mae_max, vmax=mae_max, alpha=0.6)
-    plt.axis('off')
-    plt.colorbar()
 
     if out_path is None:
         plt.show()

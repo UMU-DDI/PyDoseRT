@@ -1,5 +1,7 @@
 import os
 
+from sympy import N
+
 from pydose_rt.data.optimization_config import OptimizationConfig
 from pathlib import Path
 import pandas as pd
@@ -12,11 +14,11 @@ from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
 import torch
 
 all_results = []
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/')
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/LotsOfBeams/')
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
-        ct_folder, rtplan_path, rtdose_path, rtstruct_path = find_patient_paths(patient_dir)
+        ct_folder, rtplan_paths, rtdose_paths, rtstruct_path = find_patient_paths(patient_dir)
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
@@ -25,27 +27,32 @@ for patient_name in sorted(os.listdir(base_path)):
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
-                    dose_path=rtdose_path, 
-                    plan_path=rtplan_path, 
+                    dose_path=rtdose_paths, 
+                    plan_path=rtplan_paths, 
                     struct_path=rtstruct_path,
-                    struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
-                    use_delivery=True
+                    struct_names=[],
+                    use_delivery=False
                     )
-        optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json",)
+        optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
-        ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
+        # ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
         machine_config = MachineConfig(
-            preset="src/pydose_rt/data/machine_presets/umea_10MV.json"
+            preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
+            penumbra_fwhm=None,
+            head_scatter_amplitude=None,
+            head_scatter_sigma=None,
+            profile_corrections=None,
+            output_factors=None,
             )
             
         patient = patient.to(device).to(dtype)
         dose_volume = patient.dose
-        density_image = torch.where(patient.structures["External"], patient.density_image, 0.0)
-        # ct_volume = patient.get_masked_ct("External")
-        # dose_volume = patient.get_masked_dose("External")
+        density_image = patient.density_image
 
         doses = []
         for beam_sequence in beam_sequences:
+            # beam_sequence.iso_center = (165.0, 100.0, 215.0)
+            beam_sequence.iso_center = beam_sequence.iso_center - 1.0
             beam_sequence = beam_sequence.to(device).to(dtype)
             dose_engine = DoseEngine(kernel_size=kernel_size,
                                      resolution=patient._resolution,
@@ -59,35 +66,29 @@ for patient_name in sorted(os.listdir(base_path)):
             dose_engine.calibrate(calibration_mu=machine_config.calibration_mu,
                                   original_beam_template=beam_sequence)
 
-            dose_pred = dose_engine.compute_dose_sequential(beam_sequence, ct_image=density_image)
+            dose_pred = dose_engine.compute_dose(beam_sequence, ct_image=density_image)
             doses.append(dose_pred.detach())
-        dose_pred = sum(doses)
-        dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
+        # dose_pred = sum(doses)
+        # dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
         # dose_pred = dose_pred * dose_volume[patient.structures["PTV_56"] > 0].mean() / dose_pred[patient.structures["PTV_56"] > 0].mean()
 
         dose_max = max(dose_volume.max(), dose_pred.max()).item()
 
         mae_map = torch.abs(dose_pred - dose_volume)
-        mae_loss = np.mean(torch.mean(mae_map[patient.structures["External"]]).item())
+        mae_loss = np.mean(torch.mean(mae_map).item())
         res_string = f"Patient {patient_name}: MAE {str(np.round(mae_loss, 4))}"
         print(res_string)
 
         # print(scale.item())
         # print(mae_loss)
-        leafs = beam_sequence.leaf_positions.unsqueeze(0)
-        mus = beam_sequence.mus.unsqueeze(0)
-        jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=False, compute_clinical_criteria=False, global_normalisation=2.2)
+        # res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=False, compute_clinical_criteria=False, global_normalisation=2.2)
 
         # print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
         # res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
 
         print(res_string)
-        quick_plot(patient, dose_pred, title=res_string, out_path=f"out/quick_{patient_name}.png")
+        quick_plot(patient, dose_pred, title=res_string, show_ct=True, out_path=f"out/quick_{patient_name}_beam_0.png")
 
-        row = {"patient_name": patient_name}
-        row.update(res)        # Adds all scalar keys from res
-        all_results.append(row)
 
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [mae_loss]]}"
         print_results(None, optimization, patient, beam_sequence, dose_pred, title=title, out_path=f"out/final_{patient_name}.png")
@@ -96,15 +97,9 @@ for patient_name in sorted(os.listdir(base_path)):
         #                treatment, 
         #                patient, 
         #                dose_layer, 
-        #                (leafs[:, :, :-1, :] + leafs[:, :, 1:, :]) / 2, 
-        #                (mus[:, :-1] + mus[:, 1:]) / 2, 
-        #                (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2,
+        #               beam_sequence
         #                dose_max
         #                )
         del dose_engine, dose_pred, dose_volume, patient, optimization
     except Exception as e:
         print(e)
-        
-df = pd.DataFrame(all_results)
-print(df.to_string(index=False))
-df.to_csv("out/results_summary.csv", index=False)
