@@ -206,6 +206,7 @@ class DoseEngine(nn.Module):
             resolution=self.resolution,
             ct_array_shape=self.input_shape,
             gantry_angles=self.gantry_angles,
+            iso_center=self.iso_center,
             downsampling_factor=self.downsampling_factor,
             verbose=self.verbose
         )
@@ -228,6 +229,7 @@ class DoseEngine(nn.Module):
             dtype=self.dtype,
             ct_array_shape=self.ct_array_shape,
             gantry_angles=self.gantry_angles,
+            iso_center=self.iso_center,
             verbose=self.verbose
         )
 

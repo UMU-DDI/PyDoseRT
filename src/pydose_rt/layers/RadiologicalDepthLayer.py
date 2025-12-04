@@ -47,6 +47,7 @@ class RadiologicalDepthLayer(nn.Module):
                  resolution: tuple[float, float, float],
                  ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float],
+                 iso_center: tuple[float, float, float],
                  downsampling_factor: tuple[int, int, int] = (1, 1, 1),
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,

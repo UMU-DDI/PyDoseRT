@@ -30,9 +30,10 @@ class BeamRotationLayer(nn.Module):
     def __init__(self,
                  machine_config: MachineConfig,
                  ct_array_shape: tuple[float, float, float],
+                 iso_center: tuple[float, float, float],
+                 gantry_angles: list[float] | torch.Tensor = None,
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
-                 gantry_angles: list[float] | torch.Tensor = None,
                  verbose: bool = False,
                 ) -> 'BeamRotationLayer':
         """
