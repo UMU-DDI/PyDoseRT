@@ -127,7 +127,7 @@ for test_i in range(n_tests):
 
         patient = patient.to(device).to(dtype)
         ct_volume = patient.density_image.unsqueeze(0)
-        dose_target = patient.get_masked_dose("External").unsqueeze(0)
+        dose_target = patient.dose.unsqueeze(0)
         
         engine = DoseEngine(
             machine_config=machine_config,
@@ -173,7 +173,7 @@ for test_i in range(n_tests):
                 beam_sequence.to_delivery(),
                 ct_image=ct_volume
             )
-            dose_pred = torch.where(patient.structures["External"], dose_pred, torch.zeros_like(dose_pred))
+            dose_pred = dose_pred
 
             # Compute loss
             raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred[0], dose_target, beam_sequence, weights)
@@ -207,7 +207,7 @@ for test_i in range(n_tests):
             dose_pred = latest["dose_pred"]
             loss_val = latest["loss_val"]
             beam_sequence = latest["beam_sequence"]
-            mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred)[0, patient.structures["External"]])).cpu().detach().numpy(), 4)
+            mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred))).cpu().detach().numpy(), 4)
             
             patience += 1
             if (loss < current_res["loss"]):

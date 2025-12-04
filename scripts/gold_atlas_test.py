@@ -22,7 +22,7 @@ machine_config = MachineConfig(
     
 
 all_results = []
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/')
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/NODES/')
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
@@ -30,7 +30,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
-        kernel_size = 151
+        kernel_size = 251
         downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
@@ -55,7 +55,7 @@ for patient_name in sorted(os.listdir(base_path)):
             dose_engine = DoseEngine(kernel_size=kernel_size,
                                      resolution=patient._resolution,
                                      machine_config=machine_config,
-                                     image_template=patient.density_image,
+                                     image_template=density_image,
                                      beam_template=beam_sequence,
                                      device=device,
                                      dtype=dtype
@@ -68,7 +68,8 @@ for patient_name in sorted(os.listdir(base_path)):
             doses.append(dose_pred.detach())
         dose_pred = sum(doses)
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
-        # dose_pred = dose_pred * dose_volume[patient.structures["PTV_56"] > 0].mean() / dose_pred[patient.structures["PTV_56"] > 0].mean()
+        print(dose_volume[patient.structures["PTV_56"] > 0].mean() / dose_pred[patient.structures["PTV_56"] > 0].mean())
+        dose_pred = dose_pred * dose_volume[patient.structures["PTV_56"] > 0].mean() / dose_pred[patient.structures["PTV_56"] > 0].mean()
 
         dose_max = max(dose_volume.max(), dose_pred.max()).item()
 

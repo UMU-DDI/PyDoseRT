@@ -142,14 +142,14 @@ def print_results(
         coronal_ystart = 64
         coronal_yend = 124
     elif (preset == "gold-atlas"):
-        axial_z = 53
+        axial_z = 83
         axial_xstart = 32
         axial_xend = 162
-        coronal_x = 97
+        coronal_x = 120
         coronal_zstart = 32
-        coronal_zend = 162
+        coronal_zend = 210
         coronal_ystart = 32
-        coronal_yend = 162
+        coronal_yend = 210
     else:
         raise Exception("Preset missing")
 
@@ -184,7 +184,7 @@ def print_results(
     # --- 8) Dose distribution (gt, axial)
     ax = fig.add_subplot(gs[7])
     if plot_ct:
-        _imshow_fullwidth(ax, _dose_slice_axial(patient.get_masked_ct("External").cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='gray')
+        _imshow_fullwidth(ax, _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='gray')
     _imshow_fullwidth(ax, _dose_slice_axial(patient.dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, axial)')
@@ -257,7 +257,7 @@ def make_animation(experiment,
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    ct_volume = patient_data.density_image.unsqueeze(0)
+    ct_volume = patient_data._ct_tensor.unsqueeze(0)
 
     # Get the base colormap (jet)
     alpha_max = 1.0
