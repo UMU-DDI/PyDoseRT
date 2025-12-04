@@ -22,7 +22,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
-        kernel_size = 101
+        kernel_size = 201
         downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
@@ -38,11 +38,11 @@ for patient_name in sorted(os.listdir(base_path)):
         # ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
         machine_config = MachineConfig(
             preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
-            penumbra_fwhm=None,
-            head_scatter_amplitude=None,
-            head_scatter_sigma=None,
-            profile_corrections=None,
-            output_factors=None,
+            # penumbra_fwhm=None,
+            # head_scatter_amplitude=None,
+            # head_scatter_sigma=None,
+            # profile_corrections=None,
+            # output_factors=None,
             )
             
         patient = patient.to(device).to(dtype)
@@ -52,7 +52,7 @@ for patient_name in sorted(os.listdir(base_path)):
         doses = []
         for beam_sequence in beam_sequences:
             # beam_sequence.iso_center = (165.0, 100.0, 215.0)
-            beam_sequence.iso_center = beam_sequence.iso_center - 1.0
+            beam_sequence.iso_center = beam_sequence.iso_center
             beam_sequence = beam_sequence.to(device).to(dtype)
             dose_engine = DoseEngine(kernel_size=kernel_size,
                                      resolution=patient._resolution,
@@ -87,7 +87,7 @@ for patient_name in sorted(os.listdir(base_path)):
         # res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
 
         print(res_string)
-        quick_plot(patient, dose_pred, title=res_string, show_ct=True, out_path=f"out/quick_{patient_name}_beam_0.png")
+        quick_plot(patient, dose_pred[0], title=res_string, show_ct=True, out_path=f"out/quick_{patient_name}_beam_0.png")
 
 
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [mae_loss]]}"

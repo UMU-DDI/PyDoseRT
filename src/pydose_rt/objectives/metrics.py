@@ -226,7 +226,7 @@ def result_validation(patient: Patient,
             
     if compute_gamma:
         axes = tuple(
-            np.arange(patient.dose.shape[i]) * patient.dose.resolution[i]
+            np.arange(patient.dose.shape[i]) * patient._resolution[i]
             for i in range(3)
         )
         

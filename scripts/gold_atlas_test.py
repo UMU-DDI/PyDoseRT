@@ -11,6 +11,16 @@ from pydose_rt import DoseEngine
 from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
 import torch
 
+optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json",)
+machine_config = MachineConfig(
+    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
+    profile_corrections=None,
+    output_factors=None,
+    head_scatter_amplitude=None,
+    head_scatter_sigma=None
+    )
+    
+
 all_results = []
 base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/')
 for patient_name in sorted(os.listdir(base_path)):
@@ -20,7 +30,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
-        kernel_size = 101
+        kernel_size = 151
         downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
@@ -31,13 +41,8 @@ for patient_name in sorted(os.listdir(base_path)):
                     struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
                     use_delivery=True
                     )
-        optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json",)
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
-        machine_config = MachineConfig(
-            preset="src/pydose_rt/data/machine_presets/umea_10MV.json"
-            )
-            
         patient = patient.to(device).to(dtype)
         dose_volume = patient.dose
         density_image = torch.where(patient.structures["External"], patient.density_image, 0.0)
@@ -77,10 +82,9 @@ for patient_name in sorted(os.listdir(base_path)):
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=False, compute_clinical_criteria=False, global_normalisation=2.2)
-
-        # print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
-        # res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None)
+        print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
+        res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
 
         print(res_string)
         quick_plot(patient, dose_pred, title=res_string, out_path=f"out/quick_{patient_name}.png")
@@ -101,7 +105,7 @@ for patient_name in sorted(os.listdir(base_path)):
         #                (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2,
         #                dose_max
         #                )
-        del dose_engine, dose_pred, dose_volume, patient, optimization
+        del dose_engine, dose_pred, dose_volume, patient
     except Exception as e:
         print(e)
         

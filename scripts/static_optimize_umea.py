@@ -6,20 +6,13 @@ import os
 import torch
 import time
 from pathlib import Path
-import math
-import torch
 from pydose_rt.data import Patient, OptimizationConfig, MachineConfig, loaders, BeamSequence
 from pydose_rt import DoseEngine
-from pydose_rt.objectives.losses import dvh_percentile_loss, dvh_volume_at_dose_loss, scale_loss, compute_dvh_loss
+from pydose_rt.objectives.losses import compute_dvh_loss
 from pydose_rt.layers import BeamValidationLayer
-from pydose_rt.utils.plotting import *
-from pydose_rt.physics.kernels.pencil_beam_model import *
-from pydose_rt.utils.grad_monitor import GradMonitor
-import numpy as np
-from pydose_rt.objectives.losses import compute_loss, compute_mae_loss
+from pydose_rt.utils.plotting import print_results, make_animation
 from pydose_rt.objectives.metrics import result_validation
 from pydose_rt.utils.utils import get_initial_weights
-from pydose_rt.utils.plotting import print_results, make_animation
 from dotenv import load_dotenv
 load_dotenv()  # will look for .env in project root
 
@@ -40,9 +33,9 @@ if remote:
     rtstruct_path = next((base / "[RS] RayStation").iterdir())
 
     patient, beam_sequence = loaders.load_dicom(
-                ct_folder=ct_folder, 
-                dose_path=rtdose_path, 
-                plan_path=rtplan_path, 
+                ct_folder=ct_folder,
+                dose_path=rtdose_path,
+                plan_path=[ rtplan_path ],
                 struct_path=rtstruct_path,
                 struct_names=["CTVT", "PTVT_42.7", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"]
                 )
@@ -54,7 +47,6 @@ if remote:
     dtype = torch.float32
     downsampling_factor = (1, 2, 2)
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
     max_iter = 1000
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
@@ -82,9 +74,16 @@ else:
     downsampling_factor = (1, 2, 2)
 
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
     max_iter = 10
 
+machine_config = MachineConfig(
+    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",            
+    penumbra_fwhm=None,
+    head_scatter_amplitude=None,
+    head_scatter_sigma=None,
+    profile_corrections=None,
+    output_factors=None,
+    )
 
 gantry_angles = beam_sequence.gantry_angles
 number_of_leaf_pairs  = beam_sequence.num_leaf_pairs
@@ -112,24 +111,27 @@ for test_i in range(n_tests):
         weights = get_initial_weights()
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
         optimization.randomize_weights()
-        beam_sequence = BeamSequence.create(gantry_angles,
-                                            number_of_leaf_pairs,
-                                            field_size,
-                                            iso_center,
-                                            collimator_angles,
-                                            sid,
-                                            open_field_size,
-                                            device,
-                                            dtype,
-                                            True)
+        beam_sequence = BeamSequence.create(
+            gantry_angles=gantry_angles,
+            number_of_leaf_pairs=number_of_leaf_pairs,
+            field_size=field_size,
+            iso_center=iso_center,
+            collimator_angles=collimator_angles,
+            sid=sid,
+            open_field_size=open_field_size,
+            device=device,
+            dtype=dtype,
+            requires_grad=True
+            )
         beam_sequence.jaw_positions.requires_grad_(False)
 
         patient = patient.to(device).to(dtype)
-        ct_volume = patient.get_masked_ct("External").unsqueeze(0)
+        ct_volume = patient.density_image.unsqueeze(0)
         dose_target = patient.get_masked_dose("External").unsqueeze(0)
         
         engine = DoseEngine(
             machine_config=machine_config,
+            resolution=patient._resolution,
             image_template=patient.density_image,
             beam_template=beam_sequence.to_delivery(), 
             downsampling_factor=downsampling_factor,
@@ -174,7 +176,7 @@ for test_i in range(n_tests):
             dose_pred = torch.where(patient.structures["External"], dose_pred, torch.zeros_like(dose_pred))
 
             # Compute loss
-            raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_target, beam_sequence, weights)
+            raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred[0], dose_target, beam_sequence, weights)
             loss = torch.stack(raw_losses).sum()
             
             # Backprop
@@ -260,11 +262,12 @@ for test_i in range(n_tests):
             },
             epoch=epoch,
         )
-
+        
+        title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [raw_losses]]}"
         experiment.log_asset_data(beam_sequence.leaf_positions.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
-        print_results(experiment, optimization, raw_losses, dose_target, beam_sequence, None, None, None, best_results, dose_pred, ct_volume, [mask.unsqueeze(0) for mask in list(patient.structures.values())], mae_loss, preset="gold-atlas", dose_max=7.0)
-        make_animation(experiment, machine_config, patient, engine, beam_sequence, dose_max=7.0)
+        print_results(experiment, optimization, patient, beam_sequence, dose_pred[0], title, plot_ct=True, preset="gold-atlas")
+        make_animation(experiment, patient, engine, beam_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
         
