@@ -70,9 +70,15 @@ class BeamWiseConvolutionalLayer(nn.Module):
         # [kH, kW, BG, D] → [BG*D, 1, kH, kW]
         kernels = kernels.permute(2, 3, 0, 1).reshape(BG * D, 1, kH, kW)
 
+        # Use replicate padding instead of zero-padding to reduce boundary artifacts
+        # Compute padding size for "same" convolution
+        pad_h = (kH - 1) // 2
+        pad_w = (kW - 1) // 2
+        fluence_vol = F.pad(fluence_vol, (pad_w, pad_w, pad_h, pad_h), mode='replicate')
+
         # Now group conv: BG*D inputs, BG*D kernels, 1 channel per group
         out = F.conv2d(
-            fluence_vol, weight=kernels, groups=BG * D, padding="same"
+            fluence_vol, weight=kernels, groups=BG * D, padding=0
         )  # [BG*D, 1, H, W]
 
         # Reshape back: [BG, D, H, W, 1]

@@ -30,7 +30,8 @@ class BeamRotationLayer(nn.Module):
     def __init__(self,
                  machine_config: MachineConfig,
                  ct_array_shape: tuple[float, float, float],
-                 iso_center: tuple[float, float, float],
+                 iso_center: tuple[float, float, float],                
+                 resolution: tuple[float, float, float],
                  gantry_angles: list[float] | torch.Tensor = None,
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
@@ -39,7 +40,10 @@ class BeamRotationLayer(nn.Module):
         """
         Initializes the BeamRotationLayer.
         Args:            
-            machine_config (MachineConfig): Configuration parameters for the layer.
+            machine_config (MachineConfig): Configuration parameters for the layer.            
+            ct_array_shape: (H, D, W) - shape of CT array in voxels
+            iso_center: (X, Y, Z) - isocenter in physical coordinates (mm)
+            resolution: (rx, ry, rz) - voxel spacing in mm
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
             gantry_angles (list[float] | torch.Tensor): Gantry angles in radians.
@@ -54,13 +58,22 @@ class BeamRotationLayer(nn.Module):
         self.device = device
         self.dtype = dtype
         self.machine_config = machine_config
-        self.ct_array_shape = ct_array_shape
+        self.ct_array_shape = ct_array_shape        
+        self.iso_center = iso_center
+        self.resolution = resolution
         self.verbose = verbose
 
-        self.rot_angles_rad = gantry_angles.to(dtype=self.dtype, device=self.device)
-        self.rot_grid = build_rotation_grids((1, self.rot_angles_rad.shape[0], self.ct_array_shape[1], self.ct_array_shape[0], self.ct_array_shape[2]), self.rot_angles_rad, self.device, self.dtype)
+        self.rot_angles_rad = gantry_angles.to(dtype=self.dtype, device=self.device)        
+        self.rot_grid = build_rotation_grids(
+            (1, self.rot_angles_rad.shape[0], self.ct_array_shape[1], self.ct_array_shape[0], self.ct_array_shape[2]),
+            self.rot_angles_rad,
+            self.device,
+            self.dtype,
+            iso_center=iso_center,
+            resolution=resolution
+        )
 
-    def forward(self, accumulated_dose: torch.Tensor, center: tuple = None) -> torch.Tensor:
+    def forward(self, accumulated_dose: torch.Tensor) -> torch.Tensor:
         """
         Rotates all [B, G, D, H, W] dose accumulated_dose for all gantry angles in parallel (fully vectorized).
         Args:
@@ -71,7 +84,6 @@ class BeamRotationLayer(nn.Module):
             torch.Tensor: Rotated [B, G, H, D, W]
         """
 
-        # TODO: Implement iso center functionality
         B, G, D, H, W = accumulated_dose.shape
         accumulated_dose = accumulated_dose.permute(0, 1, 3, 2, 4)   # [B, G, H, D, W]
         accumulated_dose = accumulated_dose.reshape(B*G*H, 1, D, W)   # [B*G*H, 1, D, W]

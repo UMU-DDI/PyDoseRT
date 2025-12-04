@@ -85,10 +85,11 @@ class RadiologicalDepthLayer(nn.Module):
         self.ct_array_shape = ct_array_shape
         self.target_ct_shape = self.ct_array_shape
         self.resolution = resolution
+        self.iso_center = iso_center
 
         # If using full CT, compute indices for full-sized CT
         stacked_indices = get_radiological_depth_indices(
-            ct_array_shape, gantry_angles, self.dtype
+            ct_array_shape, gantry_angles, self.dtype, iso_center=iso_center, resolution=resolution
         ).to(self.device)
 
         # Final shape: [1, G, P, 3]

@@ -309,7 +309,7 @@ class PencilBeamModel:
                         src_fwhm_mm_iso: float = 2.5,
                         SAD_cm: float = 100.0, 
                         SSD_cm: float = 100.0,
-                        apply_circular_mask: bool = True, 
+                        apply_circular_mask: bool = False, 
                         mask_radius_cm: float = None) -> np.ndarray:
         """
         Generate pencil beam kernel for given depths and radial grid.

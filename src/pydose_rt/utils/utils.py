@@ -163,9 +163,9 @@ def sample_tensor_nearest(dose_calc, voxel_size, iso_center, xyz_mm):
     dx, dy, dz = voxel_size
 
     # center index (isocenter at (0,0,0 mm))
-    cx = ((X - 1) / 2.0) - iso_center[0]
-    cy = 0 # ((Y - 1) / 2.0) - iso_center[1]
-    cz = ((Z - 1) / 2.0) - iso_center[2]
+    cx = iso_center[0]
+    cy = iso_center[1]
+    cz = iso_center[2]
 
     x_mm = xyz_mm[:, 0]
     y_mm = xyz_mm[:, 1]
@@ -396,17 +396,13 @@ def get_initial_weights():
     min_int_range = -3
     max_int_range = 2
     weights = {
-        # "loss_lower_bound_gy": 1.0, # 10**np.random.randint(min_int_range, max_int_range),
-        # "loss_higher_bound_gy": 1.0, #10**np.random.randint(min_int_range, max_int_range),
-        # "loss_lower_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
-        # "loss_higher_bound_target": 0.0, # 10**np.random.randint(min_int_range, max_int_range),
-        # "l2_loss_oars_and_background": 10**np.random.randint(-3, 1), # 0.01,
-        # "mu_rate_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        # "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "l2_loss_oars_and_background": 0.0, # 10**np.random.randint(-3, 1), # 0.01,
+        "mu_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "mu_complexity_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
         "leaf_reg_loss": 0.0,# 10**np.random.randint(-5, 2), # 10**np.random.randint(min_int_range, max_int_range),
         "leaf_complexity_loss": 0.0,# 10**np.random.randint(-5, 2), # 10**np.random.randint(-2, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        # "jaw_opening_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
-        # "jaw_complexity_loss": 0.0, # 10**np.random.randint(-3, 5), # 10**np.random.randint(min_int_range, max_int_range),
+        "jaw_reg_loss": 0.0, #10**np.random.randint(-3, 0), # 10**np.random.randint(min_int_range, max_int_range),
+        "jaw_complexity_loss": 0.0, # 10**np.random.randint(-3, 5), # 10**np.random.randint(min_int_range, max_int_range),
     }
     
     return weights

@@ -2,17 +2,19 @@ import torch
 import math
 import torch.nn.functional as F
 
-def get_radiological_depth_indices(input_shape, angles_rad, dtype):
+def get_radiological_depth_indices(input_shape, angles_rad, dtype, iso_center=None, resolution=None):
     """
     Generate sampling coordinates for radiological depth calculation using ray tracing.
 
-    For each angle, creates a ray through the volume center with uniform voxel spacing
-    in the rotated coordinate frame. Returns exactly D points per ray.
+    For each angle, creates a ray through the isocenter (or volume center if not specified)
+    with uniform voxel spacing in the rotated coordinate frame. Returns exactly D points per ray.
 
     Args:
         input_shape: (H, D, W) - shape of CT volume in voxels
         angles_rad: list/tensor of rotation angles in radians
         dtype: torch dtype for output
+        iso_center: (X, Y, Z) - isocenter in physical coordinates (mm), where X=height, Y=depth, Z=width
+        resolution: (rx, ry, rz) - voxel spacing in mm, where rx=res_height, ry=res_depth, rz=res_width
 
     Returns:
         indices: [1, G, D, 3] - floating point coordinates (x, y, z) for sampling
@@ -21,10 +23,22 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype):
     """
     H, D, W = input_shape
 
-    # Center of the volume in voxel coordinates
-    center_x = (W - 1) / 2.0
-    center_y = (D - 1) / 2.0
-    center_z = (H - 1) / 2.0
+    # Calculate center in voxel coordinates
+    if iso_center is not None and resolution is not None:
+        # Convert physical isocenter to voxel coordinates
+        # iso_center = (X, Y, Z) where X=height, Y=depth, Z=width (physical mm)
+        # resolution = (rx, ry, rz) where rx=res_height, ry=res_depth, rz=res_width (mm/voxel)
+        X, Y, Z = iso_center
+        rx, ry, rz = resolution
+
+        center_z = (X - rx / 2.0) / rx  # height dimension (z in voxel coords)
+        center_y = (Y - ry / 2.0) / ry  # depth dimension (y in voxel coords)
+        center_x = (Z - rz / 2.0) / rz  # width dimension (x in voxel coords)
+    else:
+        # Default to volume center if isocenter not specified
+        center_x = (W - 1) / 2.0
+        center_y = (D - 1) / 2.0
+        center_z = (H - 1) / 2.0
 
     # Create a line of D points along the Y axis (depth direction)
     # This is the reference line at angle=0
@@ -111,22 +125,23 @@ def rotate_2d_images(images, angles_rad, device, dtype):
 
     return rotated
 
-def build_rotation_grids(input_shape, angles_rad, device, dtype):
+def build_rotation_grids(input_shape, angles_rad, device, dtype, iso_center=None, resolution=None):
     """
-    Build rotation grids for rotating D×W images by given angles.
-    
+    Build rotation grids for rotating D×W images by given angles around a specified point.
+
     Args:
-        input_shape: (B, G, D, H, W) 
+        input_shape: (B, G, D, H, W)
         angles_rad: Tensor of G rotation angles in radians
         device: torch device
         dtype: torch dtype
-    
+        iso_center: (X, Y, Z) - isocenter in physical coordinates (mm), where X=height, Y=depth, Z=width
+        resolution: (rx, ry, rz) - voxel spacing in mm, where rx=res_height, ry=res_depth, rz=res_width
+
     Returns:
         grid2d: [B*G*H, D, W, 2] sampling grid for grid_sample
     """
     B, G, D, H, W = input_shape
     a = angles_rad.to(device=device, dtype=dtype)
-    # a -= math.pi
 
     cos_a = torch.cos(a)
     sin_a = torch.sin(a)
@@ -136,10 +151,32 @@ def build_rotation_grids(input_shape, angles_rad, device, dtype):
     mats[:, 1, 0] = -sin_a
     mats[:, 1, 1] = cos_a
 
+    # If isocenter is specified, adjust rotation to be around that point
+    if iso_center is not None and resolution is not None:
+        # Convert physical isocenter to voxel coordinates
+        # Rotation is in the D-W plane, so we need the Y (depth) and Z (width) components
+        X, Y, Z = iso_center
+        rx, ry, rz = resolution
+
+        center_y = (Y - ry / 2.0) / ry  # depth dimension (corresponds to D)
+        center_x = (Z - rz / 2.0) / rz  # width dimension (corresponds to W)
+
+        # Convert voxel coordinates to normalized coordinates [-1, 1] (for align_corners=False)
+        # norm = (2 * (voxel + 0.5) / size) - 1
+        norm_cy = (2.0 * (center_y + 0.5) / D) - 1.0
+        norm_cx = (2.0 * (center_x + 0.5) / W) - 1.0
+
+        # Adjust translation to rotate around the isocenter instead of the center
+        # Translation formula: t = center * (1 - cos) - other_coord * sin (for rotation in 2D)
+        # For rotation around (norm_cx, norm_cy):
+        # tx (corresponding to W/x): norm_cx * (1 - cos(θ)) - norm_cy * sin(θ)
+        # ty (corresponding to D/y): norm_cy * (1 - cos(θ)) + norm_cx * sin(θ)
+        mats[:, 0, 2] = norm_cx * (1.0 - cos_a) - norm_cy * sin_a
+        mats[:, 1, 2] = norm_cy * (1.0 - cos_a) + norm_cx * sin_a
+
     # Generate rotation grids for each angle
-    grid2d = F.affine_grid(mats, size=(G, 1, D, W), align_corners=False)  # [G, 1, W, D, 2]
-    # grid2d = grid2d[..., [1, 0]]
-    
+    grid2d = F.affine_grid(mats, size=(G, 1, D, W), align_corners=False)  # [G, 1, D, W, 2]
+
     # Expand for batch and height dimensions
     grid2d = grid2d.unsqueeze(1).unsqueeze(0)              # [1, G, 1, D, W, 2]
 
