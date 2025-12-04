@@ -27,10 +27,10 @@ class Patient:
 
     def __init__(self, ct_tensor=None, attenuation_tensor = None, structures: Optional[dict[str, torch.Tensor]] = dict(), dose: torch.Tensor = None, resolution=None) -> 'Patient':
         self._resolution = resolution
-        self._ct_tensor = self.set_resolution(ct_tensor) if ct_tensor is not None else None
-        self._attenuation_tensor = self.set_resolution(attenuation_tensor) if attenuation_tensor is not None else None
+        self._ct_tensor = ct_tensor if ct_tensor is not None else None
+        self._attenuation_tensor = attenuation_tensor if attenuation_tensor is not None else None
         self.structures = structures
-        self.dose = self.set_resolution(dose) if dose is not None else None
+        self.dose = dose if dose is not None else None
 
     def __post_init__(self):
         # Enforce that structures and dose have same shape as density_image
@@ -48,10 +48,6 @@ class Patient:
                 f"Dose has shape {self.dose.shape}, "
                 f"but expected {base_shape} (same as density_image)."
             )
-        
-    def set_resolution(self, x: torch.Tensor):
-        x.resolution = self._resolution
-        return x
     
     @property
     def density_image(self) -> torch.Tensor:
@@ -63,15 +59,15 @@ class Patient:
         elif self._attenuation_tensor is not None:
             density_image = self._attenuation_tensor
             
-        return self.set_resolution(density_image)
+        return density_image
     
     def to(self, target: torch.device | str | torch.dtype) -> 'Patient':
         """Move all tensors to a different device or dtype."""
         return Patient(
-            ct_tensor=self.set_resolution(self._ct_tensor.to(target)) if self._ct_tensor is not None else None, 
-            attenuation_tensor = self.set_resolution(self._attenuation_tensor.to(target)) if self._attenuation_tensor is not None else None, 
+            ct_tensor=self._ct_tensor.to(target) if self._ct_tensor is not None else None, 
+            attenuation_tensor = self._attenuation_tensor.to(target) if self._attenuation_tensor is not None else None, 
             structures={k: v.to(target) > 0 for k, v in self.structures.items()} if self.structures else {},
-            dose=self.set_resolution(self.dose.to(target)) if self.dose is not None else None,
+            dose=self.dose.to(target) if self.dose is not None else None,
             resolution=self._resolution
         )
     
