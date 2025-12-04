@@ -111,16 +111,6 @@ def get_iso_from_rtplan(rtplan_path):
     iso = np.array(beam.ControlPointSequence[0].IsocenterPosition, dtype=np.float32)  # [x, y, z]
     return iso
 
-def get_rtdose_info(rtdose_path):
-    ds = pydicom.dcmread(rtdose_path)
-    origin = np.array(ds.ImagePositionPatient, dtype=np.float32)
-    spacing = list(map(float, ds.PixelSpacing))
-    grid_frame_offset = np.array(ds.GridFrameOffsetVector, dtype=np.float32)
-    slice_thickness = np.abs(grid_frame_offset[1] - grid_frame_offset[0])
-    spacing.append(slice_thickness)
-    shape = (ds.Rows, ds.Columns, len(grid_frame_offset))
-    return origin, spacing, shape
-
 def fetch_plan_data(plan_path: str) -> str:
     """Summarizes the RTPLAN beam information in the dataset."""
     ds = pydicom.dcmread(plan_path)
@@ -137,6 +127,7 @@ def fetch_plan_data(plan_path: str) -> str:
         beam_data = []
         bld_angle = 0.0
         old_mu_value = 0.0
+        iso_center = None
         for cps in beam.ControlPointSequence:
             if "BeamLimitingDevicePositionSequence" in cps:
                 asymy_seqs = [seq for seq in cps.BeamLimitingDevicePositionSequence if seq.RTBeamLimitingDeviceType == "ASYMY"]
@@ -154,6 +145,9 @@ def fetch_plan_data(plan_path: str) -> str:
                                 mu_value = beam_meterset
                             else:
                                 mu_value = beam_meterset * cps.CumulativeMetersetWeight
+                        if hasattr(cps, "IsocenterPosition"):
+                            if iso_center is None:
+                                iso_center = (float(cps.IsocenterPosition[2]), float(cps.IsocenterPosition[1]), float(cps.IsocenterPosition[0]))
                         beam_data.append(Beam(gantry_angle=math.radians(cps.GantryAngle), 
                             collimator_angle=math.radians(bld_angle), 
                             ssd=cps.SourceToSurfaceDistance,
@@ -163,12 +157,13 @@ def fetch_plan_data(plan_path: str) -> str:
                                  sequence.LeafJawPositions[int(len(sequence.LeafJawPositions) / 2):]], 1)),
                             jaw_positions=torch.from_numpy(jaw_positions),
                             field_size=(400, 400),
-                            sid=1000.0,
-                            iso_center=(0, 0, 0)))
+                            sid=float(beam.SourceAxisDistance),
+                            iso_center=iso_center
+                        ))
                         old_mu_value = mu_value
         
         if len(beam_data) > 0:
-            parameters[str(beam.BeamNumber)] = (beam_data, number_of_fractions)
+            parameters[f"{ds.SOPInstanceUID}_{beam.BeamNumber}"] = (beam_data, number_of_fractions)
 
     return parameters
 
@@ -207,24 +202,144 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
             mask.SetSpacing(ct_series.GetSpacing())
             masks[struct_name] = mask
     return masks
-def load_dose(path):
+
+def load_dose(path, new_spacing=(2.0, 2.0, 2.0)):
+    # Load with pydicom for DoseGridScaling
     dataset = pydicom.dcmread(path)
-
     scaling = float(dataset.DoseGridScaling)
-    reader = sitk.ImageFileReader()
-    reader.SetFileName(path)
-    dose = reader.Execute()
-    dose = sitk.Cast(dose, sitk.sitkFloat32)
-    dose = scaling * dose
-    beam_name = path.name
 
-    # plan_sequence = dataset.ReferencedRTPlanSequence
-    # if len(plan_sequence) == 0:
-    #     beam_name = path.name
-    # else:
-    #     beam_name = plan_sequence[0].ReferencedSOPInstanceUID
-    #     plan_sequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence[0].ReferencedBeamNumber
-    return dose, beam_name
+    # Load SimpleITK image
+    reader = sitk.ImageFileReader()
+    reader.SetFileName(str(path))
+    dose = reader.Execute()
+    dose = sitk.Cast(dose, sitk.sitkFloat32) * scaling
+
+    # ------------------------------
+    # Resample to new_spacing
+    # ------------------------------
+    original_spacing = dose.GetSpacing()
+    original_size = dose.GetSize()
+
+    # Compute new size preserving physical dimensions
+    new_size = [
+        int(round(osz * ospc / nspc))
+        for osz, ospc, nspc in zip(original_size, original_spacing, new_spacing)
+    ]
+
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetInterpolator(sitk.sitkLinear)
+    resampler.SetOutputSpacing(new_spacing)
+    resampler.SetSize(new_size)
+    resampler.SetOutputDirection(dose.GetDirection())
+    resampler.SetOutputOrigin(dose.GetOrigin())
+    resampler.SetDefaultPixelValue(0.0)
+
+    dose_resampled = resampler.Execute(dose)
+
+    # Beam name
+    beam_name = dataset.ReferencedRTPlanSequence[0].ReferencedSOPInstanceUID
+    beam_number = safe_get_beam_number(dataset)
+    if beam_number is not None:
+        beam_name = f"{beam_name}_{beam_number}"
+
+    return dose_resampled, beam_name
+
+def safe_get_beam_number(ds):
+    """
+    Safely extract:
+    ReferencedRTPlanSequence[0]
+      -> ReferencedFractionGroupSequence[0]
+         -> ReferencedBeamSequence[0]
+            -> ReferencedBeamNumber
+
+    Returns:
+        int | None
+    """
+    try:
+        rtplan_seq = getattr(ds, "ReferencedRTPlanSequence", None)
+        if not rtplan_seq or len(rtplan_seq) == 0:
+            return None
+
+        frac_seq = getattr(rtplan_seq[0], "ReferencedFractionGroupSequence", None)
+        if not frac_seq or len(frac_seq) == 0:
+            return None
+
+        beam_seq = getattr(frac_seq[0], "ReferencedBeamSequence", None)
+        if not beam_seq or len(beam_seq) == 0:
+            return None
+
+        return getattr(beam_seq[0], "ReferencedBeamNumber", None)
+
+    except Exception:
+        return None
+
+
+def center_crop_or_pad_to_cube(img, cube_size_mm=400.0):
+    """
+    Make the image a cube of cube_size_mm (e.g. 400 mm = 40 cm) on each side,
+    by center-cropping or padding as needed.
+    """
+    spacing = img.GetSpacing()  # (sx, sy, sz) in mm
+    current_size = img.GetSize()  # (nx, ny, nz)
+
+    # Target size in voxels for each dimension
+    target_size = [
+        int(round(cube_size_mm / s)) for s in spacing
+    ]
+
+    # ----- Step 1: center-crop if image is larger than target -----
+    crop_lower = [0, 0, 0]
+    crop_upper = [0, 0, 0]
+
+    for i in range(3):
+        diff = current_size[i] - target_size[i]
+        if diff > 0:
+            # We need to crop 'diff' voxels along this axis
+            crop_lower[i] = diff // 2
+            crop_upper[i] = diff - crop_lower[i]
+
+    if any(c > 0 for c in crop_lower + crop_upper):
+        img = sitk.Crop(img, lowerBoundaryCropSize=crop_lower,
+                             upperBoundaryCropSize=crop_upper)
+        current_size = img.GetSize()
+
+    # ----- Step 2: center-pad if image is smaller than target -----
+    pad_lower = [0, 0, 0]
+    pad_upper = [0, 0, 0]
+
+    for i in range(3):
+        diff = target_size[i] - current_size[i]
+        if diff > 0:
+            # We need to pad 'diff' voxels along this axis
+            pad_lower[i] = diff // 2
+            pad_upper[i] = diff - pad_lower[i]
+
+    if any(p > 0 for p in pad_lower + pad_upper):
+        img = sitk.ConstantPad(img,
+                               padLowerBound=pad_lower,
+                               padUpperBound=pad_upper,
+                               constant=0.0)
+
+    return img
+
+# def load_dose(path):
+#     dataset = pydicom.dcmread(path)
+
+#     scaling = float(dataset.DoseGridScaling)
+#     reader = sitk.ImageFileReader()
+#     reader.SetFileName(path)
+#     dose = reader.Execute()
+#     dose = sitk.Cast(dose, sitk.sitkFloat32)
+#     dose = scaling * dose
+#     beam_name = path.name
+
+#     # plan_sequence = dataset.ReferencedRTPlanSequence
+#     # if len(plan_sequence) == 0:
+#     #     beam_name = path.name
+#     # else:
+#     #     beam_name = plan_sequence[0].ReferencedSOPInstanceUID
+#     #     plan_sequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence[0].ReferencedBeamNumber
+#     return dose, beam_name
 
 
 def resample_to_iso_center(image, iso_center, spacing, size, pixel_value=0, interpolation=sitk.sitkLinear):

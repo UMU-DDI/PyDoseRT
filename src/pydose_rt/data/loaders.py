@@ -23,6 +23,7 @@ def load_dicom(
     struct_names: List[str] | None = None,
     recenter: bool = True,
     use_delivery: bool = False,
+    new_spacing: tuple[float, float, float] = (2.0, 2.0, 2.0),
     device: torch.device | str = 'cuda',
     dtype: torch.dtype = torch.float32,
 ) -> tuple['Patient', 'BeamSequence']:
@@ -61,41 +62,118 @@ def load_dicom(
     for path in dose_path:
         dose, plan_ref = load_dose(path)
         doses[plan_ref] = dose
-    dose = list(doses.values())[0]
+
     # If RTPLAN is available, use it to determine isocenter
     if plan_path is not None:
-        plans = fetch_plan_data(plan_path)
-        beams, num_fractions = list(plans.values())[0]
-        # Use the first dose as reference
-        ct_series, structures, dose, iso_center = resample_based_on_plan(ct_series, structures, dose, recenter, plan_path)
-
-    else:
-        # No plan, just match to first dose
-        ct_series, structures = resample_based_on_dose(ct_series, dose)
-    resolution = ct_series.GetSpacing()
-    CT = torch.from_numpy(sitk.GetArrayFromImage(ct_series))
-    structures = {k: torch.from_numpy(sitk.GetArrayFromImage(v) > 0) for k, v in structures.items()}
-    dose = torch.from_numpy(sitk.GetArrayFromImage(dose) / num_fractions)
-    patient = Patient(
-        ct_tensor=CT,        
-        structures=structures,
-        dose=dose, 
-        resolution=resolution
-        )
+        plans = fetch_plan_data(plan_path[0])
     
+
+    dose_ref = list(doses.keys())[0]
+    dose = doses[dose_ref]
+    _, num_fractions = list(plans.values())[0]
+    ct_resampled = resample_image_to_spacing(
+        ct_series,
+        new_spacing=new_spacing,
+        interpolator=sitk.sitkLinear,
+    )
+
+    # 2. Resample all structures to the CT grid (use nearest-neighbor!)
+    resampled_structures_torch = {}
+    for name, struct_img in structures.items():
+        struct_resampled = sitk.Resample(
+            struct_img,
+            ct_resampled,              # reference image
+            sitk.Transform(),
+            sitk.sitkNearestNeighbor,  # important for labels
+            0,                         # default value
+            struct_img.GetPixelID(),
+        )
+
+        struct_array = sitk.GetArrayFromImage(struct_resampled) > 0  # (z, y, x), bool
+        resampled_structures_torch[name] = torch.from_numpy(struct_array)
+
+    # 3. Resample dose to CT grid (linear interpolation)
+    dose_resampled = sitk.Resample(
+        dose,
+        ct_resampled,              # reference image
+        sitk.Transform(),
+        sitk.sitkLinear,
+        0.0,
+        dose.GetPixelID(),
+    )
+    dose_array = sitk.GetArrayFromImage(dose_resampled) / float(num_fractions)
+    dose_tensor = torch.from_numpy(dose_array)
+
+    # 4. Convert CT to torch
+    ct_array = sitk.GetArrayFromImage(ct_resampled)  # (z, y, x)
+    CT = torch.from_numpy(ct_array)
+
+    # 5. Compute resolution and origin in your preferred order (z, x, y) or (z, y, x)
+    # SimpleITK: spacing/origin are always (x, y, z)
+    spacing_xyz = ct_resampled.GetSpacing()
+    origin_xyz = ct_resampled.GetOrigin()
+
+    # If your tensors are (z, y, x), you usually want spacing/origin in (z, y, x) too:
+    resolution = (spacing_xyz[2], spacing_xyz[1], spacing_xyz[0])
+    origin = [origin_xyz[2], origin_xyz[1], origin_xyz[0]]
+
+    # If you *really* wanted (z, x, y) for some reason, you can change the index order above.
+
+    # 6. Build the Patient object
+    patient = Patient(
+        ct_tensor=CT,
+        structures=resampled_structures_torch,
+        dose=dose_tensor,
+        resolution=resolution,
+    )
     
 
     # Create BeamSequence from raw control points
     beam_sequences = []
-    for seq, _ in plans.values():
+    for key, (seq, _) in plans.items():
         beam_sequence = BeamSequence.from_beams(seq).to(device).to(dtype)
 
+        if dose_ref in plans.keys():
+            if dose_ref != key:
+                continue
+
+        beam_sequence.iso_center = np.array(beam_sequence.iso_center) - np.array(origin)
         if use_delivery:
             # Convert to delivery positions and update treatment config
             beam_sequence = beam_sequence.to_delivery()
         beam_sequences.append(beam_sequence)
 
+        
+
     return patient, beam_sequences
+
+def resample_image_to_spacing(image, new_spacing, interpolator=sitk.sitkLinear):
+    """
+    Resample a SimpleITK image to a new spacing, keeping the same physical extent.
+    new_spacing should be a 3-tuple (sx, sy, sz) in mm.
+    """
+    original_spacing = image.GetSpacing()   # (sx, sy, sz)
+    original_size = image.GetSize()         # (nx, ny, nz)
+
+    # Compute new size so that physical size stays (approximately) the same
+    new_size = [
+        int(round(osz * (osp / nsp)))
+        for osz, osp, nsp in zip(original_size, original_spacing, new_spacing)
+    ]
+
+    resampled = sitk.Resample(
+        image,
+        new_size,
+        sitk.Transform(),
+        interpolator,
+        image.GetOrigin(),
+        new_spacing,
+        image.GetDirection(),
+        0.0,                 # default pixel value
+        image.GetPixelID(),
+    )
+    return resampled
+
 
 def load_nifti(
     folder_path

@@ -241,16 +241,12 @@ class DoseEngine(nn.Module):
         sx, sy, sz = self.input_shape
         rx, ry, rz = self.input_resolution
         X, Y, Z = self.iso_center  # physical coords, origin at isocenter corner
-
-        # Index of the "center" in voxel space corresponding to the isocenter corner
-        base_x = (sx - 1) / 2.0
-        base_y = (sy - 1) / 2.0
-        base_z = (sz - 1) / 2.0
+        X_center, Y_center, Z_center = (X - rx / 2, Y - ry / 2, Z - rz / 2)
 
         # Convert physical coords to voxel indices and round to nearest voxel
-        ix = int(round(X / rx + base_x))
-        iy = int(round(Y / ry + base_y))
-        iz = int(round(Z / rz + base_z))
+        ix = int(X_center / rx)
+        iy = int(Y_center / ry)
+        iz = int(Z_center / rz)
 
         # Optionally clamp to valid voxel range
         ix = max(0, min(sx - 1, ix))
@@ -501,8 +497,8 @@ class DoseEngine(nn.Module):
         if not self.layers_initialized:
             raise Exception("Layers must be fully initialized for calibration.")
 
-        iso_y = 100.0 - ((self.input_shape[1] + 1) * self.input_resolution[1] / 2)
-        iso_center = (0.0, iso_y, 0.0)
+        center_x, _, center_z = torch.tensor(self.input_resolution) * (torch.tensor(self.input_shape) + 1) / 2
+        iso_center = (center_x, 100.0, center_z)
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
         if calibration_mu is None:
             calibration_mu = self.machine_config.calibration_mu
@@ -530,12 +526,10 @@ class DoseEngine(nn.Module):
             print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
 
+        if original_beam_template is not None:
+            self._add_beam_information(original_beam_template, True)
+
         self.layers_initialized = False
         self.precomputed_kernels = None
         self.precomputed_radiological_depths = None
         
-        if original_beam_template is not None:
-            self._add_beam_information(original_beam_template)
-        else:
-            self.layers_initialized = False
-            self.number_of_beams = None

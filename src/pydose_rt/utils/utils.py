@@ -16,29 +16,27 @@ import os
 from pathlib import Path
 import pydicom
 
-
-
 def find_patient_paths(patient_base: str | Path):
     """
     Given a patient directory, recursively search for:
-      - RTPLAN (RP / RTPLAN)
-      - RTDOSE (RD / RTDOSE)
-      - RTSTRUCT (RS / RTSTRUCT)
-      - CT folder (directory whose files are CT dicoms; pick the one with most slices)
+      - All RTPLAN files
+      - All RTDOSE files
+      - RTSTRUCT (first found)
+      - CT folder (directory whose files are CT dicoms; choose the one with most slices)
 
     Returns:
         ct_folder: Path
-        rtplan_path: Path
-        rtdose_path: Path
+        rtplan_paths: list[Path]
+        rtdose_paths: list[Path]
         rtstruct_path: Path
 
     Raises:
-        FileNotFoundError if any of the above cannot be found.
+        FileNotFoundError if any of the above (except multiple plans/doses) cannot be found.
     """
     patient_base = Path(patient_base)
 
-    rtplan_path: Path | None = None
-    rtdose_path: Path | None = None
+    rtplan_paths: list[Path] = []
+    rtdose_paths: list[Path] = []
     rtstruct_path: Path | None = None
 
     ct_candidates: list[tuple[Path, int]] = []  # (folder, number_of_ct_files)
@@ -46,37 +44,33 @@ def find_patient_paths(patient_base: str | Path):
     for root, dirs, files in os.walk(patient_base):
         root_path = Path(root)
 
-        # --- Find RTPLAN / RTDOSE / RTSTRUCT by filename ---
+        # --- Find RTPLAN / RTDOSE / RTSTRUCT ---
         for fname in files:
             lname = fname.lower()
             fpath = root_path / fname
 
-            # RTPLAN: contains "rtplan" OR filename starting with "rp"
+            # RTPLAN
             if ("rtplan" in lname) or lname.startswith("rp"):
-                if rtplan_path is None:
-                    rtplan_path = fpath
+                rtplan_paths.append(fpath)
 
-            # RTDOSE: contains "rtdose" OR filename starting with "rd"
+            # RTDOSE
             if ("rtdose" in lname) or lname.startswith("rd"):
-                if rtdose_path is None:
-                    rtdose_path = fpath
+                rtdose_paths.append(fpath)
 
-            # RTSTRUCT: contains "rtstruct" OR filename starting with "rs"
-            if ("rtstruct" in lname) or lname.startswith("rs"):
-                if rtstruct_path is None:
-                    rtstruct_path = fpath
+            # RTSTRUCT (take first found)
+            if (("rtstruct" in lname) or lname.startswith("rs")) and rtstruct_path is None:
+                rtstruct_path = fpath
 
-        # --- Look for CT dicom folders ---
+        # --- Check for CT DICOM folders ---
         dicom_files = [
             root_path / f
             for f in files
-            if f.lower().endswith(".dcm") or "." not in f  # allow extension-less DICOMs
+            if f.lower().endswith(".dcm") or "." not in f
         ]
 
         if not dicom_files:
             continue
 
-        # Try to read one file and check Modality
         try:
             ds = pydicom.dcmread(str(dicom_files[0]), stop_before_pixels=True, force=True)
             modality = getattr(ds, "Modality", "").upper()
@@ -86,29 +80,28 @@ def find_patient_paths(patient_base: str | Path):
         if modality == "CT":
             ct_candidates.append((root_path, len(dicom_files)))
 
-    # Choose CT folder with the most slices (if multiple CT series exist)
+    # --- Select CT folder with most slices ---
     ct_folder: Path | None = None
     if ct_candidates:
         ct_folder = max(ct_candidates, key=lambda x: x[1])[0]
 
     # --- Sanity checks ---
-    missing = [
-        name
-        for name, val in [
-            ("ct_folder", ct_folder),
-            ("rtplan_path", rtplan_path),
-            ("rtdose_path", rtdose_path),
-            ("rtstruct_path", rtstruct_path),
-        ]
-        if val is None
-    ]
+    missing = []
+    if ct_folder is None:
+        missing.append("ct_folder")
+    if not rtplan_paths:
+        missing.append("rtplan_paths")
+    if not rtdose_paths:
+        missing.append("rtdose_paths")
+    if rtstruct_path is None:
+        missing.append("rtstruct_path")
+
     if missing:
         raise FileNotFoundError(
             f"Could not find {', '.join(missing)} under {patient_base}"
         )
 
-    return ct_folder, rtplan_path, rtdose_path, rtstruct_path
-
+    return ct_folder, rtplan_paths, rtdose_paths, rtstruct_path
 
 def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
     """

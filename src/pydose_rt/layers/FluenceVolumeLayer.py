@@ -95,20 +95,18 @@ class FluenceVolumeLayer(nn.Module):
 
         # Precompute the physical depth (distance from source for each depth slice)
         depths = (
-            - iso_center[1]
-            + self.SID
-            - ((self.D - 1) / 2) * self.resolution[1]
+            self.SID - iso_center[1]
             + torch.arange(D, dtype=self.dtype) * self.resolution[1]
         )  # mm
 
         # Compute the physical coordinates for each pixel in the depth slice (center is (0,0))
         H_field, W_field = field_size
         hs = (
-        torch.arange(H, dtype=self.dtype) - (H - 1) / 2
-        ) * self.resolution[0]
+        torch.arange(H, dtype=self.dtype) + 0.5
+        ) * self.resolution[0] - iso_center[0]
         ws = (
-            torch.arange(W, dtype=self.dtype) - (W - 1) / 2
-        ) * self.resolution[2]
+            torch.arange(W, dtype=self.dtype) + 0.5
+        ) * self.resolution[2] - iso_center[2]
         WT, HT = torch.meshgrid(ws, hs, indexing="ij")  # Both [W, H]
 
         # Normalization factors use the field size (fluence map coordinates)
