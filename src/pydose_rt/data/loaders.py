@@ -58,6 +58,9 @@ def load_dicom(
     if isinstance(dose_path, Path):
         dose_path = [ dose_path ]
 
+    if isinstance(plan_path, Path):
+        plan_path = [ plan_path ]
+
     doses = dict()
     for path in dose_path:
         dose, plan_ref = load_dose(path)
@@ -137,7 +140,7 @@ def load_dicom(
             if dose_ref != key:
                 continue
 
-        beam_sequence.iso_center = np.array(beam_sequence.iso_center) - np.array(origin)
+        beam_sequence.iso_center = np.array(beam_sequence.iso_center) - np.array(origin) + (np.array(resolution) / 2)
         if use_delivery:
             # Convert to delivery positions and update treatment config
             beam_sequence = beam_sequence.to_delivery()
