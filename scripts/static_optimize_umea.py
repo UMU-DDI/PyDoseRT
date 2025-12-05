@@ -45,7 +45,6 @@ if remote:
     kernel_size = 25
     device = device
     dtype = torch.float32
-    downsampling_factor = (1, 2, 2)
 
     max_iter = 1000
 else:
@@ -71,7 +70,6 @@ else:
     kernel_size = 3
     device = device
     dtype = torch.float32
-    downsampling_factor = (1, 2, 2)
 
 
     max_iter = 10
@@ -134,7 +132,6 @@ for test_i in range(n_tests):
             resolution=patient._resolution,
             image_template=patient.density_image,
             beam_template=beam_sequence.to_delivery(), 
-            downsampling_factor=downsampling_factor,
             kernel_size=kernel_size, 
             adjust_values=True,
             dtype=dtype, 
@@ -182,7 +179,7 @@ for test_i in range(n_tests):
             # Backprop
             loss.backward()
 
-            # torch.nn.utils.clip_grad_norm_(pred_mlc, max_norm=1 / 40.0)
+            torch.nn.utils.clip_grad_norm_(pred_mlc, max_norm=1 / 40.0)
             # torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
             # torch.nn.utils.clip_grad_norm_(pred_mus, max_norm=1.0)
 

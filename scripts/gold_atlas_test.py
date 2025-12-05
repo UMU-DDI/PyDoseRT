@@ -14,10 +14,10 @@ import torch
 optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json",)
 machine_config = MachineConfig(
     preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
-    profile_corrections=None,
-    output_factors=None,
-    head_scatter_amplitude=None,
-    head_scatter_sigma=None
+    # profile_corrections=None,
+    # output_factors=None,
+    # head_scatter_amplitude=None,
+    # head_scatter_sigma=None
     )
     
 
@@ -30,8 +30,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
-        kernel_size = 251
-        downsampling_factor = (1, 1, 1)
+        kernel_size = 15
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -53,9 +52,9 @@ for patient_name in sorted(os.listdir(base_path)):
         for beam_sequence in beam_sequences:
             beam_sequence = beam_sequence.to(device).to(dtype)
             dose_engine = DoseEngine(kernel_size=kernel_size,
-                                     resolution=patient._resolution,
+                                     dose_grid_spacing=patient._resolution,
                                      machine_config=machine_config,
-                                     image_template=density_image,
+                                     dose_grid_shape=density_image.shape,
                                      beam_template=beam_sequence,
                                      device=device,
                                      dtype=dtype
@@ -68,8 +67,8 @@ for patient_name in sorted(os.listdir(base_path)):
             doses.append(dose_pred.detach())
         dose_pred = sum(doses)
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
-        print(dose_volume[patient.structures["PTV_56"] > 0].mean() / dose_pred[patient.structures["PTV_56"] > 0].mean())
-        dose_pred = dose_pred * dose_volume[patient.structures["PTV_56"] > 0].mean() / dose_pred[patient.structures["PTV_56"] > 0].mean()
+        print(dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean())
+        dose_pred = dose_pred * dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean()
 
         dose_max = max(dose_volume.max(), dose_pred.max()).item()
 
@@ -95,17 +94,14 @@ for patient_name in sorted(os.listdir(base_path)):
         all_results.append(row)
 
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [mae_loss]]}"
-        print_results(None, optimization, patient, beam_sequence, dose_pred, title=title, out_path=f"out/final_{patient_name}.png")
+        print_results(None, optimization, patient, beam_sequence, dose_pred, title=title, preset="gold-atlas", out_path=f"out/final_{patient_name}.png")
 
-        # make_animation(None, 
-        #                treatment, 
-        #                patient, 
-        #                dose_layer, 
-        #                (leafs[:, :, :-1, :] + leafs[:, :, 1:, :]) / 2, 
-        #                (mus[:, :-1] + mus[:, 1:]) / 2, 
-        #                (jaws[:, :, :-1] + jaws[:, :, 1:]) / 2,
-        #                dose_max
-        #                )
+        make_animation(None, 
+                       patient, 
+                       dose_engine, 
+                       beam_sequence,
+                       dose_max=7.0
+                       )
         del dose_engine, dose_pred, dose_volume, patient
     except Exception as e:
         print(e)

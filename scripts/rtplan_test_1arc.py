@@ -58,12 +58,11 @@ machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_1
 doses = []
 for beam_sequence in beam_sequences:
     dose_layer = DoseEngine(
-        ct_array_shape=patient.ct_array.shape,
-        resolution=patient.resolution,
+        dose_grid_shape=patient.ct_array.shape,
+        dose_grid_spacing=patient.resolution,
         machine_config=machine_config, 
         dtype=dtype, 
         device=device, 
-        downsampling_factor=(1, 1, 1),
         kernel_size=25,
         beam_input=beam_sequence
     )

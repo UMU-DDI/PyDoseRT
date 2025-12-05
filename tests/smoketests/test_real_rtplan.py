@@ -33,29 +33,22 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
     kernel_size = kernel_size
     device = device
     dtype = dtype
-    downsampling_factor = (1, 2, 2)
 
     patient = patient.to(device).to(dtype)
     beam_sequence = beam_sequence.to(device).to(dtype)
 
     machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
-
-    # ref_dose, calibration_factor = validate_unit_dose(machine_config, patient, 110, 1, downsampling_factor, device, dtype)
-    # if (np.abs(ref_dose - 1.0) > 0.001):
-    #     print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
-    #     machine_config.mean_photon_energy_MeV = calibration_factor
         
     ct_volume = patient.get_masked_ct("External").unsqueeze(0)
     dose_target = patient.get_masked_dose("External").cpu().detach().numpy()
 
     dose_layer = DoseEngine(machine_config=machine_config,
                             kernel_size=kernel_size,
-                            resolution=patient._resolution,
-                            image_template=patient.density_image, 
-                            beam_template=beam_sequence,
-                            downsampling_factor=downsampling_factor)
+                            dose_grid_spacing=patient._resolution,
+                            dose_grid_shape=patient.density_image.shape, 
+                            beam_template=beam_sequence)
 
-    dose_pred = dose_layer.compute_dose(beam_sequence, ct_image=ct_volume)
+    dose_pred = dose_layer.compute_dose_sequential(beam_sequence, density_image=ct_volume)
     dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
     dose_pred = dose_pred.cpu().detach().numpy()
 

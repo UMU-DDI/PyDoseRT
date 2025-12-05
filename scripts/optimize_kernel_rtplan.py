@@ -56,7 +56,6 @@ patient, treatment = loaders.load_dicom(
 
 treatment.fluence_kernel_size = 55
 treatment.kernel_size = 55
-treatment.downsampling_factor = (1, 2, 2)
 treatment.device = device
 treatment.dtype = torch.float32
 

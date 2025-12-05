@@ -22,7 +22,6 @@ for patient_name in sorted(os.listdir(base_path)):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
         kernel_size = 151
-        downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -58,9 +57,9 @@ for patient_name in sorted(os.listdir(base_path)):
         for beam_sequence in beam_sequences:
             beam_sequence = beam_sequence.to(device).to(dtype)
             dose_engine = DoseEngine(kernel_size=kernel_size,
-                                     resolution=patient._resolution,
+                                     dose_grid_spacing=patient._resolution,
                                      machine_config=machine_config,
-                                     image_template=patient.density_image,
+                                     dose_grid_shape=patient.density_image.shape,
                                      beam_template=beam_sequence,
                                      device=device,
                                      dtype=dtype

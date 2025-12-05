@@ -10,7 +10,7 @@ from pydose_rt.layers import FluenceMapLayer
 @pytest.fixture
 def fluence_map_layer(default_machine_config, default_resolution):
     """Fixture to create a FluenceMapLayer instance"""
-    return FluenceMapLayer(default_machine_config, default_resolution)
+    return FluenceMapLayer(default_machine_config)
 
 def test_fluence_map_benchmark(benchmark, fluence_map_layer, default_number_of_beams, default_dtype, default_device, default_machine_config):
     

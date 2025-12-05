@@ -1,9 +1,6 @@
 import os
-
-from sympy import N
-
-from pydose_rt.data.optimization_config import OptimizationConfig
 from pathlib import Path
+import matplotlib.pyplot as plt
 import pandas as pd
 from pydose_rt.data import MachineConfig, Patient, OptimizationConfig, loaders
 from pydose_rt.objectives.metrics import result_validation
@@ -23,7 +20,6 @@ for patient_name in sorted(os.listdir(base_path)):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
         kernel_size = 201
-        downsampling_factor = (1, 1, 1)
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -38,7 +34,6 @@ for patient_name in sorted(os.listdir(base_path)):
         # ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
         machine_config = MachineConfig(
             preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
-            # penumbra_fwhm=None,
             # head_scatter_amplitude=None,
             # head_scatter_sigma=None,
             # profile_corrections=None,
@@ -55,9 +50,9 @@ for patient_name in sorted(os.listdir(base_path)):
             beam_sequence.iso_center = beam_sequence.iso_center
             beam_sequence = beam_sequence.to(device).to(dtype)
             dose_engine = DoseEngine(kernel_size=kernel_size,
-                                     resolution=patient._resolution,
+                                     dose_grid_spacing=patient._resolution,
                                      machine_config=machine_config,
-                                     image_template=patient.density_image,
+                                     dose_grid_shape=patient.density_image,
                                      beam_template=beam_sequence,
                                      device=device,
                                      dtype=dtype
@@ -86,8 +81,27 @@ for patient_name in sorted(os.listdir(base_path)):
         # print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
         # res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
 
+        patient_name += f"_beam_4"
         print(res_string)
-        quick_plot(patient, dose_pred[0], title=res_string, show_ct=True, out_path=f"out/quick_{patient_name}_beam_0.png")
+        quick_plot(patient, dose_pred[0], title=res_string, show_ct=True, out_path=f"out/quick_{patient_name}.png")
+        
+        center_x, center_y, center_z = np.array(dose_volume.shape) // 2
+
+        plt.figure()
+        plt.subplot(311)
+        plt.plot(dose_volume[:, center_y, center_z].cpu().detach().numpy(), linestyle='--', color='gray', label='RS')
+        plt.plot(dose_pred[0, :, center_y, center_z].cpu().detach().numpy(), linestyle='-', color='orange', label='PDRT')
+
+        plt.subplot(312)
+        plt.plot(dose_volume[center_x, :, center_z].cpu().detach().numpy(), linestyle='--', color='gray', label='RS')
+        plt.plot(dose_pred[0, center_x, :, center_z].cpu().detach().numpy(), linestyle='-', color='orange', label='PDRT')
+
+        plt.subplot(313)
+        plt.plot(dose_volume[center_x, center_y, :].cpu().detach().numpy(), linestyle='--', color='gray', label='RS')
+        plt.plot(dose_pred[0, center_x, center_y, :].cpu().detach().numpy(), linestyle='-', color='orange', label='PDRT')
+        
+        plt.savefig(f"out/profiles_{patient_name}.png")
+        plt.close()
 
 
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [mae_loss]]}"

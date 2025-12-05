@@ -22,12 +22,12 @@ def test_dose_engine_layer(benchmark, default_ct_array_shape, default_resolution
     )
 
     dose_layer = DoseEngine(default_machine_config,
-                            default_kernel_size,
-                            default_resolution,
-                            image_template=ct_array,
+                            kernel_size=default_kernel_size,
+                            dose_grid_spacing=default_resolution,
+                            dose_grid_shape=ct_array.shape,
                             beam_template=beam_sequence,
                             device=default_device,
                             dtype=default_dtype)
     
 
-    benchmark(lambda: dose_layer.compute_dose(beam_sequence, ct_image=ct_array))
+    benchmark(lambda: dose_layer.compute_dose(beam_sequence, density_image=ct_array))

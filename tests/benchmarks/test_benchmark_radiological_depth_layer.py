@@ -5,17 +5,12 @@ import torch
 from pydose_rt.layers import RadiologicalDepthLayer
 
 
-@pytest.fixture
-def radiological_depth_layer(default_machine_config, default_treatment_config):
-    """Fixture to create a FluenceMapLayer instance"""
-    return RadiologicalDepthLayer(default_machine_config, default_treatment_config)
-
 
 @pytest.fixture
-def radiological_depth_layer_beams(default_machine_config, default_resolution, default_ct_array_shape, request):
+def radiological_depth_layer_beams(default_machine_config, default_resolution, default_ct_array_shape, default_iso_center, request):
     """Fixture to create a FluenceMapLayer instance with configurable beams"""
     gantry_angles = np.linspace(0, 360, int(request.param))
-    return RadiologicalDepthLayer(default_machine_config, default_resolution, default_ct_array_shape, gantry_angles), gantry_angles
+    return RadiologicalDepthLayer(default_machine_config, default_resolution, default_ct_array_shape, gantry_angles, default_iso_center), gantry_angles
 
 
 @pytest.mark.parametrize(

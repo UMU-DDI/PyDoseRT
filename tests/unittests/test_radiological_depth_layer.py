@@ -10,9 +10,9 @@ from pydose_rt.layers import RadiologicalDepthLayer
 
 
 @pytest.fixture
-def radiological_depth_layer(default_machine_config, default_resolution, default_ct_array_shape, default_gantry_angles):
+def radiological_depth_layer(default_machine_config, default_resolution, default_ct_array_shape, default_gantry_angles, default_iso_center):
     """Fixture to create a FluenceMapLayer instance"""
-    return RadiologicalDepthLayer(default_machine_config, default_resolution, default_ct_array_shape, default_gantry_angles)
+    return RadiologicalDepthLayer(default_machine_config, default_resolution, default_ct_array_shape, default_gantry_angles, default_iso_center)
 
 
 def test_radiological_depth_output_shape(radiological_depth_layer, default_machine_config, default_number_of_beams, default_ct_array_shape, default_device):

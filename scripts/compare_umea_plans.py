@@ -33,8 +33,8 @@ for field_size in field_sizes:
     phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)
     number_of_beams=1
     starting_angle=0
-    iso_center=(0.0, -149.5, 0.0)
-    kernel_size=1001
+    iso_center=(250.0, 100.0, 250.0)
+    kernel_size=501
     beam = Beam.create(
         gantry_angle_deg=0.0, 
         number_of_leaf_pairs=60, 
@@ -68,16 +68,11 @@ for field_size in field_sizes:
         axes = axes.flatten()
 
     for i, measurement in enumerate(measurements):
-        samples = sample_tensor_nearest(dose[0, ...], resolution, iso_center, measurement["coords_engine"])
+        samples = sample_tensor_nearest(dose[0, ...], resolution, np.subtract(iso_center, (0.5, 100.5, 0.5)), measurement["coords_engine"])
         samples = samples * measurement["dose"].max() / samples.max()
         mape = np.mean(np.abs(samples - measurement["dose"])[measurement["dose"] > 0] /  measurement["dose"][measurement["dose"] > 0])
         results.append(mape)
-        thr_20 = 0.2 * measurement["dose"].max()
-        thr_80 = 0.8 * measurement["dose"].max()
-        penumbra_pred = sum((samples > thr_20) * (samples < thr_80))
-        penumbra_measurement = sum((measurement["dose"] > thr_20) * (measurement["dose"] < thr_80))
 
-        # results.append(np.abs(penumbra_pred - penumbra_measurement))
         if (do_plot):
             coords = measurement["coords_engine"]  # shape (N, 3) presumably
 
