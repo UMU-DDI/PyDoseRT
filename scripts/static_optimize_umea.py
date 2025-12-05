@@ -129,8 +129,8 @@ for test_i in range(n_tests):
         
         engine = DoseEngine(
             machine_config=machine_config,
-            resolution=patient._resolution,
-            image_template=patient.density_image,
+            dose_grid_spacing=patient._resolution,
+            dose_grid_shape=patient.density_image.shape,
             beam_template=beam_sequence.to_delivery(), 
             kernel_size=kernel_size, 
             adjust_values=True,
@@ -168,7 +168,7 @@ for test_i in range(n_tests):
             # Forward
             dose_pred = engine.compute_dose(
                 beam_sequence.to_delivery(),
-                ct_image=ct_volume
+                density_image=ct_volume
             )
             dose_pred = dose_pred
 
