@@ -124,9 +124,6 @@ class FluenceVolumeLayer(nn.Module):
             gy = (WT / WT_max) * scale
             gz = (HT / HT_max) * scale
 
-            gy = torch.clamp(gy, -1.0, 1.0)
-            gz = torch.clamp(gz, -1.0, 1.0)
-            
             gs = torch.stack((gy, gz), dim=-1)
             sample_grids.append(gs)
 
