@@ -260,7 +260,7 @@ def make_animation(experiment,
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    density_image = patient_data.density_image.unsqueeze(0)
+    density_image = (patient_data.density_image * patient_data.structures["External"]).unsqueeze(0)
 
     # Get the base colormap (jet)
     alpha_max = 1.0
@@ -273,7 +273,7 @@ def make_animation(experiment,
 
     colors[:, -1] = alpha
     jet_alpha = ListedColormap(colors)
-    num_cps = dose_layer.number_of_beams
+    num_cps = len(beam_sequence)
     slice_idx = patient_data.density_image.shape[0] // 2
     ct_data = patient_data._ct_tensor.cpu().detach().numpy()[slice_idx, :, :]
     dose_data = np.zeros(patient_data.density_image.shape[1:])
@@ -286,7 +286,7 @@ def make_animation(experiment,
     frames = []
     
     # Loop through all control points
-    for cp_idx in range(num_cps):
+    for cp_idx in range(len(beam_sequence)):
         fig = plt.figure(figsize=(12, 9))
         gs = fig.add_gridspec(2, 2, height_ratios=[1, 2], hspace=0.15, wspace=0.05)
         ax_depth = fig.add_subplot(gs[0, :])  # Depth profile spans both columns
@@ -309,7 +309,7 @@ def make_animation(experiment,
         ax_depth.plot(central_profile, linewidth=2)
         ax_depth.set_ylim([0, 10.0])
         ax_depth.set_ylabel('Radiological Depth')
-        ax_depth.set_title(f'Control Point {cp_idx + 1}/{num_cps}', pad=5)
+        ax_depth.set_title(f'Control Point {cp_idx + 1}/{num_cps} ({int(beam.gantry_angle_deg)} deg)', pad=5)
         ax_depth.grid(True, alpha=0.3)
         
         # Plot beam's eye view (fluence map) - make it square
@@ -325,7 +325,7 @@ def make_animation(experiment,
         
         ax2.imshow(ct_data, cmap='gray', vmin=-1000, vmax=1000, aspect='equal')
         ax2.imshow(dose_data, cmap=jet_alpha, vmin=0.0, vmax=dose_max, aspect='equal')
-        ax2.plot(iso_center_axial[0], iso_center_axial[1], marker='o', color='red')
+        ax2.plot(iso_center_axial[1], iso_center_axial[0], marker='o', color='red')
         overlay_mask_outline(pred_dose > 0.01 * pred_dose.max(), color='orange')
         
         # Add ROI contours
