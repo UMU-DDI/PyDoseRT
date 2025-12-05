@@ -15,7 +15,6 @@ def fluence_map_layer(default_machine_config, default_resolution, default_field_
     """Fixture to create a FluenceMapLayer instance"""
     return FluenceMapLayer(
         default_machine_config,
-        resolution=default_resolution,
         field_size=default_field_size,
         device=default_device,
         dtype=default_dtype
