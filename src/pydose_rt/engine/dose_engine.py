@@ -483,12 +483,16 @@ class DoseEngine(nn.Module):
         self.precomputed_kernels = None
         self.precomputed_radiological_depths = None
         self.layers_initialized = False
+        old_kernel_size = self.kernel_size
+
+        self.kernel_size = max(self.dose_grid_shape)
 
         dose = self.compute_dose(
             beam,
             density_image=water_attenuation,
             overwrite=True
             )
+
 
         # Get center dose (at 10cm depth - index 50 for 100 voxels)
         center_dose = dose[0, *self.iso_center_voxel].detach().cpu().numpy().item()
@@ -504,6 +508,7 @@ class DoseEngine(nn.Module):
         if original_beam_template is not None:
             self._add_beam_information(original_beam_template, True)
 
+        self.kernel_size = old_kernel_size
         self.layers_initialized = False
         self.precomputed_kernels = None
         self.precomputed_radiological_depths = None
