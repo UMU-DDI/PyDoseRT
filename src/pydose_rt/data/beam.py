@@ -763,13 +763,22 @@ class BeamSequence:
             self.jaw_positions[:-1, :] + self.jaw_positions[1:, :]
         ) / 2
 
+        two_pi = 2 * math.pi
         avg_gantry_angles = None
         if self.gantry_angles is not None:
-            avg_gantry_angles = (self.gantry_angles[:-1] + self.gantry_angles[1:]) / 2
+            a = self.gantry_angles[:-1]
+            b = self.gantry_angles[1:]
+            # shortest signed difference in (-π, π]
+            delta = (b - a + math.pi) % two_pi - math.pi
+            # go halfway along that shortest arc and wrap back to [0, 2π)
+            avg_gantry_angles = (a + 0.5 * delta + two_pi) % two_pi
 
         avg_collimator_angles = None
         if self.collimator_angles is not None:
-            avg_collimator_angles = (self.collimator_angles[:-1] + self.collimator_angles[1:]) / 2
+            a = self.collimator_angles[:-1]
+            b = self.collimator_angles[1:]
+            delta = (b - a + math.pi) % two_pi - math.pi
+            avg_collimator_angles = (a + 0.5 * delta + two_pi) % two_pi
 
         return BeamSequence(
             mus=avg_mus,
