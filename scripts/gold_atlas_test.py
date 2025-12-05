@@ -23,7 +23,7 @@ machine_config = MachineConfig(
     
 
 all_results = []
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/NODES/')
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/')
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name

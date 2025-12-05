@@ -237,13 +237,11 @@ for test_i in range(n_tests):
             epoch += 1
 
         print(f"Optimization finished in {int(time.time() - start_time)}s.")
-        pred_mlc = current_res["beam_sequence"].leaf_positions
-        pred_mus = current_res["beam_sequence"].mus
-        pred_jaws = current_res["beam_sequence"].jaw_positions
-
-        pred_mlc_grads = None
-        pred_jaws_grads = None
-        pred_mus_grads = None
+        beam_sequence = current_res["beam_sequence"]
+        animation_sequence = beam_sequence.clone()
+        pred_mlc = beam_sequence.leaf_positions
+        pred_mus = beam_sequence.mus
+        pred_jaws = beam_sequence.jaw_positions
 
         pred_mlc_valid, pred_jaws_valid, pred_mus_valid = valid_parameters_layer(
             pred_mlc, pred_mus, pred_jaws
@@ -264,7 +262,7 @@ for test_i in range(n_tests):
         experiment.log_asset_data(beam_sequence.leaf_positions.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
         print_results(experiment, optimization, patient, beam_sequence, dose_pred[0], title, plot_ct=True, preset="gold-atlas")
-        make_animation(experiment, patient, engine, beam_sequence, dose_max=7.0)
+        make_animation(experiment, patient, engine, animation_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
         
