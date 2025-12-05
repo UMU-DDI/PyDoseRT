@@ -182,10 +182,6 @@ class TestPencilBeamModel:
         radiological_depth = 10.0
         tpr = 0.72
         normalization = "finite"
-        fwhm_in_mm_ar_iso = 2.5
-        source_axis_distance = 100.0
-        source_surface_distance = 100.0
-        source_blur = False
 
         batch_size = 1
         number_of_gantry_angles = 2
@@ -197,8 +193,7 @@ class TestPencilBeamModel:
 
         # Act
         actual = pencil_beam_kernel_model.get_pencil_beam(
-            d=radiological_depths, r=pencil_beam_kernel_model.get_rs(kernel_size=(10, 10)), normalize=normalization, add_source_blur=source_blur,
-            src_fwhm_mm_iso=fwhm_in_mm_ar_iso, SAD_cm=source_axis_distance, SSD_cm=source_surface_distance,
+            d=radiological_depths, r=pencil_beam_kernel_model.get_rs(kernel_size=(10, 10)), normalize=normalization
         )
 
         # Assert

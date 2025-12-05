@@ -305,23 +305,17 @@ class PencilBeamModel:
                         d: np.ndarray, 
                         r: np.ndarray, 
                         normalize: bool = True,
-                        add_source_blur: bool = False, 
-                        src_fwhm_mm_iso: float = 2.5,
-                        SAD_cm: float = 100.0, 
-                        SSD_cm: float = 100.0,
                         apply_circular_mask: bool = False, 
-                        mask_radius_cm: float = None) -> np.ndarray:
+                        mask_radius_cm: float = None,
+                        depth_threshold_mm: float = 0.5) -> np.ndarray:
         """
         Generate pencil beam kernel for given depths and radial grid.
 
         Args:
             d (np.ndarray): Radiological depth [mm], shape (B*G, N, 1).  # TODO: Fix this documentation as it does not correspond with the implementation
             r (np.ndarray): Radial grid [mm], shape (Hk, Wk).
-            normalize (bool): Normalize to the unit kernel at 10cm radiological depth.
-            add_source_blur (bool): Whether to add geometric penumbra (source blur).
-            src_fwhm_mm_iso (float): Source FWHM at isocenter [mm].
-            SAD_cm (float): Source-to-axis distance [mm].
-            SSD_cm (float): Source-to-surface distance [mm].
+            normalize (bool): Normalize to the unit kernel at 10cm radiological depth.            
+            depth_threshold_mm (float): Minimum radiological depth [mm] below which kernel is zero. Default is 0.5mm.
 
         Returns:
             np.ndarray: Pencil beam kernel, shape (B*G, N, Hk, Wk).
@@ -329,12 +323,15 @@ class PencilBeamModel:
         # shapes
         d = np.asarray(d, float)
         r2 = np.asarray(r, float)                # (Hk, Wk)
+        BG, N, _, _ = d.shape
+        _, _, Hk, Wk = r2.shape
+
+        # Fast path: if all depths below threshold, return zeros immediately
+        if np.all(d < depth_threshold_mm):
+            return np.zeros((BG, N, Hk, Wk), dtype=np.float32)
 
         # Convert radiological depth from mm to cm
         d /= 10
-
-        BG, N, _, _ = d.shape
-        _, _, Hk, Wk = r2.shape
         mask = (r2 > 0.0)
 
 
@@ -365,31 +362,6 @@ class PencilBeamModel:
 
         K = np.where(mask, exact, center_val)               # (BG,N,Hk,Wk)
 
-        # ---- optional source blur (geometric penumbra) ----
-        if add_source_blur:
-            # magnification at depth
-            M = (SSD_cm + d)[..., None] / SAD_cm            # (BG,N,1,1)
-            sigma_iso_cm = (src_fwhm_mm_iso / 10.0) / (2.0 * np.sqrt(2.0*np.log(2.0)))
-            sigma_cm = np.maximum(sigma_iso_cm * M, 1e-8)   # (BG,N,1,1)
-
-            # build Gaussian per (BG,N)
-            yy, xx = np.mgrid[-(Hk//2):(Hk - Hk//2), -(Wk//2):(Wk - Wk//2)]
-            xx = xx[None, None, :, :] / dx
-            yy = yy[None, None, :, :] / dy
-            sig_pix = sigma_cm / np.array([dx, dy])[None, None, None, :]  # (BG,N,1,2)
-            sigx = sig_pix[..., 0]
-            sigy = sig_pix[..., 1]
-            G = np.exp(-0.5 * ((xx / sigx) ** 2 + (yy / sigy) ** 2))
-            G /= G.sum(axis=(-2, -1), keepdims=True)
-
-            # FFT conv (same size)
-            padH, padW = Hk + Hk - 1, Wk + Wk - 1
-            F_K = np.fft.rfftn(K, s=(padH, padW), axes=(-2, -1))
-            F_G = np.fft.rfftn(G, s=(padH, padW), axes=(-2, -1))
-            K_full = np.fft.irfftn(F_K * F_G, s=(padH, padW), axes=(-2, -1))
-            i0, j0 = (Hk - 1) // 2, (Wk - 1) // 2
-            K = K_full[..., i0:i0+Hk, j0:j0+Wk]
-
         # Normalize to 10cm depth kernel integral
         if normalize:
             K /= self.norm
@@ -404,6 +376,11 @@ class PencilBeamModel:
             circular_mask = r2 <= mask_radius_cm  # (1, 1, Hk, Wk)
             K = K * circular_mask  # (BG, N, Hk, Wk)
 
+        # Zero out kernels where radiological depth is below threshold (d is in cm now)
+        depth_threshold_cm = depth_threshold_mm / 10.0
+        depth_mask = (d >= depth_threshold_cm)  # (BG, N, 1, 1)
+        K = K * depth_mask  # (BG, N, Hk, Wk)
+        
         return np.array(K, dtype=np.float32)  # (BG, N, Hk, Wk)
 
     def apply_flattening(self, kernel: np.ndarray, r: np.ndarray, max_radius: float = 16, alpha: float = 0.2, beta: float = 2.0) -> np.ndarray:
