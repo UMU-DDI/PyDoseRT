@@ -38,7 +38,7 @@ for patient_name in sorted(os.listdir(base_path)):
                     dose_path=rtdose_path, 
                     plan_path=rtplan_path, 
                     struct_path=rtstruct_path,
-                    struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "External"],
+                    struct_names=["CTV", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"],
                     use_delivery=True
                     )
 

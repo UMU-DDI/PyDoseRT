@@ -6,6 +6,7 @@ from matplotlib import gridspec
 from skimage import measure
 from matplotlib.colors import ListedColormap
 import os
+from scipy import ndimage
 import cv2
 from pydose_rt.data.beam import BeamSequence
 from pydose_rt.engine.dose_engine import DoseEngine
@@ -142,14 +143,15 @@ def print_results(
         coronal_ystart = 64
         coronal_yend = 124
     elif (preset == "gold-atlas"):
-        axial_z = 83
-        axial_xstart = 32
-        axial_xend = 162
-        coronal_x = 120
-        coronal_zstart = 32
-        coronal_zend = 210
-        coronal_ystart = 32
-        coronal_yend = 210
+        CoM = np.array(ndimage.measurements.center_of_mass(patient.structures["CTVT"].cpu().detach().numpy()), dtype=np.int32)
+        axial_z = CoM[0]
+        axial_xstart = max(CoM[2] - 64, 0)
+        axial_xend = CoM[2] + 64
+        coronal_x = CoM[2]
+        coronal_zstart = max(CoM[0] - 32, 0)
+        coronal_zend = CoM[0] + 32
+        coronal_ystart = max(CoM[1] - 64, 0)
+        coronal_yend = CoM[1] + 64
     else:
         raise Exception("Preset missing")
 
@@ -258,6 +260,7 @@ def make_animation(experiment,
     Modified version with tight square layout - two squares stacked vertically
     """
     ct_volume = patient_data._ct_tensor.unsqueeze(0)
+    density_image = patient_data.density_image.unsqueeze(0)
 
     # Get the base colormap (jet)
     alpha_max = 1.0
@@ -291,7 +294,7 @@ def make_animation(experiment,
         with torch.no_grad():
             pred_depths, pred_map, _, pred_dose  = dose_layer.compute_dose(
                 beam, 
-                ct_image=ct_volume,
+                ct_image=density_image,
                 overwrite=True,
                 return_intermediates=True
             )
