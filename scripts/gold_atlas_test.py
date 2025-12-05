@@ -30,7 +30,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float32
-        kernel_size = 15
+        kernel_size = 151
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -63,7 +63,7 @@ for patient_name in sorted(os.listdir(base_path)):
             dose_engine.calibrate(calibration_mu=machine_config.calibration_mu,
                                   original_beam_template=beam_sequence)
 
-            dose_pred = dose_engine.compute_dose_sequential(beam_sequence, ct_image=density_image)
+            dose_pred = dose_engine.compute_dose_sequential(beam_sequence, density_image=density_image)
             doses.append(dose_pred.detach())
         dose_pred = sum(doses)
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
@@ -82,9 +82,9 @@ for patient_name in sorted(os.listdir(base_path)):
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None)
-        print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
-        res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=False, compute_clinical_criteria=False, global_normalisation=None)
+        # print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
+        # res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
 
         print(res_string)
         quick_plot(patient, dose_pred, title=res_string, out_path=f"out/quick_{patient_name}.png")
@@ -94,14 +94,26 @@ for patient_name in sorted(os.listdir(base_path)):
         all_results.append(row)
 
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [mae_loss]]}"
-        print_results(None, optimization, patient, beam_sequence, dose_pred, title=title, preset="gold-atlas", out_path=f"out/final_{patient_name}.png")
+        print_results(
+            None, 
+            optimization, 
+            patient, 
+            beam_sequence, 
+            dose_pred, 
+            title=title, 
+            preset="gold-atlas", 
+            out_path=f"out/final_{patient_name}.png"
+            )
 
-        make_animation(None, 
-                       patient, 
-                       dose_engine, 
-                       beam_sequence,
-                       dose_max=7.0
-                       )
+        make_animation(
+            None, 
+            patient, 
+            dose_engine, 
+            beam_sequence,
+            dose_max=7.0,
+            out_path=f"out/video_{patient_name}.mp4"
+            )
+        
         del dose_engine, dose_pred, dose_volume, patient
     except Exception as e:
         print(e)

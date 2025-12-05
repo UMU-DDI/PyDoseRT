@@ -245,6 +245,9 @@ class FluenceMapLayer(nn.Module):
             if self.use_output_factor:
                 field_size_mlc_mm = estimate_field_size_1d(mask.mean(dim=1).squeeze(2), 1.0)
                 field_size_jaw_mm = estimate_field_size_1d(mask.mean(dim=2).squeeze(2), 1.0)
+        
+        # if self.use_output_factor:
+        #     field_size_mlc_mm = estimate_field_size_1d(mask.mean(dim=1).squeeze(2), 1.0)
 
         fluence_map = mask.permute(0, 3, 2, 1)
 

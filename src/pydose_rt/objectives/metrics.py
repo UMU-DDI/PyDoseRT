@@ -7,6 +7,7 @@ import copy
 import pymedphys
 import torch
 from typing import Dict, List, Tuple, Optional
+from scipy.ndimage import binary_fill_holes, binary_erosion
 
 # DVH calculation functions moved to pydose_rt.data.metrics_helpers
 
@@ -207,7 +208,27 @@ def result_validation(patient: Patient,
         clinical_results = dict(sum([[(k + "_" +  v['type'], v['ratio']) for v in v_list['criteria']] for k, v_list in validation_results.items()], []))
         clinical_results["passed_test"] = np.mean(np.array(list(clinical_results.values())) < 1.0)
         results['clinical_criteria'] = clinical_results
+
+        dose_50_percent = 0.5 * patient.dose.cpu().detach().numpy().max()
+        dose_max = patient.dose.cpu().detach().numpy().max()
+        dose_95_percent = 0.95 * patient.dose.cpu().detach().numpy().max()
     
+        dose_pred_50 = pred_dose_np > dose_50_percent
+        dose_true_50 = patient.dose.cpu().detach().numpy() > dose_50_percent
+        results['dice_50'] = 2 * np.sum(dose_pred_50 * dose_true_50) / (np.sum(dose_pred_50) + np.sum(dose_true_50))
+
+
+        dose_pred_95 = pred_dose_np > dose_95_percent
+        dose_true_95 = patient.dose.cpu().detach().numpy() > dose_95_percent
+        results['dice_95'] = 2 * np.sum(dose_pred_95 * dose_true_95) / (np.sum(dose_pred_95) + np.sum(dose_true_95))
+
+        results['mean_dose_diff'] = np.mean(pred_dose_np - patient.dose.cpu().detach().numpy())
+        results['mean_abs_dose_diff'] = np.mean(np.abs(pred_dose_np - patient.dose.cpu().detach().numpy()))
+        results['mean_95th_percentile_diff'] = np.percentile(np.abs(pred_dose_np - patient.dose.cpu().detach().numpy()), 95.0)
+
+        for mask_name in patient.structures.keys():
+            results[f"{mask_name}_D_max"] = np.abs(patient.dose[patient.structures[mask_name]].cpu().detach().numpy().max() - pred_dose[patient.structures[mask_name]].cpu().detach().numpy().max())
+            results[f"{mask_name}_D_mean"] = np.abs(patient.dose[patient.structures[mask_name]].cpu().detach().numpy().mean() - pred_dose[patient.structures[mask_name]].cpu().detach().numpy().mean())
         for mask_name in patient.structures.keys():
             for percent in [0.98, 0.5, 0.02]:
                 results[f"{mask_name}_D_{percent}%"] = dose_at_volume_percent(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent) - dose_at_volume_percent(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent)
@@ -261,7 +282,8 @@ def result_validation(patient: Patient,
         )
         
         # Calculate pass rate
-        gamma_valid = gamma_map[gamma_mask]
+        external_mask = binary_erosion(binary_fill_holes(patient.structures["External"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=7)
+        gamma_valid = gamma_map[gamma_mask * external_mask]
         gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
         pass_rate = np.sum(gamma_valid <= 1.0) / len(gamma_valid) * 100
         mean_gamma = np.mean(gamma_valid)

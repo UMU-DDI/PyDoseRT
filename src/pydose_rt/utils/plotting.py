@@ -143,7 +143,7 @@ def print_results(
         coronal_ystart = 64
         coronal_yend = 124
     elif (preset == "gold-atlas"):
-        CoM = np.array(ndimage.measurements.center_of_mass(patient.structures["CTVT"].cpu().detach().numpy()), dtype=np.int32)
+        CoM = np.array(ndimage.measurements.center_of_mass(list(patient.structures.values())[0].cpu().detach().numpy()), dtype=np.int32)
         axial_z = CoM[0]
         axial_xstart = max(CoM[2] - 64, 0)
         axial_xend = CoM[2] + 64
@@ -255,28 +255,32 @@ def make_animation(experiment,
                    patient_data: Patient, 
                    dose_layer: DoseEngine, 
                    beam_sequence: BeamSequence, 
-                   dose_max=50.0):
+                   dose_max=50.0,
+                   out_path=None):
     """
     Modified version with tight square layout - two squares stacked vertically
     """
-    ct_volume = patient_data._ct_tensor.unsqueeze(0)
     density_image = patient_data.density_image.unsqueeze(0)
 
     # Get the base colormap (jet)
     alpha_max = 1.0
     jet = plt.get_cmap('jet', 256)
     colors = jet(np.linspace(0, 1, 256))
-    values = np.linspace(0, 1, 256)
+
+    values = np.linspace(0, 1, 256)  # normalized 0..1
     alpha = np.clip(np.interp(values, [0, 1], [0.0, alpha_max]), 0, alpha_max)
+    # this is equivalent to alpha = values, but more explicit
+
     colors[:, -1] = alpha
     jet_alpha = ListedColormap(colors)
     num_cps = dose_layer.number_of_beams
     slice_idx = patient_data.density_image.shape[0] // 2
-    ct_data = ct_volume.cpu().detach().numpy()[0, slice_idx, :, :]
+    ct_data = patient_data._ct_tensor.cpu().detach().numpy()[slice_idx, :, :]
     dose_data = np.zeros(patient_data.density_image.shape[1:])
     beam_sequence = beam_sequence.to_delivery()
     # Create output directory if needed
     os.makedirs("out", exist_ok=True)
+    iso_center_axial = dose_layer.iso_center_voxel[1:]
     
     # List to store frames
     frames = []
@@ -294,7 +298,7 @@ def make_animation(experiment,
         with torch.no_grad():
             pred_depths, pred_map, _, pred_dose  = dose_layer.compute_dose(
                 beam, 
-                ct_image=density_image,
+                density_image=density_image,
                 overwrite=True,
                 return_intermediates=True
             )
@@ -321,6 +325,7 @@ def make_animation(experiment,
         
         ax2.imshow(ct_data, cmap='gray', vmin=-1000, vmax=1000, aspect='equal')
         ax2.imshow(dose_data, cmap=jet_alpha, vmin=0.0, vmax=dose_max, aspect='equal')
+        ax2.plot(iso_center_axial[0], iso_center_axial[1], marker='o', color='red')
         overlay_mask_outline(pred_dose > 0.01 * pred_dose.max(), color='orange')
         
         # Add ROI contours
@@ -363,7 +368,10 @@ def make_animation(experiment,
         # Set up video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         fps = 10  # Frames per second (adjust as needed)
-        video_path = "out/animation.mp4"
+        if out_path is None:
+            video_path = "out/animation.mp4"
+        else:
+            video_path = out_path
         
         video_writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
         
@@ -378,7 +386,7 @@ def make_animation(experiment,
 
     if experiment is not None:
         experiment.log_video(video_path, overwrite=True)
-    return
+
 
 def quick_plot(patient, dose_pred, title, show_ct: bool = False, out_path = None):
     dose_max = max(patient.dose.max(), dose_pred.max()).item()
