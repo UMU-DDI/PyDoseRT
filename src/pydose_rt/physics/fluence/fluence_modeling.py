@@ -43,7 +43,6 @@ def compute_profile_ratios(
     # Sample at requested points
     sample_points = np.array(sample_points_mm)
     sampled_ratios = interpolator(sample_points)
-    sampled_ratios = sampled_ratios / sampled_ratios[0]
     
     return sample_points, sampled_ratios
 
@@ -82,16 +81,10 @@ def precompute_head_scatter_kernel(sigma_cm, resolution_cm, kernel_half_width=5)
     
     return torch.from_numpy(kernel)
 
-def get_output_factor(fluence_map, output_factors):
+def get_output_factor(field_size_mlc_mm, field_size_jaw_mm, output_factors):
 
-    fluence_mlc_profile = fluence_map.mean(dim=2).squeeze(1)  # [B, W]
-    fluence_jaw_profile = fluence_map.mean(dim=3).squeeze(1)  # [B, H]
-    field_size_mlc_mm = estimate_field_size_1d(fluence_mlc_profile, 1.0)  # [B]
-    field_size_jaw_mm = estimate_field_size_1d(fluence_jaw_profile, 1.0)  # [B]
-    OF = 1.0
-
-    x = torch.Tensor(output_factors[0]).to(fluence_map.device).to(fluence_map.dtype)
-    y = torch.Tensor(output_factors[1]).to(fluence_map.device).to(fluence_map.dtype)
+    x = torch.Tensor(output_factors[0]).to(field_size_mlc_mm.device).to(field_size_mlc_mm.dtype)
+    y = torch.Tensor(output_factors[1]).to(field_size_mlc_mm.device).to(field_size_mlc_mm.dtype)
 
     # Get insertion indices
     idx_mlc = torch.searchsorted(x, field_size_mlc_mm, right=False)

@@ -29,6 +29,7 @@ from pydose_rt.physics.fluence.fluence_modeling import (
     apply_head_scatter_kernels,
     get_output_factor,
     apply_directional_precomputed_kernel,
+    estimate_field_size_1d,
     precompute_directional_source_penumbra_kernels,
 )
 
@@ -234,7 +235,16 @@ class FluenceMapLayer(nn.Module):
             jaw_mask = jaw_mask.view(B * G, 1, H, 1)
             jaw_mask = jaw_mask.repeat(1, W, 1, 1)
 
+            if self.use_output_factor:
+                field_size_mlc_mm = estimate_field_size_1d(jaw_mask.permute(0, 2, 1, 3).mean(dim=1).squeeze(2), 1.0)
+                field_size_jaw_mm = estimate_field_size_1d(jaw_mask.mean(dim=2).squeeze(2), 1.0)
+
             mask *= jaw_mask
+            # mask *= jaw_mask.permute(0, 2, 1, 3)
+        else:
+            if self.use_output_factor:
+                field_size_mlc_mm = estimate_field_size_1d(mask.mean(dim=1).squeeze(2), 1.0)
+                field_size_jaw_mm = estimate_field_size_1d(mask.mean(dim=2).squeeze(2), 1.0)
 
         fluence_map = mask.permute(0, 3, 2, 1)
 
@@ -266,7 +276,7 @@ class FluenceMapLayer(nn.Module):
             fluence_map = fluence_map * self.profile_correction_map
 
         if self.use_output_factor:
-            OF = get_output_factor(fluence_map, self.output_factors)
+            OF = get_output_factor(field_size_mlc_mm, field_size_jaw_mm, self.output_factors)
             fluence_map = OF * fluence_map
 
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
