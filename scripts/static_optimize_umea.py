@@ -179,7 +179,7 @@ for test_i in range(n_tests):
             # Backprop
             loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(pred_mlc, max_norm=1 / 40.0)
+            torch.nn.utils.clip_grad_norm_(beam_sequence.leaf_positions, max_norm=1 / 40.0)
             # torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
             # torch.nn.utils.clip_grad_norm_(pred_mus, max_norm=1.0)
 
