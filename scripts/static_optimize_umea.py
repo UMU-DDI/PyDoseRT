@@ -119,7 +119,7 @@ oar_dose = 10.0
 for test_i in range(n_tests):
 
     experiment = Experiment(
-        api_key=os.getenv("COMET_API"), project_name="autoplan_static_amp"
+        api_key=os.getenv("COMET_API"), project_name="autoplan_static"
     )
     try:
         current_res = { "loss": np.inf }
@@ -191,7 +191,6 @@ for test_i in range(n_tests):
                 "weights": weights,
                 "physical_size": patient.physical_size,
                 "roi_weights": optimization.get_parameters("weight"),
-                "amp_enabled": use_amp,
                 "dtype": str(dtype)
             }, nested_support=True
         )
