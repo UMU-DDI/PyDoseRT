@@ -26,7 +26,7 @@ else:
 # -----------------------------------------
 # Parse command-line arguments
 # -----------------------------------------
-parser = argparse.ArgumentParser(description="Autoplan static optimization script")
+parser = argparse.ArgumentParser(description="Autoplan static optimization script with AMP")
 parser.add_argument(
     "--patient_name",
     type=str,
@@ -57,7 +57,11 @@ if remote:
 
     kernel_size = 5
     device = device
-    dtype = torch.float16
+    # AMP: Parameters must be float32, autocast handles float16 during forward pass
+    dtype = torch.float32  # Changed from float16
+    use_amp = True
+    print("🔧 Using Automatic Mixed Precision (AMP) for float16 stability")
+    print("   Parameters: float32, Forward pass: autocast to float16")
 
     max_iter = 1000
 else:
@@ -69,9 +73,9 @@ else:
     rtstruct_path = next((base / "[RS] RayStation").iterdir())
 
     patient, beam_sequence = loaders.load_dicom(
-                ct_folder=ct_folder, 
-                dose_path=rtdose_path, 
-                plan_path=rtplan_path, 
+                ct_folder=ct_folder,
+                dose_path=rtdose_path,
+                plan_path=rtplan_path,
                 struct_path=rtstruct_path,
                 struct_names=["CTVT", "PTVT_42.7", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
@@ -82,13 +86,13 @@ else:
 
     kernel_size = 3
     device = device
-    dtype = torch.float16
-
+    dtype = torch.float32
+    use_amp = False  # Dev machine doesn't need AMP
 
     max_iter = 10
 
 machine_config = MachineConfig(
-    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",            
+    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
     penumbra_fwhm=None,
     head_scatter_amplitude=None,
     head_scatter_sigma=None,
@@ -115,7 +119,7 @@ oar_dose = 10.0
 for test_i in range(n_tests):
 
     experiment = Experiment(
-        api_key=os.getenv("COMET_API"), project_name="autoplan_static"
+        api_key=os.getenv("COMET_API"), project_name="autoplan_static_amp"
     )
     try:
         current_res = { "loss": np.inf }
@@ -150,30 +154,33 @@ for test_i in range(n_tests):
         patient = patient.to(device).to(dtype)
         ct_volume = patient.density_image.unsqueeze(0)
         dose_target = patient.dose.unsqueeze(0)
-        
+
         engine = DoseEngine(
             machine_config=machine_config,
             dose_grid_spacing=patient._resolution,
             dose_grid_shape=patient.density_image.shape,
-            beam_template=beam_sequence.to_delivery(), 
-            kernel_size=kernel_size, 
+            beam_template=beam_sequence.to_delivery(),
+            kernel_size=kernel_size,
             adjust_values=True,
-            dtype=dtype, 
+            dtype=dtype,
             device=device
         )
         valid_parameters_layer = BeamValidationLayer(
-            machine_config=machine_config, 
+            machine_config=machine_config,
             device=device,
             dtype=dtype,
             adjust_values=True,
             field_size=beam_sequence.field_size
         )
-        
+
         patience = 0
         epoch = 0
         lr = 10**np.random.uniform(-2, 1) # 0.1
         lr_decay = 1e-4
         optimizer = torch.optim.AdamW(beam_sequence.parameters(), lr=lr, weight_decay=lr_decay)
+
+        # AMP: Create gradient scaler (only enabled when use_amp=True)
+        scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
 
         experiment.log_parameters(
             {
@@ -183,29 +190,36 @@ for test_i in range(n_tests):
                 "lr_decay": lr_decay,
                 "weights": weights,
                 "physical_size": patient.physical_size,
-                "roi_weights": optimization.get_parameters("weight")
+                "roi_weights": optimization.get_parameters("weight"),
+                "amp_enabled": use_amp,
+                "dtype": str(dtype)
             }, nested_support=True
         )
 
         def closure():
             optimizer.zero_grad(set_to_none=True)
-            
-            # Forward
-            dose_pred = engine.compute_dose(
-                beam_sequence.to_delivery(),
-                density_image=ct_volume
-            )
 
-            # Compute loss
-            raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred[0], dose_target, beam_sequence, weights)
-            loss = torch.stack(raw_losses).sum()
-            
-            # Backprop
-            loss.backward()
+            # AMP: Wrap forward pass in autocast
+            # PyTorch will automatically use float16 for fast ops, float32 for stable ops
+            with torch.amp.autocast(device.type, enabled=use_amp, dtype=torch.float16):
+                dose_pred = engine.compute_dose(
+                    beam_sequence.to_delivery(),
+                    density_image=ct_volume
+                )
 
-            # torch.nn.utils.clip_grad_norm_(beam_sequence.leaf_positions, max_norm=1 / 40.0)
-            # torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
-            # torch.nn.utils.clip_grad_norm_(pred_mus, max_norm=1.0)
+                # Compute loss (will use float32 where needed automatically)
+                raw_losses = compute_dvh_loss(patient, optimization, machine_config,
+                                             dose_pred[0], dose_target, beam_sequence, weights)
+                loss = torch.stack(raw_losses).sum()
+
+            # AMP: Scale loss for backward pass (prevents gradient underflow in fp16)
+            scaler.scale(loss).backward()
+
+            # AMP: Unscale gradients before clipping (converts back to fp32 scale)
+            scaler.unscale_(optimizer)
+
+            # Now we can safely clip gradients
+            torch.nn.utils.clip_grad_norm_(beam_sequence.leaf_positions, max_norm=1.0)
 
             # stash anything you want to inspect/plot after step()
             latest["raw_losses"] = [v.detach().item() for v in raw_losses]
@@ -219,9 +233,13 @@ for test_i in range(n_tests):
         while patience < patience_thr:
             if (epoch > max_iter):
                 break
-            
+
             # --- the actual optimizer step ---
-            loss = optimizer.step(closure)   # returns the last loss the closure returned
+            loss = optimizer.step(closure)
+
+            # AMP: Update scaler for next iteration
+            scaler.update()
+
             # scheduler.step(loss)
             raw_losses = latest["raw_losses"]
             raw_loss_dict = {f"loss_{i+1}": v for i, v in enumerate(raw_losses)}
@@ -229,17 +247,17 @@ for test_i in range(n_tests):
             loss_val = latest["loss_val"]
             beam_sequence = latest["beam_sequence"]
             mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred))).cpu().detach().numpy(), 4)
-            
+
             patience += 1
             if (loss < current_res["loss"]):
                 patience = 0
                 current_res = {
-                    "loss": loss, 
-                    "weights": weights, 
+                    "loss": loss,
+                    "weights": weights,
                     "beam_sequence": beam_sequence.clone(),
                     "mae_loss": mae_loss
                 }
-                
+
             else:
                 # print("Patience count:", patience)
                 if ((patience >= patience_thr) | torch.isnan(dose_pred).any()):
@@ -281,7 +299,7 @@ for test_i in range(n_tests):
             },
             epoch=epoch,
         )
-        
+
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [raw_losses]]}"
         experiment.log_asset_data(beam_sequence.leaf_positions.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
@@ -290,5 +308,7 @@ for test_i in range(n_tests):
         make_animation(experiment, patient, engine, animation_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
-        
+        import traceback
+        traceback.print_exc()
+
     experiment.end()
