@@ -58,7 +58,11 @@ if remote:
 
     kernel_size = 5
     device = device
-    dtype = torch.float16  # Keep float16 for speed!
+    # CRITICAL: Parameters must be float32 for AMP to work correctly
+    # AMP will automatically use float16 for forward pass (saves memory on activations)
+    # but keeps parameters and gradients in float32 (prevents NaN gradients)
+    param_dtype = torch.float32  # Parameters in float32
+    data_dtype = torch.float16   # Input data can be float16 for memory savings
     use_amp = True  # Use AMP to prevent NaN gradients
 
     max_iter = 1000
@@ -84,9 +88,9 @@ else:
 
     kernel_size = 3
     device = device
-    dtype = torch.float32
+    param_dtype = torch.float32
+    data_dtype = torch.float16
     use_amp = False  # Dev machine doesn't need AMP
-
 
     max_iter = 10
 
@@ -145,12 +149,12 @@ for test_i in range(n_tests):
             sid=sid,
             open_field_size=open_field_size,
             device=device,
-            dtype=dtype,
+            dtype=data_dtype,  # Parameters in float32 for AMP stability
             requires_grad=True
             )
         beam_sequence.jaw_positions.requires_grad_(False)
 
-        patient = patient.to(device).to(dtype)
+        patient = patient.to(device).to(data_dtype)  # Input data can be float16
         ct_volume = patient.density_image.unsqueeze(0)
         dose_target = patient.dose.unsqueeze(0)
 
@@ -159,7 +163,9 @@ for test_i in range(n_tests):
         print("DTYPE CHECK")
         print("="*60)
         print(f"remote: {remote}")
-        print(f"dtype variable: {dtype}")
+        print(f"param_dtype (parameters): {param_dtype}")
+        print(f"data_dtype (input data): {data_dtype}")
+        print(f"use_amp: {use_amp}")
         print(f"beam_sequence.leaf_positions.dtype: {beam_sequence.leaf_positions.dtype}")
         print(f"beam_sequence.mus.dtype: {beam_sequence.mus.dtype}")
         print(f"ct_volume.dtype: {ct_volume.dtype}")
@@ -170,16 +176,16 @@ for test_i in range(n_tests):
             machine_config=machine_config,
             dose_grid_spacing=patient._resolution,
             dose_grid_shape=patient.density_image.shape,
-            beam_template=beam_sequence.to_delivery(), 
-            kernel_size=kernel_size, 
+            beam_template=beam_sequence.to_delivery(),
+            kernel_size=kernel_size,
             adjust_values=True,
-            dtype=dtype, 
+            dtype=param_dtype,  # Engine parameters in float32
             device=device
         )
         valid_parameters_layer = BeamValidationLayer(
-            machine_config=machine_config, 
+            machine_config=machine_config,
             device=device,
-            dtype=dtype,
+            dtype=param_dtype,  # Validation layer in float32
             adjust_values=True,
             field_size=beam_sequence.field_size
         )
@@ -203,7 +209,8 @@ for test_i in range(n_tests):
                 "physical_size": patient.physical_size,
                 "roi_weights": optimization.get_parameters("weight"),
                 "amp_enabled": use_amp,
-                "dtype": str(dtype)
+                "param_dtype": str(param_dtype),
+                "data_dtype": str(data_dtype)
             }, nested_support=True
         )
 
@@ -216,9 +223,11 @@ for test_i in range(n_tests):
                 print(f"   This happened during previous optimizer step.")
                 raise RuntimeError("Leaf positions became NaN - stopping training")
 
-            # AMP: Wrap forward pass in autocast for stable float16 training
+            # AMP: Autocast runs forward pass in float16 to save memory on activations
+            # Parameters stay in float32, gradients computed in float32 for stability
+            # This is the correct way to use mixed precision training
             with autocast(device.type, enabled=use_amp, dtype=torch.float16):
-                # Forward
+                # Forward pass - will run in float16 if use_amp=True
                 dose_pred = engine.compute_dose(
                     beam_sequence.to_delivery(),
                     density_image=ct_volume
@@ -230,7 +239,7 @@ for test_i in range(n_tests):
                     print(f"   Issue is in forward pass, not backward pass")
                     raise RuntimeError("NaN in forward pass")
 
-                # Compute loss
+                # Compute loss - also in float16 inside autocast
                 raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred[0], dose_target, beam_sequence, weights)
                 loss = torch.stack(raw_losses).sum()
 
@@ -240,10 +249,12 @@ for test_i in range(n_tests):
                 print(f"   Raw losses: {[l.item() for l in raw_losses]}")
                 raise RuntimeError("NaN in loss computation")
 
-            # AMP: Scale loss before backward (prevents gradient underflow)
+            # AMP: Scale loss before backward to prevent gradient underflow in float16
+            # This is safe because parameters are float32, so gradients will be float32
             scaler.scale(loss).backward()
 
-            # AMP: Unscale gradients before checking/clipping
+            # AMP: Unscale gradients back to normal range before clipping
+            # This works because gradients are float32 (from float32 parameters)
             scaler.unscale_(optimizer)
 
             # Debug: Check for NaN in gradients IMMEDIATELY after backward
