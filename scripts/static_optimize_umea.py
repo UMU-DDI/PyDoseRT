@@ -82,7 +82,7 @@ else:
 
     kernel_size = 3
     device = device
-    dtype = torch.float32
+    dtype = torch.float16
 
 
     max_iter = 10
@@ -195,7 +195,6 @@ for test_i in range(n_tests):
                 beam_sequence.to_delivery(),
                 density_image=ct_volume
             )
-            dose_pred = dose_pred
 
             # Compute loss
             raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred[0], dose_target, beam_sequence, weights)

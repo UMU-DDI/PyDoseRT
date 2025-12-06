@@ -380,12 +380,12 @@ class DoseEngine(nn.Module):
 
             batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)
 
-            batched_accumulated_dose = batched_accumulated_dose.sum(dim=1)
+            batched_accumulated_dose = batched_accumulated_dose.sum(dim=1).to(self.dtype)
 
-            if return_intermediates:
-                return batched_radiological_depths, batched_fluence_maps, batched_fluence_volumes, batched_accumulated_dose
-            else:
-                return batched_accumulated_dose
+        if return_intermediates:
+            return batched_radiological_depths, batched_fluence_maps, batched_fluence_volumes, batched_accumulated_dose
+        else:
+            return batched_accumulated_dose
 
     def compute_dose(
         self,
