@@ -262,7 +262,7 @@ def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true
     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["PTVT_42.7"]] - 42.7)), optimization.structures["PTVT_42.7"]["weight"]))
     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["CTVT"]] - 42.7)), optimization.structures["CTVT"]["weight"]))
 
-    for struct_name in ['PenileBulb', 'Prostate', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'SeminalVesicles']:
+    for struct_name in ['PenileBulb', 'Prostate', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'SeminalVesicles', 'External']:
         raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures[struct_name]])), optimization.structures[struct_name]["weight"]))
 
     # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["FemoralHead_L"], 20), optimization.structures["FemoralHead_L"]["weight"])) # 
