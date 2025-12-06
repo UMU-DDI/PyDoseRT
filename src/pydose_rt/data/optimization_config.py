@@ -155,14 +155,6 @@ class OptimizationConfig:
         return {name: struct.get(parameter_name)
                 for name, struct in self.structures.items()}
 
-    def randomize_weights(self):
-        """Randomize weights for all structures (for experiments)."""
-        for name, struct in self.structures.items():
-            if "PTV" in name or "CTV" in name:
-                struct["weight"] = 100
-            else:
-                struct["weight"] = 10**np.random.randint(-2, 2)
-
     def validate(self, pred_dose: Union[np.ndarray, torch.Tensor], patient) -> Dict[str, Dict]:
         """
         Validate predicted dose against clinical criteria.

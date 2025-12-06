@@ -349,23 +349,6 @@ def prune_patients(patient_list):
             pruned_list.append(patient)
     return pruned_list
      
-def randomize_weights(constraints):  #
-    """
-    Creates a new dictionary with the same structure as the input constraints,
-    but with randomized weight values (between 1 and 100).
-
-    Args:
-        constraints (dict): The original constraints dictionary.
-
-    Returns:
-        dict: A new dictionary with randomized weights.
-    """
-    new_constraints = copy.deepcopy(constraints)
-    for roi in new_constraints["weight"]:
-        new_constraints["weight"][roi] = random.uniform(0.01, 1.0)
-    return new_constraints
-
-
 def normalize_weights(constraints, sum_value=100):  #
     """
     Normalizes the values in the 'weight' sub-dictionary of the constraints

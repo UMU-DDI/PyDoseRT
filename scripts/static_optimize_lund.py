@@ -78,7 +78,12 @@ for test_i in range(n_tests):
         current_res = [np.inf]
         weights = get_initial_weights()
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None}
-        optimization.randomize_weights()
+
+        for name, struct in optimization.structures.items():
+            if "PTV" in name or "CTV" in name:
+                struct["weight"] = 100
+            else:
+                struct["weight"] = 10**np.random.randint(-2, 2)
 
 
         dose_layer = DoseEngine(machine_config, permute_ct=False, leafs_centered=False, adjust_values=True)

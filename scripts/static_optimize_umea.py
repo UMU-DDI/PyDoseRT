@@ -30,7 +30,8 @@ parser = argparse.ArgumentParser(description="Autoplan static optimization scrip
 parser.add_argument(
     "--patient_name",
     type=str,
-    required=True,
+    required=False,
+    default="P01",
     help="Name of patient (e.g. P01)"
 )
 args = parser.parse_args()
@@ -56,7 +57,7 @@ if remote:
 
     kernel_size = 5
     device = device
-    dtype = torch.float32
+    dtype = torch.float16
 
     max_iter = 1000
 else:
@@ -120,7 +121,18 @@ for test_i in range(n_tests):
         current_res = { "loss": np.inf }
         weights = get_initial_weights()
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
-        optimization.randomize_weights()
+        optimization.structures['CTVT']["weight"] = 100
+        optimization.structures['PTVT_42.7']["weight"] = 100
+        optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['Prostate']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['FemoralHead_R']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['Bladder']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['Rectum']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['SeminalVesicles']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['External']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+
+
         beam_sequence = BeamSequence.create(
             gantry_angles=gantry_angles,
             number_of_leaf_pairs=number_of_leaf_pairs,

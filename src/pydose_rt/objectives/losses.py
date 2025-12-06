@@ -259,21 +259,23 @@ def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true
     # PTV_Prostata_gol_4270
 
 
-    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["PTVT_42.7"]] - 42.7)**2), optimization.structures["PTVT_42.7"]["weight"]))  # L2 loss for PTV
-    raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["FemoralHead_L"], 20), optimization.structures["FemoralHead_L"]["weight"])) # 
-    raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["FemoralHead_R"], 20), optimization.structures["FemoralHead_R"]["weight"])) # D_
-    raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["Bladder"], 40), optimization.structures["Bladder"]["weight"]))
-    raw_losses.append(scale_loss(dvh_volume_objective(dose_pred, patient.structures["Bladder"], 21.0), optimization.structures["Bladder"]["weight"]))
-    raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["Rectum"], 40), optimization.structures["Rectum"]["weight"]))
-    raw_losses.append(scale_loss(dvh_volume_objective(dose_pred, patient.structures["Rectum"], 21.0), optimization.structures["Rectum"]["weight"]))
-    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["External"]])**2), optimization.structures["External"]["weight"]))
+    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["PTVT_42.7"]] - 42.7)**2), optimization.structures["PTVT_42.7"]["weight"]))
+    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["CTVT"]] - 42.7)**2), optimization.structures["CTVT"]["weight"]))
+
+    for struct_name in ['PenileBulb', 'Prostate', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'SeminalVesicles']:
+        raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures[struct_name]])**2), optimization.structures[struct_name]["weight"]))
+
+    # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["FemoralHead_L"], 20), optimization.structures["FemoralHead_L"]["weight"])) # 
+    # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["FemoralHead_R"], 20), optimization.structures["FemoralHead_R"]["weight"])) # D_
+    # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["Bladder"], 40), optimization.structures["Bladder"]["weight"]))
+    # raw_losses.append(scale_loss(dvh_volume_objective(dose_pred, patient.structures["Bladder"], 21.0), optimization.structures["Bladder"]["weight"]))
+    # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["Rectum"], 40), optimization.structures["Rectum"]["weight"]))
+    # raw_losses.append(scale_loss(dvh_volume_objective(dose_pred, patient.structures["Rectum"], 21.0), optimization.structures["Rectum"]["weight"]))
+    
 
     raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))**2), weights["leaf_complexity_loss"]))
     raw_losses.append(scale_loss(leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap), weights["leaf_reg_loss"]))
-
-
     raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.mus[1:, ...] - beam_sequence.mus[:-1, ...]))**2), weights["mu_complexity_loss"]))
-
     raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.jaw_positions[1:, ...] - beam_sequence.jaw_positions[:-1, ...]))**2), weights["jaw_complexity_loss"]))
 
     return raw_losses
