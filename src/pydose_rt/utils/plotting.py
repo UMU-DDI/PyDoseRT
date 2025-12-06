@@ -357,7 +357,7 @@ def make_animation(experiment,
         
         if os.path.exists(frame_path):
             os.remove(frame_path)
-
+    print(f"The dose map produced a max of {dose_data.max()}")
 
     if frames:
         if (len(frames) != num_cps):
