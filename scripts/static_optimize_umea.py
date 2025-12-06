@@ -52,7 +52,7 @@ if remote:
                 struct_path=rtstruct_path,
                 struct_names=["CTVT", "PTVT_42.7", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
-    beam_sequence = beam_sequence[0].clone()[::2]
+    beam_sequence = beam_sequence[0].clone()
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
     kernel_size = 5
@@ -60,8 +60,6 @@ if remote:
     # AMP: Parameters must be float32, autocast handles float16 during forward pass
     dtype = torch.float32  # Changed from float16
     use_amp = True
-    print("🔧 Using Automatic Mixed Precision (AMP) for float16 stability")
-    print("   Parameters: float32, Forward pass: autocast to float16")
 
     max_iter = 1000
 else:
