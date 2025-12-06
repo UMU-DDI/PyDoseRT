@@ -52,7 +52,7 @@ if remote:
                 struct_path=rtstruct_path,
                 struct_names=["CTVT", "PTVT_42.7", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
-    beam_sequence = beam_sequence[0].clone()
+    beam_sequence = beam_sequence[0].clone()[::2]
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
     kernel_size = 5
@@ -191,7 +191,7 @@ for test_i in range(n_tests):
             optimizer.zero_grad(set_to_none=True)
             
             # Forward
-            dose_pred = engine.compute_dose_sequential(
+            dose_pred = engine.compute_dose(
                 beam_sequence.to_delivery(),
                 density_image=ct_volume
             )
