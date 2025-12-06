@@ -4,6 +4,7 @@ sys.path.append('../')
 import numpy as np
 import os
 import torch
+from torch.amp import autocast, GradScaler  # AMP for stable float16 training
 import time
 from pathlib import Path
 from pydose_rt.data import Patient, OptimizationConfig, MachineConfig, loaders, BeamSequence
@@ -26,7 +27,7 @@ else:
 # -----------------------------------------
 # Parse command-line arguments
 # -----------------------------------------
-parser = argparse.ArgumentParser(description="Autoplan static optimization script with AMP")
+parser = argparse.ArgumentParser(description="Autoplan static optimization script")
 parser.add_argument(
     "--patient_name",
     type=str,
@@ -57,9 +58,8 @@ if remote:
 
     kernel_size = 5
     device = device
-    # AMP: Parameters must be float32, autocast handles float16 during forward pass
-    dtype = torch.float32  # Changed from float16
-    use_amp = True
+    dtype = torch.float16  # Keep float16 for speed!
+    use_amp = True  # Use AMP to prevent NaN gradients
 
     max_iter = 1000
 else:
@@ -71,9 +71,9 @@ else:
     rtstruct_path = next((base / "[RS] RayStation").iterdir())
 
     patient, beam_sequence = loaders.load_dicom(
-                ct_folder=ct_folder,
-                dose_path=rtdose_path,
-                plan_path=rtplan_path,
+                ct_folder=ct_folder, 
+                dose_path=rtdose_path, 
+                plan_path=rtplan_path, 
                 struct_path=rtstruct_path,
                 struct_names=["CTVT", "PTVT_42.7", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
@@ -87,10 +87,11 @@ else:
     dtype = torch.float32
     use_amp = False  # Dev machine doesn't need AMP
 
+
     max_iter = 10
 
 machine_config = MachineConfig(
-    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
+    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",            
     penumbra_fwhm=None,
     head_scatter_amplitude=None,
     head_scatter_sigma=None,
@@ -153,32 +154,44 @@ for test_i in range(n_tests):
         ct_volume = patient.density_image.unsqueeze(0)
         dose_target = patient.dose.unsqueeze(0)
 
+        # Debug: Print actual dtypes being used
+        print("\n" + "="*60)
+        print("DTYPE CHECK")
+        print("="*60)
+        print(f"remote: {remote}")
+        print(f"dtype variable: {dtype}")
+        print(f"beam_sequence.leaf_positions.dtype: {beam_sequence.leaf_positions.dtype}")
+        print(f"beam_sequence.mus.dtype: {beam_sequence.mus.dtype}")
+        print(f"ct_volume.dtype: {ct_volume.dtype}")
+        print(f"dose_target.dtype: {dose_target.dtype}")
+        print("="*60 + "\n")
+        
         engine = DoseEngine(
             machine_config=machine_config,
             dose_grid_spacing=patient._resolution,
             dose_grid_shape=patient.density_image.shape,
-            beam_template=beam_sequence.to_delivery(),
-            kernel_size=kernel_size,
+            beam_template=beam_sequence.to_delivery(), 
+            kernel_size=kernel_size, 
             adjust_values=True,
-            dtype=dtype,
+            dtype=dtype, 
             device=device
         )
         valid_parameters_layer = BeamValidationLayer(
-            machine_config=machine_config,
+            machine_config=machine_config, 
             device=device,
             dtype=dtype,
             adjust_values=True,
             field_size=beam_sequence.field_size
         )
-
+        
         patience = 0
         epoch = 0
         lr = 10**np.random.uniform(-2, 1) # 0.1
         lr_decay = 1e-4
         optimizer = torch.optim.AdamW(beam_sequence.parameters(), lr=lr, weight_decay=lr_decay)
 
-        # AMP: Create gradient scaler (only enabled when use_amp=True)
-        scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
+        # AMP: GradScaler prevents NaN gradients in float16 backward pass
+        scaler = GradScaler(device.type, enabled=use_amp)
 
         experiment.log_parameters(
             {
@@ -189,6 +202,7 @@ for test_i in range(n_tests):
                 "weights": weights,
                 "physical_size": patient.physical_size,
                 "roi_weights": optimization.get_parameters("weight"),
+                "amp_enabled": use_amp,
                 "dtype": str(dtype)
             }, nested_support=True
         )
@@ -196,27 +210,76 @@ for test_i in range(n_tests):
         def closure():
             optimizer.zero_grad(set_to_none=True)
 
-            # AMP: Wrap forward pass in autocast
-            # PyTorch will automatically use float16 for fast ops, float32 for stable ops
-            with torch.amp.autocast(device.type, enabled=use_amp, dtype=torch.float16):
+            # Check leaf positions BEFORE forward pass
+            if torch.isnan(beam_sequence.leaf_positions).any():
+                print(f"\n💀 FATAL: Leaf positions already NaN at start of epoch {epoch}!")
+                print(f"   This happened during previous optimizer step.")
+                raise RuntimeError("Leaf positions became NaN - stopping training")
+
+            # AMP: Wrap forward pass in autocast for stable float16 training
+            with autocast(device.type, enabled=use_amp, dtype=torch.float16):
+                # Forward
                 dose_pred = engine.compute_dose(
                     beam_sequence.to_delivery(),
                     density_image=ct_volume
                 )
 
-                # Compute loss (will use float32 where needed automatically)
-                raw_losses = compute_dvh_loss(patient, optimization, machine_config,
-                                             dose_pred[0], dose_target, beam_sequence, weights)
+                # Check dose after forward pass
+                if torch.isnan(dose_pred).any():
+                    print(f"\n⚠️  NaN in dose_pred after forward pass at epoch {epoch}!")
+                    print(f"   Issue is in forward pass, not backward pass")
+                    raise RuntimeError("NaN in forward pass")
+
+                # Compute loss
+                raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred[0], dose_target, beam_sequence, weights)
                 loss = torch.stack(raw_losses).sum()
 
-            # AMP: Scale loss for backward pass (prevents gradient underflow in fp16)
+            # Check loss
+            if torch.isnan(loss):
+                print(f"\n⚠️  NaN in loss at epoch {epoch}!")
+                print(f"   Raw losses: {[l.item() for l in raw_losses]}")
+                raise RuntimeError("NaN in loss computation")
+
+            # AMP: Scale loss before backward (prevents gradient underflow)
             scaler.scale(loss).backward()
 
-            # AMP: Unscale gradients before clipping (converts back to fp32 scale)
+            # AMP: Unscale gradients before checking/clipping
             scaler.unscale_(optimizer)
 
-            # Now we can safely clip gradients
+            # Debug: Check for NaN in gradients IMMEDIATELY after backward
+            if beam_sequence.leaf_positions.grad is not None:
+                has_nan_grad = torch.isnan(beam_sequence.leaf_positions.grad).any()
+                if has_nan_grad:
+                    print(f"\n⚠️  NaN detected in leaf_positions GRADIENT at epoch {epoch}!")
+                    print(f"   This is a BACKWARD PASS issue (server GPU likely doesn't support float16 properly)")
+                    print(f"   Loss value: {loss.item():.6f} (valid)")
+                    print(f"   Loss dtype: {loss.dtype}")
+                    print(f"   Dose pred dtype: {dose_pred.dtype}")
+                    print(f"   Leaf positions dtype: {beam_sequence.leaf_positions.dtype}")
+                    print(f"   Leaf positions valid: {not torch.isnan(beam_sequence.leaf_positions).any()}")
+                    print(f"   Gradient dtype: {beam_sequence.leaf_positions.grad.dtype}")
+
+                    # Don't try to compute norm of NaN gradient
+                    num_nan = torch.isnan(beam_sequence.leaf_positions.grad).sum().item()
+                    total = beam_sequence.leaf_positions.grad.numel()
+                    print(f"   NaN count: {num_nan}/{total} gradient elements")
+
+                    # Save state for debugging
+                    torch.save({
+                        'epoch': epoch,
+                        'loss': loss.item(),
+                        'leaf_positions': beam_sequence.leaf_positions.detach().cpu(),
+                        'gradient': beam_sequence.leaf_positions.grad.detach().cpu(),
+                        'dose_pred': dose_pred.detach().cpu(),
+                    }, f'/tmp/nan_debug_epoch_{epoch}.pt')
+                    print(f"   Saved debug info to /tmp/nan_debug_epoch_{epoch}.pt")
+                    print(f"\n   SOLUTION: Use torch.cuda.amp.autocast() or switch to float32")
+                    raise RuntimeError("NaN gradients from backward pass - GPU incompatibility")
+
+            # Relaxed gradient clipping for float16 stability (1/40=0.025 is too small for float16)
             torch.nn.utils.clip_grad_norm_(beam_sequence.leaf_positions, max_norm=1.0)
+            # torch.nn.utils.clip_grad_norm_(pred_jaws, max_norm=0.0)
+            # torch.nn.utils.clip_grad_norm_(pred_mus, max_norm=1.0)
 
             # stash anything you want to inspect/plot after step()
             latest["raw_losses"] = [v.detach().item() for v in raw_losses]
@@ -234,7 +297,7 @@ for test_i in range(n_tests):
             # --- the actual optimizer step ---
             loss = optimizer.step(closure)
 
-            # AMP: Update scaler for next iteration
+            # AMP: Update scaler after optimizer step
             scaler.update()
 
             # scheduler.step(loss)
@@ -244,17 +307,17 @@ for test_i in range(n_tests):
             loss_val = latest["loss_val"]
             beam_sequence = latest["beam_sequence"]
             mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred))).cpu().detach().numpy(), 4)
-
+            
             patience += 1
             if (loss < current_res["loss"]):
                 patience = 0
                 current_res = {
-                    "loss": loss,
-                    "weights": weights,
+                    "loss": loss, 
+                    "weights": weights, 
                     "beam_sequence": beam_sequence.clone(),
                     "mae_loss": mae_loss
                 }
-
+                
             else:
                 # print("Patience count:", patience)
                 if ((patience >= patience_thr) | torch.isnan(dose_pred).any()):
@@ -296,7 +359,7 @@ for test_i in range(n_tests):
             },
             epoch=epoch,
         )
-
+        
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [raw_losses]]}"
         experiment.log_asset_data(beam_sequence.leaf_positions.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
@@ -305,7 +368,5 @@ for test_i in range(n_tests):
         make_animation(experiment, patient, engine, animation_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
-        import traceback
-        traceback.print_exc()
-
+        
     experiment.end()
