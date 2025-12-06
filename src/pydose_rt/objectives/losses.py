@@ -273,10 +273,10 @@ def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true
     # raw_losses.append(scale_loss(dvh_volume_objective(dose_pred, patient.structures["Rectum"], 21.0), optimization.structures["Rectum"]["weight"]))
     
 
-    raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))), weights["leaf_complexity_loss"]))
-    raw_losses.append(scale_loss(leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap), weights["leaf_reg_loss"]))
-    raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.mus[1:, ...] - beam_sequence.mus[:-1, ...]))), weights["mu_complexity_loss"]))
-    raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.jaw_positions[1:, ...] - beam_sequence.jaw_positions[:-1, ...]))), weights["jaw_complexity_loss"]))
+    # raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))), weights["leaf_complexity_loss"]))
+    # raw_losses.append(scale_loss(leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap), weights["leaf_reg_loss"]))
+    # raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.mus[1:, ...] - beam_sequence.mus[:-1, ...]))), weights["mu_complexity_loss"]))
+    # raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.jaw_positions[1:, ...] - beam_sequence.jaw_positions[:-1, ...]))), weights["jaw_complexity_loss"]))
 
     return raw_losses
 
