@@ -14,16 +14,28 @@ from pydose_rt.utils.plotting import print_results, make_animation
 from pydose_rt.objectives.metrics import result_validation
 from pydose_rt.utils.utils import get_initial_weights
 from dotenv import load_dotenv
+import argparse
 load_dotenv()  # will look for .env in project root
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 if (os.path.exists("/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/")):
     remote = True
 else:
     remote = False
 
-patient_name = "P01"
+# -----------------------------------------
+# Parse command-line arguments
+# -----------------------------------------
+parser = argparse.ArgumentParser(description="Autoplan static optimization script")
+parser.add_argument(
+    "--patient_name",
+    type=str,
+    required=True,
+    help="Name of patient (e.g. P01)"
+)
+args = parser.parse_args()
+patient_name = args.patient_name
+
 if remote:
     base = Path(f"/mimer/NOBACKUP/groups/naiss2023-6-64/attila/GoldAtlasPlans/{patient_name}")
 
@@ -153,6 +165,7 @@ for test_i in range(n_tests):
 
         experiment.log_parameters(
             {
+                "patient_name": patient_name,
                 "lr_0": lr,
                 "kernel_size": engine.kernel_size,
                 "lr_decay": lr_decay,
@@ -261,6 +274,7 @@ for test_i in range(n_tests):
         title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [raw_losses]]}"
         experiment.log_asset_data(beam_sequence.leaf_positions.cpu().detach().numpy(), "mlc_positions.npy")
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
+        experiment.log_asset_data(dose_pred[0].cpu().detach().numpy(), "dose.npy")
         print_results(experiment, optimization, patient, beam_sequence, dose_pred[0], title, plot_ct=True, preset="gold-atlas")
         make_animation(experiment, patient, engine, animation_sequence, dose_max=7.0)
     except Exception as e:

@@ -118,5 +118,4 @@ for patient_name in sorted(os.listdir(base_path)):
         print(e)
         
 df = pd.DataFrame(all_results)
-print(df.to_string(index=False))
 df.to_csv("out/results_summary.csv", index=False)
