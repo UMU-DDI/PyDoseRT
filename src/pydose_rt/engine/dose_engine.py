@@ -152,14 +152,13 @@ class DoseEngine(nn.Module):
             return
         
 
-
-        self.valid_parameters_layer = BeamValidationLayer(
-            self.machine_config,
-            device = self.device,
-            dtype=self.dtype,
-            field_size=self.field_size,
-            adjust_values=self._adjust_values
-        )
+        if self._adjust_values:
+            self.valid_parameters_layer = BeamValidationLayer(
+                self.machine_config,
+                device = self.device,
+                dtype=self.dtype,
+                field_size=self.field_size,
+            )
         self.fluence_map_layer = FluenceMapLayer(
             self.machine_config,
             device = self.device,
@@ -345,9 +344,10 @@ class DoseEngine(nn.Module):
                 del batched_radiological_depths
             H, D, W = self.dose_grid_shape
 
-            leaf_positions, jaw_positions, mus = self.valid_parameters_layer(
-                leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
-            )
+            if self._adjust_values:
+                leaf_positions, jaw_positions, mus = self.valid_parameters_layer(
+                    leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
+                )
 
             batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
 
