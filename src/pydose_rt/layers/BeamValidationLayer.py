@@ -103,7 +103,7 @@ class BeamValidationLayer(nn.Module):
             Tuple[torch.Tensor, torch.Tensor]: Validated and scaled leaf positions and MUs.
         """
 
-        mus = self._proj_ste(mus, lo=0.1)
+        mus = proj_ste(mus, lo=0.1)
 
         mlc_positions = adjust_mask(leaf_positions[..., 0], leaf_positions[..., 1], self.min_leaf_opening, self.half_field_width)
 
