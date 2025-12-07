@@ -92,8 +92,8 @@ machine_config = MachineConfig(
     # penumbra_fwhm=None,
     # head_scatter_amplitude=None,
     # head_scatter_sigma=None,
-    # profile_corrections=None,
-    # output_factors=None,
+    profile_corrections=None,
+    output_factors=None,
     )
 
 gantry_angles = beam_sequence.gantry_angles
