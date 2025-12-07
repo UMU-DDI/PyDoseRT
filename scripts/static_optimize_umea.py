@@ -157,17 +157,16 @@ for test_i in range(n_tests):
             dose_grid_shape=patient.density_image.shape,
             beam_template=beam_sequence.to_delivery(), 
             kernel_size=kernel_size, 
-            adjust_values=True,
+            adjust_values=False,
             dtype=dtype, 
             device=device
         )
-        valid_parameters_layer = BeamValidationLayer(
-            machine_config=machine_config, 
-            device=device,
-            dtype=dtype,
-            adjust_values=True,
-            field_size=beam_sequence.field_size
-        )
+        # valid_parameters_layer = BeamValidationLayer(
+        #     machine_config=machine_config, 
+        #     device=device,
+        #     dtype=dtype,
+        #     field_size=beam_sequence.field_size
+        # )
         
         patience = 0
         epoch = 0
@@ -264,16 +263,16 @@ for test_i in range(n_tests):
         print(f"Optimization finished in {int(time.time() - start_time)}s.")
         beam_sequence = current_res["beam_sequence"]
         animation_sequence = beam_sequence.clone()
-        pred_mlc = beam_sequence.leaf_positions
-        pred_mus = beam_sequence.mus
-        pred_jaws = beam_sequence.jaw_positions
+        # pred_mlc = beam_sequence.leaf_positions
+        # pred_mus = beam_sequence.mus
+        # pred_jaws = beam_sequence.jaw_positions
 
-        pred_mlc_valid, pred_jaws_valid, pred_mus_valid = valid_parameters_layer(
-            pred_mlc, pred_mus, pred_jaws
-        )
-        beam_sequence.leaf_positions = pred_mlc_valid
-        beam_sequence.mus = pred_mus_valid
-        beam_sequence.jaw_positions = pred_jaws_valid
+        # pred_mlc_valid, pred_jaws_valid, pred_mus_valid = valid_parameters_layer(
+        #     pred_mlc, pred_mus, pred_jaws
+        # )
+        # beam_sequence.leaf_positions = pred_mlc_valid
+        # beam_sequence.mus = pred_mus_valid
+        # beam_sequence.jaw_positions = pred_jaws_valid
 
         results = result_validation(patient, machine_config, beam_sequence.to('cpu'), dose_pred[0].to('cpu'), optimization, compute_gamma=False, compute_clinical_criteria=True)
         experiment.log_metrics(
