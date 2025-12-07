@@ -170,7 +170,7 @@ for test_i in range(n_tests):
         
         patience = 0
         epoch = 0
-        lr = np.random.choice([0.01, 0.05, 0.1, 0.5, 1.0])
+        lr = np.random.choice([0.05, 0.1, 0.5, 1.0])
         lr_decay = 1e-4
         optimizer = torch.optim.AdamW(beam_sequence.parameters(), lr=lr, weight_decay=lr_decay)
 
