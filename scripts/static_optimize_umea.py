@@ -76,7 +76,7 @@ else:
                 struct_names=["CTVT", "PTVT_42.7", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
     beam_sequence: BeamSequence = beam_sequence[0]
-    beam_sequence = beam_sequence.clone()
+    beam_sequence = beam_sequence.clone()[::16]
 
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
@@ -229,7 +229,8 @@ for test_i in range(n_tests):
             loss_val = latest["loss_val"]
             beam_sequence = latest["beam_sequence"]
             mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred))).cpu().detach().numpy(), 4)
-            
+            mask_oar = patient.structures["PenileBulb"] + patient.structures["Prostate"] + patient.structures["FemoralHead_L"] + patient.structures["FemoralHead_R"] + patient.structures["Bladder"] + patient.structures["Rectum"] + patient.structures["SeminalVesicles"]
+
             patience += 1
             if (loss < current_res["loss"]):
                 patience = 0
@@ -237,9 +238,19 @@ for test_i in range(n_tests):
                     "loss": loss, 
                     "weights": weights, 
                     "beam_sequence": beam_sequence.clone(),
-                    "mae_loss": mae_loss
+                    "mae_loss": mae_loss,
+                    "mae_ptv": torch.mean(torch.abs(dose_pred[0, patient.structures["PTVT_42.7"]] - 42.7)).item(),
+                    "mae_ctv": torch.mean(torch.abs(dose_pred[0, patient.structures["CTVT"]] - 42.7)).item(),
+                    "mae_penilebulb": torch.mean(torch.abs(dose_pred[0, patient.structures["PenileBulb"]])).item(),
+                    "mae_prostate": torch.mean(torch.abs(dose_pred[0, patient.structures["Prostate"]])).item(),
+                    "mae_femoralhead_l": torch.mean(torch.abs(dose_pred[0, patient.structures["FemoralHead_L"]])).item(),
+                    "mae_femoralhead_r": torch.mean(torch.abs(dose_pred[0, patient.structures["FemoralHead_R"]])).item(),
+                    "mae_bladder": torch.mean(torch.abs(dose_pred[0, patient.structures["Bladder"]])).item(),
+                    "mae_rectum": torch.mean(torch.abs(dose_pred[0, patient.structures["Rectum"]])).item(),
+                    "mae_seminalvesicles": torch.mean(torch.abs(dose_pred[0, patient.structures["SeminalVesicles"]])).item(),
+                    "mae_oar" : torch.mean(torch.abs(dose_pred[0, mask_oar])).item(),
+                    "mae_external": torch.mean(torch.abs(dose_pred[0, patient.structures["External"]])).item(),
                 }
-                
             else:
                 # print("Patience count:", patience)
                 if ((patience >= patience_thr) | torch.isnan(dose_pred).any()):
