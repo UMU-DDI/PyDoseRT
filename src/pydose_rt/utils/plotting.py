@@ -274,7 +274,8 @@ def make_animation(experiment,
     colors[:, -1] = alpha
     jet_alpha = ListedColormap(colors)
     num_cps = len(beam_sequence)
-    slice_idx = patient_data.density_image.shape[0] // 2
+    CoM = np.array(ndimage.measurements.center_of_mass(list(patient_data.structures.values())[0].cpu().detach().numpy()), dtype=np.int32)
+    slice_idx = CoM[0]
     ct_data = patient_data._ct_tensor.cpu().detach().numpy()[slice_idx, :, :]
     dose_data = np.zeros(patient_data.density_image.shape[1:])
     beam_sequence = beam_sequence.to_delivery()
