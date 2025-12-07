@@ -25,6 +25,24 @@ import torch.nn as nn
 from typing import Tuple
 from pydose_rt.data import MachineConfig
 
+def proj_ste(x, lo=None, hi=None):
+    """
+    Straight-through projection to [lo, hi]:
+    forward uses clamped value; backward passes gradient as if identity.
+    """
+    x_proj = torch.clamp(x, min=lo, max=hi)
+    return x + (x_proj - x).detach()
+
+def adjust_mask(pos_a, pos_b, min_overlap, field_size):
+    centers = (pos_a + pos_b) / 2
+    widths  = (pos_b - pos_a)
+    widths = proj_ste(widths, lo=min_overlap)
+    centers = proj_ste(centers, -field_size, field_size)
+    adjusted_positions = torch.stack([centers - (widths / 2), centers + (widths / 2)], dim=-1)
+    adjusted_positions = proj_ste(adjusted_positions, -field_size, field_size)
+
+    return adjusted_positions
+
 class BeamValidationLayer(nn.Module):
     """
     BeamValidationLayer for validating and scaling leaf positions, monitor units (MUs) and jaw positions.
@@ -72,14 +90,6 @@ class BeamValidationLayer(nn.Module):
         self.min_jaw_opening = machine_config.minimum_jaw_opening
         self.half_field_width = field_size[1] / 2.0
 
-    @staticmethod
-    def _proj_ste(x, lo=None, hi=None):
-        """
-        Straight-through projection to [lo, hi]:
-        forward uses clamped value; backward passes gradient as if identity.
-        """
-        x_proj = torch.clamp(x, min=lo, max=hi)
-        return x + (x_proj - x).detach()
     
     def forward(self, leaf_positions: torch.Tensor, mus: torch.Tensor, jaw_positions: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -93,31 +103,11 @@ class BeamValidationLayer(nn.Module):
             Tuple[torch.Tensor, torch.Tensor]: Validated and scaled leaf positions and MUs.
         """
 
-        left_positions = leaf_positions[..., 0]
-        right_positions = leaf_positions[..., 1]
-        
-        # 1) MU: keep non-negative & scaled
         mus = self._proj_ste(mus, lo=0.1)
 
-        # 3) Leafs: Keep widths open
-        mlc_centers = (left_positions + right_positions) / 2
-        mlc_widths  = (right_positions - left_positions)
-        min_w = self.min_leaf_opening
-        mlc_widths = self._proj_ste(mlc_widths, lo=min_w)
-        mlc_centers = self._proj_ste(mlc_centers, -self.half_field_width, self.half_field_width)
-        mlc_positions = torch.stack([mlc_centers - (mlc_widths / 2), mlc_centers + (mlc_widths / 2)], dim=-1)
-        mlc_positions = self._proj_ste(mlc_positions, -self.half_field_width, self.half_field_width)
+        mlc_positions = adjust_mask(leaf_positions[..., 0], leaf_positions[..., 1], self.min_leaf_opening, self.half_field_width)
 
-        # 4) Jaws: Keep widths open
         if jaw_positions is not None:
-            jaw_lower_positions = jaw_positions[..., 0]
-            jaw_upper_positions = jaw_positions[..., 1]
-            jaw_centers = (jaw_lower_positions + jaw_upper_positions) / 2
-            jaw_widths  = (jaw_upper_positions - jaw_lower_positions)
-            min_jaw_w = self.min_jaw_opening
-            jaw_widths = self._proj_ste(jaw_widths, lo=min_jaw_w)
-            jaw_centers = self._proj_ste(jaw_centers, -self.half_field_width, self.half_field_width)
-            jaw_positions = torch.stack([jaw_centers - (jaw_widths / 2), (jaw_centers + jaw_widths / 2)], dim=-1)
-            jaw_positions = self._proj_ste(jaw_positions, -self.half_field_width, self.half_field_width)
+            jaw_positions = adjust_mask(jaw_positions[..., 0], jaw_positions[..., 1], self.min_jaw_opening, self.half_field_width)
 
         return mlc_positions, jaw_positions, mus
