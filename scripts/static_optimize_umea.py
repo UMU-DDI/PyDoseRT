@@ -59,7 +59,7 @@ if remote:
     device = device
     dtype = torch.float32
 
-    max_iter = 1000
+    max_iter = 25
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
@@ -175,7 +175,6 @@ for test_i in range(n_tests):
             history_size=10,  # Reduce history (default 100)
             line_search_fn='strong_wolfe'  # More conservative line search
             )
-        max_iter /= 10
 
         experiment.log_parameters(
             {
