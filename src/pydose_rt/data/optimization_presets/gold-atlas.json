@@ -10,7 +10,7 @@
       "weight": 1500.0,
       "clinical_criteria": []
     },
-    "PTVT_42.7": {
+    "PTV": {
       "color": "black",
       "lower_bound_gy": 38.43,
       "higher_bound_gy": 45.69,
