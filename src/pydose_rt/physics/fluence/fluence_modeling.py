@@ -522,6 +522,6 @@ def apply_head_scatter_kernels(fluence_map, kernel_x, kernel_y, scatter_amplitud
     )
     
     # Combine primary and scattered
-    fluence_total = fluence_map + scatter_amplitude * fluence_conv
+    fluence_total = (1.0 - scatter_amplitude) * fluence_map + scatter_amplitude * fluence_conv / scatter_fraction
     
     return fluence_total
