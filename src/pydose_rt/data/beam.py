@@ -262,11 +262,11 @@ class BeamSequence:
     @classmethod
     def create(
         cls,
-        gantry_angles: list[float] | torch.Tensor,
+        gantry_angles_deg: list[float] | torch.Tensor,
         number_of_leaf_pairs: int,
         field_size: tuple[int, int],
         iso_center: tuple[float, float, float],
-        collimator_angles: list[float] | torch.Tensor | None = None,
+        collimator_angles_deg: list[float] | torch.Tensor | None = None,
         sid: float = 1000.0,
         open_field_size: float = 0.0,
         device: torch.device | str = 'cuda',
@@ -302,13 +302,13 @@ class BeamSequence:
             ... )
         """
         # Convert gantry angles to tensor in radians
-        if isinstance(gantry_angles, list):
-            gantry_angles = torch.tensor(gantry_angles, dtype=dtype, device=device)
-            gantry_angles = torch.deg2rad(gantry_angles)
+        if isinstance(gantry_angles_deg, list):
+            gantry_angles = torch.tensor(gantry_angles_deg, dtype=dtype, device=device)
         else:
             gantry_angles = gantry_angles.to(dtype=dtype, device=device)
             # Assume already in radians if tensor
-        
+        gantry_angles = torch.deg2rad(gantry_angles)
+
         num_cps = len(gantry_angles)
         field_w, field_h = field_size
         
@@ -326,13 +326,13 @@ class BeamSequence:
         mus = torch.ones(num_cps, device=device, dtype=dtype)
         
         # Handle beam limiting device angles
-        if collimator_angles is None:
+        if collimator_angles_deg is None:
             collimator_angles = torch.zeros(num_cps, device=device, dtype=dtype)
         elif isinstance(collimator_angles, list):
-            collimator_angles = torch.tensor(collimator_angles, dtype=dtype, device=device)
-            collimator_angles = torch.deg2rad(collimator_angles)
+            collimator_angles = torch.tensor(collimator_angles_deg, dtype=dtype, device=device)
         else:
-            collimator_angles = collimator_angles.to(dtype=dtype, device=device)
+            collimator_angles = collimator_angles_deg.to(dtype=dtype, device=device)
+        collimator_angles = torch.deg2rad(collimator_angles)
         
         # Set requires_grad
         if requires_grad:
