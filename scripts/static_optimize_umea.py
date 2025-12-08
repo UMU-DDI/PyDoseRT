@@ -113,7 +113,6 @@ patience_thr = 500
 oar_dose = 10.0
 
 for test_i in range(n_tests):
-
     experiment = Experiment(
         api_key=os.getenv("COMET_API"), project_name="autoplan_static"
     )
@@ -170,7 +169,7 @@ for test_i in range(n_tests):
         
         patience = 0
         epoch = 0
-        lr = np.random.choice([0.05, 0.1, 0.5, 1.0])
+        lr = 1.0
         lr_decay = 1e-4
         optimizer = torch.optim.AdamW(beam_sequence.parameters(), lr=lr, weight_decay=lr_decay)
 
