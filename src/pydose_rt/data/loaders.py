@@ -178,21 +178,6 @@ def resample_image_to_spacing(image, new_spacing, interpolator=sitk.sitkLinear):
     return resampled
 
 
-def load_nifti(
-    folder_path
-    ) -> 'Patient':
-    ct, structures, dose = load_files(folder_path)
-    patient = Patient(
-        ct_array=ct,
-        structures=structures,
-        dose=dose,
-        patient_id="",
-    )
-
-    return patient
-
-
-
 def load_asc_measurements(path: str,
                           coord_map: Tuple[str, str, str] = ("X", "Y", "Z")):
     """
