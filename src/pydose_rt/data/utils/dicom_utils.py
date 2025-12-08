@@ -194,13 +194,13 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
                     matched_names.append(matches[0])
 
         masks = dict()
-        for struct_name in matched_names:
+        for idx, struct_name in enumerate(matched_names):
             mask_np = rtstruct.get_roi_mask_by_name(struct_name)
             mask = sitk.GetImageFromArray(np.transpose(mask_np.astype(np.float32), (2, 0, 1)))
             mask.SetOrigin(ct_series.GetOrigin())
             mask.SetDirection(ct_series.GetDirection())
             mask.SetSpacing(ct_series.GetSpacing())
-            masks[struct_name] = mask
+            masks[struct_names[idx]] = mask
     return masks
 
 def load_dose(path, new_spacing=(2.0, 2.0, 2.0)):

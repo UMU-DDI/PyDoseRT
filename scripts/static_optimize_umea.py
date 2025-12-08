@@ -50,7 +50,7 @@ if remote:
                 dose_path=rtdose_path,
                 plan_path=[ rtplan_path ],
                 struct_path=rtstruct_path,
-                struct_names=["CTVT", "PTVT_42.7", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
+                struct_names=["CTVT", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
     beam_sequence = beam_sequence[0].clone()[::2]
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
@@ -73,7 +73,7 @@ else:
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
                 struct_path=rtstruct_path,
-                struct_names=["CTVT", "PTVT_42.7", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
+                struct_names=["CTVT", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
     beam_sequence: BeamSequence = beam_sequence[0]
     beam_sequence = beam_sequence.clone()[::16]
@@ -85,7 +85,7 @@ else:
     dtype = torch.float32
 
 
-    max_iter = 10
+    max_iter = 2
 
 ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
 machine_config = MachineConfig(
@@ -118,7 +118,7 @@ for test_i in range(n_tests):
         weights = get_initial_weights()
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
         optimization.structures['CTVT']["weight"] = 100.0
-        optimization.structures['PTVT_42.7']["weight"] = 100.0
+        optimization.structures[ptv_struct_name]["weight"] = 100.0
         optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.01, 0.1])
         optimization.structures['Prostate']["weight"] = np.random.choice([0.01, 0.1, 1.0, 10.0, 100.0])
         optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.01, 0.1, 1.0, 10.0])
