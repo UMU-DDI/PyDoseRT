@@ -305,7 +305,7 @@ class BeamSequence:
         if isinstance(gantry_angles_deg, list):
             gantry_angles = torch.tensor(gantry_angles_deg, dtype=dtype, device=device)
         else:
-            gantry_angles = gantry_angles.to(dtype=dtype, device=device)
+            gantry_angles = gantry_angles_deg.to(dtype=dtype, device=device)
             # Assume already in radians if tensor
         gantry_angles = torch.deg2rad(gantry_angles)
 
@@ -328,7 +328,7 @@ class BeamSequence:
         # Handle beam limiting device angles
         if collimator_angles_deg is None:
             collimator_angles = torch.zeros(num_cps, device=device, dtype=dtype)
-        elif isinstance(collimator_angles, list):
+        elif isinstance(collimator_angles_deg, list):
             collimator_angles = torch.tensor(collimator_angles_deg, dtype=dtype, device=device)
         else:
             collimator_angles = collimator_angles_deg.to(dtype=dtype, device=device)
