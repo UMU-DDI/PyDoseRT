@@ -133,7 +133,7 @@ for test_i in range(n_tests):
             number_of_leaf_pairs=number_of_leaf_pairs,
             field_size=field_size,
             iso_center=iso_center,
-            collimator_angles=collimator_angles,
+            collimator_angles_deg=collimator_angles,
             sid=sid,
             open_field_size=open_field_size,
             device=device,
