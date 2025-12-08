@@ -169,8 +169,13 @@ for test_i in range(n_tests):
         
         patience = 0
         epoch = 0
-        lr = np.random.choice([1.0, 0.5, 0.1, 0.05, 0.01])
-        optimizer = torch.optim.LBFGS(beam_sequence.parameters(), lr=lr)
+        lr = np.random.choice([0.1, 0.05, 0.01, 0.005, 0.001])
+        optimizer = torch.optim.LBFGS(
+            beam_sequence.parameters(), 
+            lr=lr,
+            history_size=10,  # Reduce history (default 100)
+            line_search_fn='strong_wolfe'  # More conservative line search
+            )
 
         experiment.log_parameters(
             {
