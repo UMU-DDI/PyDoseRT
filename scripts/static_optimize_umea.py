@@ -94,7 +94,7 @@ machine_config = MachineConfig(
     output_factors=None,
     )
 
-gantry_angles = np.rad2deg(beam_sequence.gantry_angles)
+gantry_angles = torch.rad2deg(beam_sequence.gantry_angles)
 number_of_leaf_pairs  = beam_sequence.num_leaf_pairs
 field_size = beam_sequence.field_size
 iso_center = beam_sequence.iso_center
