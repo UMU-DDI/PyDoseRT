@@ -59,12 +59,13 @@ class DoseEngine(nn.Module):
 
         Args:
             machine_config: Machine physics and MLC specifications.
-            kernel_size: Size of the dose kernel.
-            resolution: Voxel spacing in mm (depth, height, width).
+            kernel_size: Size of the pencil beam dose kernel.
+            dose_grid_spacing: Voxel spacing in mm (depth, height, width).
+            dose_grid_shape: Shape of the output grid tensor (depth, height, width) in pixels.
             beam_input: Beam or BeamSequence defining the treatment geometry.
+            adjust_values: Whether to validate and adjust parameter values (default: False).
             device: PyTorch device for computation.
             dtype: Data type for tensors.
-            adjust_values: Whether to adjust parameter values (default: False).
             verbose: Enable verbose output (default: False).
         """
         super().__init__()
