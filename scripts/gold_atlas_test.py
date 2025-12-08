@@ -53,7 +53,7 @@ for patient_name in sorted(os.listdir(base_path)):
         doses = []
         beam_sequence = beam_sequence.to(device).to(dtype)
         dose_engine = DoseEngine(kernel_size=kernel_size,
-                                    dose_grid_spacing=patient._resolution,
+                                    dose_grid_spacing=patient.resolution,
                                     machine_config=machine_config,
                                     dose_grid_shape=density_image.shape,
                                     beam_template=beam_sequence,
@@ -68,7 +68,7 @@ for patient_name in sorted(os.listdir(base_path)):
         
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
         print(dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean())
-        dose_pred = dose_pred * dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean()
+        # dose_pred = dose_pred * dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean()
 
         dose_max = max(dose_volume.max(), dose_pred.max()).item()
 

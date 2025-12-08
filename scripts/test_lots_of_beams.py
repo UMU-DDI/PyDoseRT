@@ -50,7 +50,7 @@ for patient_name in sorted(os.listdir(base_path)):
             beam_sequence.iso_center = beam_sequence.iso_center
             beam_sequence = beam_sequence.to(device).to(dtype)
             dose_engine = DoseEngine(kernel_size=kernel_size,
-                                     dose_grid_spacing=patient._resolution,
+                                     dose_grid_spacing=patient.resolution,
                                      machine_config=machine_config,
                                      dose_grid_shape=patient.density_image,
                                      beam_template=beam_sequence,

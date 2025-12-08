@@ -151,7 +151,7 @@ for test_i in range(n_tests):
         
         engine = DoseEngine(
             machine_config=machine_config,
-            dose_grid_spacing=patient._resolution,
+            dose_grid_spacing=patient.resolution,
             dose_grid_shape=patient.density_image.shape,
             beam_template=beam_sequence.to_delivery(), 
             kernel_size=kernel_size, 

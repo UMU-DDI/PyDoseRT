@@ -233,7 +233,7 @@ def result_validation(patient: Patient,
             for percent in [0.98, 0.5, 0.02]:
                 results[f"{mask_name}_D_{percent}%"] = dose_at_volume_percent(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent) - dose_at_volume_percent(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent)
 
-        volume_cc = np.prod(patient._resolution) / 1000.0
+        volume_cc = np.prod(patient.resolution) / 1000.0
         for mask_name in patient.structures.keys():
             for cc in [2, 0.5]:
                 results[f"{mask_name}_D_{cc}_cc"] = dose_at_volume_cc(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc) - dose_at_volume_cc(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc)
@@ -247,7 +247,7 @@ def result_validation(patient: Patient,
             
     if compute_gamma:
         axes = tuple(
-            np.arange(patient.dose.shape[i]) * patient._resolution[i]
+            np.arange(patient.dose.shape[i]) * patient.resolution[i]
             for i in range(3)
         )
         

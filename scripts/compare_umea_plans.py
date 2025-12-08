@@ -46,7 +46,7 @@ for field_size in field_sizes:
     dose_engine = DoseEngine(
         machine_config, 
         kernel_size,
-        phantom._resolution,
+        phantom.resolution,
         image_template=phantom.density_image,
         beam_template=beam,
         device=device,

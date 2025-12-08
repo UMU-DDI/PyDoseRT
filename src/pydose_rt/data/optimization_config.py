@@ -184,7 +184,7 @@ class OptimizationConfig:
             dose = dose[0, ...]
 
         # Calculate voxel volume in cc
-        resolution = patient._resolution
+        resolution = patient.resolution
         voxel_volume_cc = np.prod(resolution) / 1000.0  # Convert mm³ to cc
 
         results = {}

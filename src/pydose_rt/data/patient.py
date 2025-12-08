@@ -21,12 +21,12 @@ class Patient:
 
     _ct_tensor: torch.Tensor | None = None
     _attenuation_tensor: torch.Tensor | None = None
-    _resolution: tuple[float, float, float] = None
+    resolution: tuple[float, float, float] = None
     structures: Optional[dict[str, torch.Tensor]] = field(default_factory=dict)
     dose: Optional[torch.Tensor] = None
 
     def __init__(self, ct_tensor=None, attenuation_tensor = None, structures: Optional[dict[str, torch.Tensor]] = dict(), dose: torch.Tensor = None, resolution=None) -> 'Patient':
-        self._resolution = resolution
+        self.resolution = resolution
         self._ct_tensor = ct_tensor if ct_tensor is not None else None
         self._attenuation_tensor = attenuation_tensor if attenuation_tensor is not None else None
         self.structures = structures
@@ -68,7 +68,7 @@ class Patient:
             attenuation_tensor = self._attenuation_tensor.to(target) if self._attenuation_tensor is not None else None, 
             structures={k: v.to(target) > 0 for k, v in self.structures.items()} if self.structures else {},
             dose=self.dose.to(target) if self.dose is not None else None,
-            resolution=self._resolution
+            resolution=self.resolution
         )
     
     @property
@@ -84,7 +84,7 @@ class Patient:
     def physical_size(self) -> torch.Size:
         return np.multiply(
             np.array(self.density_image.shape, dtype=np.float32),
-            np.array(self._resolution, dtype=np.float32),
+            np.array(self.resolution, dtype=np.float32),
         )
 
     def get_masked_dose(self, mask_name=None) -> torch.Tensor:
