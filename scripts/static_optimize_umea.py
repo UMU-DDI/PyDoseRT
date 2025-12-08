@@ -169,16 +169,14 @@ for test_i in range(n_tests):
         
         patience = 0
         epoch = 0
-        lr = 1.0
-        lr_decay = 1e-4
-        optimizer = torch.optim.AdamW(beam_sequence.parameters(), lr=lr, weight_decay=lr_decay)
+        lr = np.random.choice([1.0, 0.5, 0.1, 0.05, 0.01])
+        optimizer = torch.optim.LBFGS(beam_sequence.parameters(), lr=lr)
 
         experiment.log_parameters(
             {
                 "patient_name": patient_name,
                 "lr_0": lr,
                 "kernel_size": engine.kernel_size,
-                "lr_decay": lr_decay,
                 "weights": weights,
                 "physical_size": patient.physical_size,
                 "roi_weights": optimization.get_parameters("weight")
