@@ -294,7 +294,7 @@ class BeamSequence:
         Example:
             >>> angles = [0, 90, 180, 270]
             >>> beam_seq = BeamSequence.create(
-            ...     gantry_angles=angles,
+            ...     gantry_angles_deg=angles,
             ...     number_of_leaf_pairs=60,
             ...     field_size=(400, 400),
             ...     iso_center=(0, 0, 0),            

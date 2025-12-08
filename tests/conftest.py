@@ -158,7 +158,7 @@ def default_beam(default_machine_config, default_field_size, default_iso_center,
 def default_beam_sequence(default_machine_config, default_number_of_beams, default_field_size, default_iso_center, default_sid, default_device, default_dtype):
     """Fixture for a default BeamSequence"""
     return BeamSequence.create(
-        gantry_angles=[0.0] * default_number_of_beams,
+        gantry_angles_deg=[0.0] * default_number_of_beams,
         number_of_leaf_pairs=default_machine_config.number_of_leaf_pairs,
         field_size=default_field_size,
         iso_center=default_iso_center,

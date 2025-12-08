@@ -88,10 +88,7 @@ else:
     max_iter = 10
 
 machine_config = MachineConfig(
-    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",            
-    # penumbra_fwhm=None,
-    # head_scatter_amplitude=None,
-    # head_scatter_sigma=None,
+    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
     profile_corrections=None,
     output_factors=None,
     )
@@ -132,7 +129,7 @@ for test_i in range(n_tests):
 
 
         beam_sequence = BeamSequence.create(
-            gantry_angles=gantry_angles,
+            gantry_angles_deg=gantry_angles,
             number_of_leaf_pairs=number_of_leaf_pairs,
             field_size=field_size,
             iso_center=iso_center,
