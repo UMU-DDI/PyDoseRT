@@ -59,7 +59,7 @@ if remote:
     device = device
     dtype = torch.float32
 
-    max_iter = 25
+    max_iter = 500
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
@@ -168,13 +168,17 @@ for test_i in range(n_tests):
         
         patience = 0
         epoch = 0
-        lr = np.random.choice([0.1, 0.05, 0.01, 0.005, 0.001])
-        optimizer = torch.optim.LBFGS(
-            beam_sequence.parameters(), 
-            lr=lr,
-            history_size=10,  # Reduce history (default 100)
-            line_search_fn='strong_wolfe'  # More conservative line search
-            )
+        lr = 1.0
+        optimizer = torch.optim.AdamW(beam_sequence.parameters(),
+                                      lr=lr
+                                      )
+        # lr = np.random.choice([0.1, 0.05, 0.01, 0.005, 0.001])
+        # optimizer = torch.optim.LBFGS(
+        #     beam_sequence.parameters(), 
+        #     lr=lr,
+        #     history_size=10,  # Reduce history (default 100)
+        #     line_search_fn='strong_wolfe'  # More conservative line search
+        #     )
 
         experiment.log_parameters(
             {
