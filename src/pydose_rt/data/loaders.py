@@ -2,16 +2,12 @@
 Patient configuration - CT dimensions and geometric parameters.
 """
 # from pydantic import BaseModel, Field, model_validator
-from dataclasses import dataclass
-from token import OP
-from typing import Optional, TYPE_CHECKING, List, overload
+from typing import List
 import torch
 from pathlib import Path
-import math
 import numpy as np
-from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data, resample_based_on_plan, resample_based_on_dose
+from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data
 from pydose_rt.data import Patient, BeamSequence, Beam
-from .utils.nifti_utils import load_files
 import SimpleITK as sitk
 from typing import List, Dict, Any, Tuple, Literal
 
