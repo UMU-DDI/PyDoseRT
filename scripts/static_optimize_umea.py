@@ -123,12 +123,12 @@ for test_i in range(n_tests):
         optimization.structures['PTVT_42.7']["weight"] = 100
         optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
         optimization.structures['Prostate']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
-        optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
-        optimization.structures['FemoralHead_R']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['FemoralHead_R']["weight"] = optimization.structures['FemoralHead_L']["weight"]
         optimization.structures['Bladder']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
         optimization.structures['Rectum']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
         optimization.structures['SeminalVesicles']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
-        optimization.structures['External']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
+        optimization.structures['External']["weight"] = 100.0
 
 
         beam_sequence = BeamSequence.create(
