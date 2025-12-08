@@ -109,7 +109,6 @@ loss_plot = 1.0
 best_results = []
 n_tests = 200
 patience_thr = 500
-
 oar_dose = 10.0
 
 for test_i in range(n_tests):
@@ -176,6 +175,7 @@ for test_i in range(n_tests):
             history_size=10,  # Reduce history (default 100)
             line_search_fn='strong_wolfe'  # More conservative line search
             )
+        max_iter /= 100
 
         experiment.log_parameters(
             {
