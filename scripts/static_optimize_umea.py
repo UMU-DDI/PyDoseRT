@@ -175,7 +175,7 @@ for test_i in range(n_tests):
             history_size=10,  # Reduce history (default 100)
             line_search_fn='strong_wolfe'  # More conservative line search
             )
-        max_iter /= 100
+        max_iter /= 10
 
         experiment.log_parameters(
             {

@@ -258,7 +258,6 @@ def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true
     raw_losses = []
     # PTV_Prostata_gol_4270
 
-
     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["PTVT_42.7"]] - 42.7)), optimization.structures["PTVT_42.7"]["weight"]))
     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred[patient.structures["CTVT"]] - 42.7)), optimization.structures["CTVT"]["weight"]))
 
