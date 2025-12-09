@@ -6,7 +6,7 @@ for Gaussian kernel generation, and the PencilBeamModel class for calculating do
 based on radiological depth and beam parameters.
 """
 
-import numpy as np
+import torch
 
 coeffs = {
     "A1": [
@@ -195,10 +195,10 @@ class PencilBeamModel:
         self.rs = self.get_rs(
             [self.kernel_size_h, self.kernel_size_w]
         )  # Calculate the radial distance
-        d_100mm = 100.0 * np.ones((1, 1, 1, 1)) # 100mm depth
-        self.norm = np.max(self.get_pencil_beam(d=d_100mm, r=self.rs[np.newaxis, np.newaxis, :, :], normalize=False))
+        d_100mm = 100.0 * torch.ones((1, 1, 1, 1)) # 100mm depth
+        self.norm = torch.max(self.get_pencil_beam(d=d_100mm, r=self.rs[torch.newaxis, torch.newaxis, :, :], normalize=False))
 
-    def get_param(self, parameter: str, TPR: float) -> float:
+    def get_param(self, parameter: str, TPR: torch.Tensor) -> torch.Tensor:
         """
         Calculate parameter value for a given TPR using polynomial coefficients.
 
@@ -207,11 +207,11 @@ class PencilBeamModel:
             TPR (float): Tissue phantom ratio.
 
         Returns:
-            float: Computed parameter value.
+            Tensor: Computed parameter value.
         """
         return sum(c * TPR**i for i, c in enumerate(coeffs[parameter]))
 
-    def depth_A(self, d: float) -> float:
+    def depth_A(self, d: torch.Tensor) -> torch.Tensor:
         """
         Compute the A component of the kernel at depth d.
 
@@ -223,7 +223,7 @@ class PencilBeamModel:
         """
         return self.depth_A_per_a(d) * self.depth_a(d)
 
-    def depth_B(self, d: float) -> float:
+    def depth_B(self, d: torch.Tensor) -> torch.Tensor:
         """
         Compute the B component of the kernel at depth d.
 
@@ -235,7 +235,7 @@ class PencilBeamModel:
         """
         return self.depth_B_per_b(d) * self.depth_b(d)
 
-    def depth_A_per_a(self, d: float | np.ndarray) -> float:
+    def depth_A_per_a(self, d: torch.Tensor) -> torch.Tensor:
         """
         Compute the A/a term for the kernel at depth d.
 
@@ -247,11 +247,11 @@ class PencilBeamModel:
         """
         return (
             self.params["A1"]
-            * (1 - np.exp(self.params["A2"] * np.sqrt(d**2 + self.params["A5"] ** 2)))
-            * np.exp(self.params["A3"] * d + self.params["A4"] * d**2)
+            * (1 - torch.exp(self.params["A2"] * torch.sqrt(d**2 + self.params["A5"] ** 2)))
+            * torch.exp(self.params["A3"] * d + self.params["A4"] * d**2)
         )
 
-    def depth_B_per_b(self, d: float | np.ndarray) -> float:
+    def depth_B_per_b(self, d: torch.Tensor) -> torch.Tensor:
         """
         Compute the B/b term for the kernel at depth d.
 
@@ -263,11 +263,11 @@ class PencilBeamModel:
         """
         return (
             self.params["B1"]
-            * (1 - np.exp(self.params["B2"] * np.sqrt(d**2 + self.params["B5"] ** 2)))
-            * np.exp(self.params["B3"] * d + self.params["B4"] * d**2)
+            * (1 - torch.exp(self.params["B2"] * torch.sqrt(d**2 + self.params["B5"] ** 2)))
+            * torch.exp(self.params["B3"] * d + self.params["B4"] * d**2)
         )
 
-    def depth_a(self, d: float | np.ndarray) -> float:
+    def depth_a(self, d: torch.Tensor) -> torch.Tensor:
         """
         Compute the a parameter for the kernel at depth d.
 
@@ -282,7 +282,7 @@ class PencilBeamModel:
         """
         return self.params["a2"] + self.params["a1"] * d
 
-    def depth_b(self, d: float | np.ndarray) -> float:
+    def depth_b(self, d: torch.Tensor) -> torch.Tensor:
         """
         Compute the b parameter for the kernel at depth d.
 
@@ -296,18 +296,18 @@ class PencilBeamModel:
             self.params["b1"]
             * (
                 1
-                - np.exp(self.params["b2"] * np.sqrt((d**2) + (self.params["b5"] ** 2)))
+                - torch.exp(self.params["b2"] * torch.sqrt((d**2) + (self.params["b5"] ** 2)))
             )
-            * np.exp((self.params["b3"] * d) + (self.params["b4"] * d**2))
+            * torch.exp((self.params["b3"] * d) + (self.params["b4"] * d**2))
         )
 
     def get_pencil_beam(self, 
-                        d: np.ndarray, 
-                        r: np.ndarray, 
+                        d: torch.Tensor, 
+                        r: torch.Tensor, 
                         normalize: bool = True,
                         apply_circular_mask: bool = False, 
                         mask_radius_cm: float = None,
-                        depth_threshold_mm: float = 0.5) -> np.ndarray:
+                        depth_threshold_mm: float = 0.5) -> torch.Tensor:
         """
         Generate pencil beam kernel for given depths and radial grid.
 
@@ -321,14 +321,13 @@ class PencilBeamModel:
             np.ndarray: Pencil beam kernel, shape (B*G, N, Hk, Wk).
         """
         # shapes
-        d = np.asarray(d, float)
-        r2 = np.asarray(r, float)                # (Hk, Wk)
+        r2 = r.to(d.dtype).to(d.device)                # (Hk, Wk)
         BG, N, _, _ = d.shape
         _, _, Hk, Wk = r2.shape
 
         # Fast path: if all depths below threshold, return zeros immediately
-        if np.all(d < depth_threshold_mm):
-            return np.zeros((BG, N, Hk, Wk), dtype=np.float32)
+        if torch.all(d < depth_threshold_mm):
+            return torch.zeros((BG, N, Hk, Wk), dtype=torch.float32)
 
         # Convert radiological depth from mm to cm
         d /= 10
@@ -344,23 +343,23 @@ class PencilBeamModel:
         depth_B = B_over_b * depth_b
 
         # numerator everywhere
-        exact_num = (depth_A * np.exp(-depth_a * r2)) + (depth_B * np.exp(-depth_b * r2))  # (BG,N,Hk,Wk)
+        exact_num = (depth_A * torch.exp(-depth_a * r2)) + (depth_B * torch.exp(-depth_b * r2))  # (BG,N,Hk,Wk)
 
 
         # safe divide for r>0
-        exact = np.empty_like(exact_num)
-        np.divide(exact_num, r2, out=exact, where=mask)
+        exact = torch.empty_like(exact_num)
+        exact = torch.where(mask, exact_num / r2, exact)
 
         # center pixel: area-average over a disk whose area = one pixel
-        dx = float(self.resolution[0] / 10.0)
-        dy = float(self.resolution[2] / 10.0)
-        r_h = np.sqrt(dx * dy / np.pi)
+        dx = torch.tensor(self.resolution[0] / 10.0).to(torch.float32)
+        dy = torch.tensor(self.resolution[2] / 10.0).to(torch.float32)
+        r_h = torch.sqrt(dx * dy / torch.pi)
         center_val = (2.0 / (r_h * r_h)) * (
-            A_over_a * (1.0 - np.exp(-depth_a * r_h)) +
-            B_over_b * (1.0 - np.exp(-depth_b * r_h))
+            A_over_a * (1.0 - torch.exp(-depth_a * r_h)) +
+            B_over_b * (1.0 - torch.exp(-depth_b * r_h))
         )                                                    # (BG,N,1,1)
 
-        K = np.where(mask, exact, center_val)               # (BG,N,Hk,Wk)
+        K = torch.where(mask, exact, center_val)               # (BG,N,Hk,Wk)
 
         # Normalize to 10cm depth kernel integral
         if normalize:
@@ -381,9 +380,9 @@ class PencilBeamModel:
         depth_mask = (d >= depth_threshold_cm)  # (BG, N, 1, 1)
         K = K * depth_mask  # (BG, N, Hk, Wk)
         
-        return np.array(K, dtype=np.float32)  # (BG, N, Hk, Wk)
+        return K.to(torch.float32)  # (BG, N, Hk, Wk)
 
-    def apply_flattening(self, kernel: np.ndarray, r: np.ndarray, max_radius: float = 16, alpha: float = 0.2, beta: float = 2.0) -> np.ndarray:
+    def apply_flattening(self, kernel: torch.Tensor, r: torch.Tensor, max_radius: float = 16, alpha: float = 0.2, beta: float = 2.0) -> torch.Tensor:
         """
         Apply flattening filter to the kernel for beam profile correction.
 
@@ -398,12 +397,12 @@ class PencilBeamModel:
             np.ndarray: Flattened kernel.
         """
         flattening_factor = alpha - beta * (r / max_radius) ** 2
-        flattening_factor = np.clip(
+        flattening_factor = torch.clip(
             flattening_factor, 0.5, 1.0
         )  # Clip for stability
         return kernel * flattening_factor
 
-    def get_rs(self, kernel_size: tuple) -> np.ndarray:
+    def get_rs(self, kernel_size: tuple) -> torch.Tensor:
         """
         Compute radial distance grid for kernel calculation.
 
@@ -414,20 +413,20 @@ class PencilBeamModel:
             np.ndarray: Radial distance grid in cm.
         """
         
-        h = np.arange(0, kernel_size[0], dtype=np.int32)
-        w = np.arange(0, kernel_size[1], dtype=np.int32)
+        h = torch.arange(0, kernel_size[0], dtype=torch.int32)
+        w = torch.arange(0, kernel_size[1], dtype=torch.int32)
         h -= kernel_size[0] // 2
         w -= kernel_size[1] // 2
-        w, h = np.meshgrid(w, h)
+        w, h = torch.meshgrid(w, h, indexing="ij")
 
-        dh = np.abs(h.astype(np.float32)) * self.res_h
-        dw = np.abs(w.astype(np.float32)) * self.res_w
+        dh = torch.abs(h.to(torch.float32)) * self.res_h
+        dw = torch.abs(w.to(torch.float32)) * self.res_w
 
-        rs = np.sqrt(dh**2 + dw**2)
+        rs = torch.sqrt(dh**2 + dw**2)
         
         return rs
 
-    def get_nested_kernels(self, radiological_depth: np.ndarray) -> np.ndarray:
+    def get_nested_kernels(self, radiological_depth: torch.Tensor) -> torch.Tensor:
         """
         Generate kernels for nested radiological depths.
 
@@ -438,11 +437,11 @@ class PencilBeamModel:
             np.ndarray: Nested kernels for all depths.
         """
         return self.get_pencil_beam(
-            d=radiological_depth[..., 0, np.newaxis, np.newaxis],
-            r=self.rs[np.newaxis, np.newaxis, :, :],
+            d=radiological_depth[..., 0, torch.newaxis, torch.newaxis],
+            r=self.rs[torch.newaxis, torch.newaxis, :, :],
         )
 
-    def R_limit(self, d: float, F: float) -> float:
+    def R_limit(self, d: torch.Tensor, F: torch.Tensor) -> torch.Tensor:
         """
         Compute the kernel support radius limit for a given depth and field size.
 
@@ -451,7 +450,7 @@ class PencilBeamModel:
             F (float): Field size parameter.
 
         Returns:
-            float: Radius limit for kernel support.
+            Tensor: Radius limit for kernel support.
         """
         # TODO: Define the origin of the "magic" variables/values here
         return 0.561 * ((90 + d) / (90 + 10)) * F

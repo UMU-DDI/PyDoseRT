@@ -80,9 +80,8 @@ class PencilBeamKernelLayer(nn.Module):
         Returns:
             np.ndarray: Dose kernels of shape [kH, kW, B*G, D].
         """
-        with torch.no_grad():
-            radiological_depth_numpy = radiological_depth.detach().cpu().numpy()
-            kernels = self.pbm.get_nested_kernels(radiological_depth_numpy)
-            kernels = np.transpose(kernels, (2, 3, 0, 1))
+
+        kernels = self.pbm.get_nested_kernels(radiological_depth).to(radiological_depth.device).to(radiological_depth.dtype)
+        kernels = torch.permute(kernels, (2, 3, 0, 1))
 
         return kernels

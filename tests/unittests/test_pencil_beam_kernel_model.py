@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import torch
 
 import numpy as np
 
@@ -60,7 +61,7 @@ class TestPencilBeamModel:
         actual = pencil_beam_kernel_model.get_param(parameter, tpr)
 
         # Assert
-        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
+        assert actual == pytest.approx(expected_value, rel=1e-6, abs=1e-6)
 
     @pytest.mark.parametrize(
         "depth, tpr, expected_value",
@@ -83,9 +84,9 @@ class TestPencilBeamModel:
         # Arrange
         pencil_beam_kernel_model.params = {k: pencil_beam_kernel_model.get_param(k, tpr) for k in COEFFICIENTS.keys()}
         # Act
-        actual = pencil_beam_kernel_model.depth_A(d=depth)
+        actual = pencil_beam_kernel_model.depth_A(d=torch.tensor(depth)).item()
         # Assert
-        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
+        assert actual == pytest.approx(expected_value, rel=1e-6, abs=1e-6)
 
     @pytest.mark.parametrize(
         "depth, tpr, expected_value",
@@ -109,10 +110,10 @@ class TestPencilBeamModel:
         pencil_beam_kernel_model.params = {k: pencil_beam_kernel_model.get_param(k, tpr) for k in COEFFICIENTS.keys()}
 
         # Act
-        actual = pencil_beam_kernel_model.depth_B(d=depth)
+        actual = pencil_beam_kernel_model.depth_B(d=torch.tensor(depth))
 
         # Assert
-        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
+        assert actual == pytest.approx(expected_value, rel=1e-6, abs=1e-6)
 
     @pytest.mark.parametrize(
         "depth, tpr, expected_value",
@@ -169,10 +170,10 @@ class TestPencilBeamModel:
         pencil_beam_kernel_model.params = {k: pencil_beam_kernel_model.get_param(k, tpr) for k in COEFFICIENTS.keys()}
 
         # Act
-        actual = pencil_beam_kernel_model.depth_b(depth)
+        actual = pencil_beam_kernel_model.depth_b(torch.tensor(depth))
 
         # Assert
-        assert actual == pytest.approx(expected_value, rel=1e-12, abs=1e-12)
+        assert actual == pytest.approx(expected_value, rel=1e-6, abs=1e-6)
 
     @pytest.mark.xfail
     def test_get_pencil_beam_returns_a_numpy_array_of_length_four(self, pencil_beam_kernel_model):
