@@ -39,8 +39,6 @@ class FluenceVolumeLayer(nn.Module):
         dtype (type): Data type for tensors.
         verbose (bool): Flag to enable verbose logging.
         SID (float): Source-to-isocenter distance.
-        profile_radius (torch.Tensor): Radii for fluence profile correction.
-        profile_factors (torch.Tensor): Correction factors for fluence profile.
         resolution (tuple): Voxel spacing in mm.
         profile_corrections (torch.Tensor): Precomputed profile corrections for each depth.
         sampling_grids (torch.Tensor): Precomputed ray sampling grids for mapping MLC plane to CT volume.
@@ -60,79 +58,100 @@ class FluenceVolumeLayer(nn.Module):
 
         Args:
             machine_config (MachineConfig): Configuration object with machine parameters.
-            resolution (tuple[float, float, float]): Voxel spacing in mm.
-            ct_array_shape (tuple[float, float, float]): Shape of the CT array.
-            sid (float): Source-to-isocenter distance.
-            iso_center (tuple[float, float, float]): Isocenter position.
-            field_size (tuple[int, int]): Field size (width, height) in pixels.
-            device (torch.device): Device for computation (CPU or CUDA).
-            dtype (type): Data type for tensors.
+            resolution (tuple[float, float, float]): Voxel spacing in mm (dH, dD, dW).
+            ct_array_shape (tuple[int, int, int]): Shape of the CT array as (H, D, W).
+            sid (float): Source-to-isocenter distance (mm).
+            iso_center (tuple[float, float, float]): Isocenter position in mm (H, D, W).
+            field_size (tuple[int, int]): Field size (height, width) in pixels of the fluence map.
+            device (torch.device | str | None): Device for computation (CPU or CUDA).
+            dtype (torch.dtype): Data type for tensors.
+            verbose (bool): If True, prints some debug info.
         """
         super().__init__()
 
-        # Handle device default
+        # Handle device default / normalization
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         elif isinstance(device, str):
             device = torch.device(device)
-        self.device=device
-        self.dtype=dtype
+
+        self.device = device
+        self.dtype = dtype
         self.machine_config = machine_config
         self.verbose = verbose
-        # Configuration & Constants
+
+        # Configuration & constants
         self.SID = sid
-        self.profile_radius = torch.tensor(
-            machine_config.fluence_profile[0], dtype=self.dtype
-        )
-        self.profile_factors = torch.tensor(
-            machine_config.fluence_profile[1], dtype=self.dtype
-        )
         self.resolution = resolution
         self.ct_array_shape = ct_array_shape
+        self.iso_center = iso_center
+        self.field_size = field_size
+
         H, D, W = self.ct_array_shape
         self.D = D
 
-
-        # Precompute the physical depth (distance from source for each depth slice)
+        # -----------------------------
+        # Precompute depths [D]
+        # -----------------------------
+        # depth coordinate is along the second axis (D)
         depths = (
             self.SID - iso_center[1]
-            + torch.arange(D, dtype=self.dtype) * self.resolution[1]
-        )  # mm
+            + torch.arange(D, dtype=self.dtype, device=self.device) * self.resolution[1]
+        )  # [D], in mm
 
-        # Compute the physical coordinates for each pixel in the depth slice (center is (0,0))
-        H_field, W_field = field_size
+        # -----------------------------
+        # Spatial coordinates [W, H]
+        # -----------------------------
+        # H: "vertical" axis, W: "horizontal" axis in CT indexing (H, D, W)
         hs = (
-        torch.arange(H, dtype=self.dtype) + 0.5
-        ) * self.resolution[0] - iso_center[0]
+            torch.arange(H, dtype=self.dtype, device=self.device) + 0.5
+        ) * self.resolution[0] - iso_center[0]  # [H]
         ws = (
-            torch.arange(W, dtype=self.dtype) + 0.5
-        ) * self.resolution[2] - iso_center[2]
-        WT, HT = torch.meshgrid(ws, hs, indexing="ij")  # Both [W, H]
+            torch.arange(W, dtype=self.dtype, device=self.device) + 0.5
+        ) * self.resolution[2] - iso_center[2]  # [W]
 
-        # Normalization factors use the field size (fluence map coordinates)
-        WT_max = ((W_field) / 2)
-        HT_max = ((H_field) / 2)
+        # Meshgrid in (W, H) order to match later indexing self.sampling_grids[d][w, h, :]
+        WT, HT = torch.meshgrid(ws, hs, indexing="ij")  # [W, H] each
 
-        # Calculate the inverse relative square distance for each depth
-        corrections = []
-        sample_grids = []
-        for d in depths:
-            scale = self.SID / d
-            inv_square = scale**2
-            corrections.append(inv_square)
+        # -----------------------------
+        # Normalize to fluence map coords using field size
+        # -----------------------------
+        H_field, W_field = field_size
+        WT_max = W_field / 2.0
+        HT_max = H_field / 2.0
 
-            gy = (WT / WT_max) * scale
-            gz = (HT / HT_max) * scale
+        WT = WT / WT_max  # [W, H]
+        HT = HT / HT_max  # [W, H]
 
-            gs = torch.stack((gy, gz), dim=-1)
-            sample_grids.append(gs)
+        # Base grid at SID=1 (before depth scaling)
+        base_grid = torch.stack((WT, HT), dim=-1)  # [W, H, 2]
 
-        self.register_buffer(
-            "profile_corrections", torch.stack(corrections).to(self.device)
-        )  # [D,W,H]
-        self.register_buffer(
-            "sampling_grids", torch.stack(sample_grids).to(self.device)
-        )  # [D,W,H,2]
+        # -----------------------------
+        # Vectorized depth scaling
+        # -----------------------------
+        # Scale per depth slice: SID / depth
+        scales = self.SID / depths  # [D]
+
+        # Inverse square distance corrections per depth
+        profile_corrections = scales**2  # [D]
+
+        # Broadcast scales onto base_grid:
+        # scales: [D, 1, 1, 1], base_grid: [1, W, H, 2] -> [D, W, H, 2]
+        sampling_grids = base_grid.unsqueeze(0) * scales.view(D, 1, 1, 1)
+
+        # -----------------------------
+        # Register as buffers (not parameters)
+        # -----------------------------
+        self.register_buffer("profile_corrections", profile_corrections)
+        self.register_buffer("sampling_grids", sampling_grids)
+
+        if self.verbose:
+            total_elems = sampling_grids.numel()
+            mem_mb = total_elems * torch.finfo(self.dtype).bits / 8 / 1024**2
+            print(
+                f"[FluenceVolumeLayer] Precomputed sampling_grids with shape {sampling_grids.shape}, "
+                f"~{mem_mb:.1f} MB on {self.device}"
+            )
 
     def forward(
         self, fluence_map: torch.Tensor, bbox: tuple[int, int, int, int] = (None, None, None, None)
