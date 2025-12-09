@@ -267,7 +267,7 @@ class FluenceMapLayer(nn.Module):
         # Apply head scatter using precomputed kernel(s)
         if self.use_head_scatter:
             # New directional approach: independent 1D convolutions with separate amplitude scaling
-            fluence_map = apply_head_scatter_kernels(
+            head_scatter_component = apply_head_scatter_kernels(
                 fluence_map,
                 self.head_scatter_kernel_mlc,
                 self.head_scatter_kernel_jaw,
@@ -277,6 +277,9 @@ class FluenceMapLayer(nn.Module):
 
         if self.use_profile_correction:
             fluence_map = fluence_map * self.profile_correction_map
+
+        if self.use_head_scatter:
+            fluence_map = (1 - self.head_scatter_amplitude_mlc) * fluence_map + head_scatter_component
 
         if self.use_output_factor:
             OF = get_output_factor(field_size_mlc_mm, field_size_jaw_mm, self.output_factors)

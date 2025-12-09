@@ -520,8 +520,9 @@ def apply_head_scatter_kernels(fluence_map, kernel_x, kernel_y, scatter_amplitud
     fluence_conv = torch.nn.functional.conv2d(
         fluence_conv, kernel_y_2d, padding=(padding_y, 0)
     )
+    fluence_conv /= fluence_conv.max()
     
     # Combine primary and scattered
-    fluence_total = (1.0 - scatter_amplitude) * fluence_map + scatter_amplitude * fluence_conv / scatter_fraction
+    fluence_total = scatter_amplitude * fluence_conv / scatter_fraction
     
     return fluence_total
