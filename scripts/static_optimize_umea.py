@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 import argparse
 load_dotenv()  # will look for .env in project root
 
+torch.autograd.set_detect_anomaly(True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if (os.path.exists("/mimer/NOBACKUP/groups/naiss2023-6-64/attila/miqa/")):
     remote = True
@@ -105,7 +106,7 @@ open_field_size = 100.0
 print_stuff = 0
 loss_plot = 1.0
 best_results = []
-n_tests = 100
+n_tests = 10
 patience_thr = 500
 oar_dose = 10.0
 
@@ -191,14 +192,22 @@ for test_i in range(n_tests):
 
         def closure():
             optimizer.zero_grad(set_to_none=True)
-            
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            st = time.time()
             # Forward
             dose_pred = engine.compute_dose(
-                beam_sequence.to_delivery(),
-                density_image=ct_volume
+                beam_sequence,#.to_delivery(),
+                density_image=ct_volume,
+                overwrite=True
             )
-            dose_pred = dose_pred
 
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            print(f"{time.time() - st}s for forward pass")
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            st = time.time()
             # Compute loss
             dose_pred_loss = dose_pred[0] * 7
             raw_losses = []
@@ -249,8 +258,17 @@ for test_i in range(n_tests):
             if (epoch > max_iter):
                 break
             
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            st = time.time()
             # --- the actual optimizer step ---
             loss = optimizer.step(closure)   # returns the last loss the closure returned
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            print(f"{time.time() - st}s for forward+backward pass")
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            st = time.time()
             # scheduler.step(loss)
             raw_losses = latest["raw_losses"]
             raw_loss_dict = {f"loss_{i+1}": v for i, v in enumerate(raw_losses)}
