@@ -198,7 +198,7 @@ for test_i in range(n_tests):
                 torch.cuda.synchronize()
             st = time.time()
             # Forward
-            dose_pred = engine.compute_dose_sequential(
+            dose_pred = engine.compute_dose(
                 beam_sequence.to_delivery(),
                 density_image=ct_volume
             )
