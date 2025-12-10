@@ -1,3 +1,5 @@
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True"
 from comet_ml import Experiment
 import sys
 sys.path.append('../')
@@ -207,6 +209,8 @@ for test_i in range(n_tests):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             st = time.time()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             # Compute loss
             dose_pred_loss = dose_pred[0] * 7
             raw_losses = []
