@@ -58,7 +58,7 @@ if remote:
     beam_sequence = beam_sequence[0]
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
-    kernel_size = 15
+    kernel_size = 25
     device = device
     dtype = torch.float32
 
