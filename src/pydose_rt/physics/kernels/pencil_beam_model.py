@@ -320,68 +320,93 @@ class PencilBeamModel:
         Returns:
             torch.Tensor: Pencil beam kernel, shape (B*G, N, Hk, Wk).
         """
-        # shapes
-        r2 = r.to(d.dtype).to(d.device)                # (Hk, Wk)
+        # ensure r2 has same dtype/device as d and a broadcastable shape (1,1,Hk,Wk)
+        r2 = r.to(d.dtype).to(d.device)
+        if r2.ndim == 2:
+            r2 = r2.view(1, 1, *r2.shape)  # (1,1,Hk,Wk)
         BG, N, _, _ = d.shape
         _, _, Hk, Wk = r2.shape
 
-        # Fast path: if all depths below threshold, return zeros immediately
+        # fast return if everything below original mm threshold (d given in mm)
         if torch.all(d < depth_threshold_mm):
-            return torch.zeros((BG, N, Hk, Wk), dtype=torch.float32)
+            return torch.zeros((BG, N, Hk, Wk), dtype=torch.float32, device=d.device)
 
-        # Convert radiological depth from mm to cm
-        d /= 10
-        mask = (r2 > 0.0)
+        # keep caller's tensor unchanged: work on local copy for unit conversion
+        d = d / 10.0  # convert mm -> cm, shape (BG, N, 1, 1)
+        mask = (r2 > 0.0)  # (1,1,Hk,Wk) boolean
 
-
-        # depth-dependent pieces (broadcast over BG,N)
-        depth_a = self.depth_a(d)              # (BG,N,1,1)
-        depth_b = self.depth_b(d)               # (BG,N,1,1)
-        A_over_a = self.depth_A_per_a(d)        # (BG,N,1,1)
-        B_over_b = self.depth_B_per_b(d)        # (BG,N,1,1)
+        # depth-dependent scalars (broadcastable as (BG,N,1,1))
+        depth_a = self.depth_a(d)       # (BG,N,1,1)
+        depth_b = self.depth_b(d)       # (BG,N,1,1)
+        A_over_a = self.depth_A_per_a(d)  # (BG,N,1,1)
+        B_over_b = self.depth_B_per_b(d)  # (BG,N,1,1)
         depth_A = A_over_a * depth_a
         depth_B = B_over_b * depth_b
 
-        # numerator everywhere
-        exact_num = (depth_A * torch.exp(-depth_a * r2)) + (depth_B * torch.exp(-depth_b * r2))  # (BG,N,Hk,Wk)
+        # allocate numerator buffer (BG, N, Hk, Wk) to avoid extra temporaries
+        K_numer = torch.empty((BG, N, Hk, Wk), dtype=depth_A.dtype, device=depth_A.device)
 
+        # compute first term in-place: K_numer := depth_A * exp(-depth_a * r2)
+        # broadcasting: (BG,N,1,1) * (1,1,Hk,Wk) -> (BG,N,Hk,Wk)
+        torch.exp((-depth_a) * r2, out=K_numer)  # K_numer = exp(-depth_a * r2)
+        K_numer.mul_(depth_A)                    # K_numer = depth_A * exp(...)
 
-        # safe divide for r>0
-        exact = torch.empty_like(exact_num)
-        exact = torch.where(mask, exact_num / r2, exact)
+        # compute second term into a temporary then add: tmp := depth_B * exp(-depth_b * r2); K_numer += tmp
+        tmp = torch.empty((BG, N, Hk, Wk), dtype=depth_B.dtype, device=depth_B.device)
+        torch.exp((-depth_b) * r2, out=tmp)  # tmp = exp(-depth_b * r2)
+        tmp.mul_(depth_B)                     # tmp = depth_B * exp(...)
+        K_numer.add_(tmp)                     # K_numer = term1 + term2
+        del tmp                                # release reference quickly
 
-        # center pixel: area-average over a disk whose area = one pixel
-        dx = torch.tensor(self.resolution[0] / 10.0).to(torch.float32)
-        dy = torch.tensor(self.resolution[2] / 10.0).to(torch.float32)
+        # safe division by r2 for r > 0:
+        # build a denominator that is r2 where mask True, else 1.0 where mask False.
+        # denom has shape (1,1,Hk,Wk) and will broadcast over BG,N.
+        r2_f = r2.to(K_numer.dtype)
+        denom = torch.where(mask, r2_f, torch.ones_like(r2_f))
+
+        # in-place division uses broadcasting: divides every BG,N plane by denom
+        K_numer = K_numer / denom  # produces correct division for r>0; for r==0 we will overwrite below
+
+        # center pixel: area-average over the pixel disk (BG,N,1,1)
+        dx = torch.tensor(self.resolution[0] / 10.0, dtype=torch.float32, device=d.device)
+        dy = torch.tensor(self.resolution[2] / 10.0, dtype=torch.float32, device=d.device)
         r_h = torch.sqrt(dx * dy / torch.pi)
         center_val = (2.0 / (r_h * r_h)) * (
             A_over_a * (1.0 - torch.exp(-depth_a * r_h)) +
             B_over_b * (1.0 - torch.exp(-depth_b * r_h))
-        )                                                    # (BG,N,1,1)
+        )  # (BG, N, 1, 1)
 
-        K = torch.where(mask, exact, center_val)               # (BG,N,Hk,Wk)
+        # find center pixel coordinates (could be more than one if the grid has multiple zeros)
+        center_locations = torch.nonzero(~mask[0, 0], as_tuple=False)  # tensor of (ih, iw) rows
+        if center_locations.numel() > 0:
+            center_val_flat = center_val.view(BG, N)  # (BG, N)
+            # write center_val into each center pixel location
+            for (ih, iw) in center_locations:
+                K_numer[:, :, ih.item(), iw.item()] = center_val_flat
 
-        # Normalize to 10cm depth kernel integral
+        # now K_numer is the kernel before normalization/masking/depth threshold
+        K = K_numer
+
+        # normalize if requested
         if normalize:
-            K /= self.norm
+            # do an in-place style division via /= to avoid allocating a new large tensor
+            K = K / self.norm
 
-
+        # optional circular mask: zero-out values beyond mask_radius_cm
         if apply_circular_mask:
             if mask_radius_cm is None:
-                # Auto-calculate mask radius: use kernel extent where contribution is ~1% of center
                 mask_radius_cm = min(Hk, Wk) * max(self.res_h, self.res_w) / 2.0
+            circular_mask = (r2 <= mask_radius_cm)  # (1,1,Hk,Wk) boolean
+            # multiplication broadcasts circular_mask across BG,N
+            K = K * circular_mask
 
-            # Apply mask: zero out values beyond mask_radius_cm
-            circular_mask = r2 <= mask_radius_cm  # (1, 1, Hk, Wk)
-            K = K * circular_mask  # (BG, N, Hk, Wk)
-
-        # Zero out kernels where radiological depth is below threshold (d is in cm now)
+        # zero out kernels where radiological depth is below threshold (d currently in cm)
         depth_threshold_cm = depth_threshold_mm / 10.0
         depth_mask = (d >= depth_threshold_cm)  # (BG, N, 1, 1)
-        K = K * depth_mask  # (BG, N, Hk, Wk)
-        
-        return K.to(torch.float32)  # (BG, N, Hk, Wk)
+        K = K * depth_mask  # broadcast over Hk,Wk
 
+        return K.to(torch.float32)
+    
     def get_rs(self, kernel_size: tuple) -> torch.Tensor:
         """
         Compute radial distance grid for kernel calculation.
