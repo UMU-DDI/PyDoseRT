@@ -13,7 +13,7 @@ dtype=torch.float32
 
 do_plot = True
 
-field_sizes = [50, 100, 150, 200, 300, 400]
+field_sizes = [100]
 
 raw_measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
 results =  []
@@ -23,7 +23,7 @@ for field_size in field_sizes:
     measurements = raw_measurements.copy()
     measurements = [measurement for measurement in measurements if measurement["header_dict"]["FSZ"] == [str(field_size), str(field_size)]]
     # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == measurement["header_dict"]["STS"][2]]
-    # measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][2]) == 100.0) and (float(measurement["header_dict"]["EDS"][2]) == 100.0)]
+    measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][1]) == 0.0) and (float(measurement["header_dict"]["EDS"][2]) != 200.0) and (float(measurement["header_dict"]["EDS"][0]) != 0.0)]
 
     resolution = (1.0, 1.0, 1.0)
     ct_array_shape = (500, 500, 500)
@@ -46,8 +46,8 @@ for field_size in field_sizes:
     dose_engine = DoseEngine(
         machine_config, 
         kernel_size,
-        phantom.resolution,
-        image_template=phantom.density_image,
+        dose_grid_spacing=phantom.resolution,
+        dose_grid_shape=phantom.density_image.shape,
         beam_template=beam,
         device=device,
         dtype=dtype,
@@ -56,7 +56,7 @@ for field_size in field_sizes:
 
     dose = dose_engine.compute_dose(
         beam,
-        ct_image=phantom.density_image).detach()
+        density_image=phantom.density_image).detach()
     dose = dose
 
     if do_plot:
@@ -64,8 +64,8 @@ for field_size in field_sizes:
         cols = 3
         rows = math.ceil(N / cols)
 
-        fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 3*rows))
-        axes = axes.flatten()
+        fig = plt.figure(figsize=(15, 10))
+        # axes = axes.flatten()
 
     for i, measurement in enumerate(measurements):
         samples = sample_tensor_nearest(dose[0, ...], resolution, np.subtract(iso_center, (0.5, 100.5, 0.5)), measurement["coords_engine"])
@@ -90,7 +90,6 @@ for field_size in field_sizes:
             dist = np.concatenate(([0.0], np.cumsum(seg_len)))            # (N,)
             ticks = dist - np.mean(dist)                                  # center at 0
 
-            ax = axes[i]
 
             # Name the axes: your original mapping looked like [Z, X, Y]
             axis_names = np.array(["Z", "X", "Y"])
@@ -103,14 +102,13 @@ for field_size in field_sizes:
                 varying_str = "+".join(axis_names[changing_idx])
                 axis_label = f"Distance along {varying_str} [mm]"
 
-            ax.plot(ticks, samples, color="orange", linestyle="solid")
-            ax.plot(ticks, measurement["dose"], color="blue", linestyle="dashed")
+            plt.plot(ticks, samples, color="orange", linestyle="solid")
+            plt.plot(ticks, measurement["dose"], color="blue", linestyle="dashed")
 
-            ax.set_title(f"{measurement['header_dict']['STS']} - {measurement['header_dict']['EDS']}")
-            ax.set_xlabel(axis_label)
+            # plt.set_title(f"{measurement['header_dict']['STS']} - {measurement['header_dict']['EDS']}")
+            plt.xlabel(axis_label)
     if do_plot:
-        for j in range(i+1, len(axes)):
-            axes[j].set_visible(False)
+        plt.axis('off')
 
         plt.tight_layout()
         plt.savefig(f"out/profiles_{exp_name}.png")

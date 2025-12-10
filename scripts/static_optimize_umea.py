@@ -58,11 +58,11 @@ if remote:
     beam_sequence = beam_sequence[0]
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
-    kernel_size = 3
+    kernel_size = 5
     device = device
     dtype = torch.float32
 
-    max_iter = 500
+    max_iter = 100
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
@@ -108,8 +108,8 @@ open_field_size = 100.0
 print_stuff = 0
 loss_plot = 1.0
 best_results = []
-n_tests = 10
-patience_thr = 500
+n_tests = 50
+patience_thr = 100
 oar_dose = 10.0
 
 for test_i in range(n_tests):
