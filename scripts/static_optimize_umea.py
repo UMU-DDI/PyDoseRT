@@ -53,7 +53,7 @@ if remote:
                 struct_path=rtstruct_path,
                 struct_names=["CTVT", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
-    beam_sequence = beam_sequence[0].clone()[::2]
+    beam_sequence = beam_sequence[0].clone()
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
     kernel_size = 5
