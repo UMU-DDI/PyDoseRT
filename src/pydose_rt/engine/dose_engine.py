@@ -6,7 +6,6 @@ kernel generation, convolution, and geometric rotation of dose volumes. It suppo
 multiple beams, and can optionally perform upsampling and debugging visualizations.
 """
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 from pydose_rt.layers.BeamValidationLayer import BeamValidationLayer
@@ -39,8 +38,12 @@ class DoseEngine(nn.Module):
     dose_grid_shape: tuple[int, int, int] | None = None
     dose_grid_spacing: tuple[float, float, float] | None = None
     number_of_beams: int | None = None
-    precomputed_radiological_depths: torch.Tensor | None = None
-    precomputed_kernels: torch.Tensor | None = None
+    layers_initialized: bool = False
+    gantry_angles: torch.Tensor | None = None
+    collimator_angles: torch.Tensor | None = None
+    field_size: tuple[float, float] | None = None
+    SID: float | None = None
+    iso_center: tuple[float, float, float] | None = None
 
     def __init__(
         self,
@@ -76,32 +79,19 @@ class DoseEngine(nn.Module):
         self.dtype = dtype
         self.verbose = verbose
         self._adjust_values = adjust_values
-        self.layers_initialized = False
 
         self.machine_config = machine_config
         self.dose_grid_spacing = dose_grid_spacing
         self.dose_grid_shape = dose_grid_shape
-        self._add_beam_information(beam_template)
+        self._initialize_layers(beam_template)
 
-    def _add_data_information(self, new_density_image: torch.Tensor) -> None:
-        if new_density_image is None:
-            return
-        
-        if (self.dose_grid_shape is not None):
-            return
-        
+    def _set_device_dtype(self, device, dtype) -> None:
         if self.dtype is None:
-            self.dtype = new_density_image.dtype
+            self.dtype = dtype
         if self.device is None:
-            self.device = new_density_image.device
-        self.dose_grid_shape = new_density_image.shape
-        self.precomputed_kernels = None
-        self.precomputed_radiological_depths = None
-        self.layers_initialized = False
-        self._initialize_layers()
-        return
-        
-    def _add_beam_information(self, new_beam_data: BeamSequence | Beam, overwrite: bool = False) -> None:
+            self.device = device
+
+    def _initialize_layers(self, new_beam_data: BeamSequence | Beam, overwrite: bool = False) -> None:
         if new_beam_data is None:
             return
         
@@ -109,38 +99,56 @@ class DoseEngine(nn.Module):
             # TODO: Check should be performed to ensure that things match.
             return
 
+        initialize_beam_validation_layer = not hasattr(self, 'beam_validation_layer')
+        initialize_fluence_map_layer = not hasattr(self, 'fluence_map_layer')
+        initialize_fluence_volume_layer = not hasattr(self, 'fluence_volume_layer')
+        initialize_beam_wise_conv_layer = not hasattr(self, 'beam_wise_conv_layer')
+        initialize_pencil_beam_kernel_layer = not hasattr(self, 'pencil_beam_kernel_layer')
+        initialize_rad_depth_layer = not hasattr(self, 'rad_depth_layer')
+        initialize_rotation_layer = not hasattr(self, 'rotation_layer')
+
         if isinstance(new_beam_data, Beam):
-            self.number_of_beams = 1
-            self.gantry_angles = torch.tensor([new_beam_data.gantry_angle]).to(self.dtype).to(self.device)
-            self.collimator_angles = torch.tensor([new_beam_data.collimator_angle]).to(self.dtype).to(self.device)
+            number_of_beams = 1
+            gantry_angles = torch.tensor([new_beam_data.gantry_angle]).to(self.dtype).to(self.device)
+            collimator_angles = torch.tensor([new_beam_data.collimator_angle]).to(self.dtype).to(self.device)
         elif isinstance(new_beam_data, BeamSequence):
-            self.number_of_beams = len(new_beam_data)
-            self.gantry_angles = new_beam_data.gantry_angles
-            self.collimator_angles = new_beam_data.collimator_angles.to(self.dtype).to(self.device)
+            number_of_beams = len(new_beam_data)
+            gantry_angles = new_beam_data.gantry_angles
+            collimator_angles = new_beam_data.collimator_angles.to(self.dtype).to(self.device)
 
         if self.dtype is None:
             self.dtype = new_beam_data.dtype
         if self.device is None:
             self.device = new_beam_data.device
-        self.field_size = new_beam_data.field_size
-        self.SID = new_beam_data.sid
-        self.iso_center = new_beam_data.iso_center
-        self.precomputed_kernels = None
-        self.precomputed_radiological_depths = None
-        self.layers_initialized = False
-        self._initialize_layers()
-        return
-    
-    def _set_device_dtype(self, device, dtype) -> None:
-        if self.dtype is None:
-            self.dtype = dtype
-        if self.device is None:
-            self.device = device
-        self._initialize_layers()
+        
+        if  self.number_of_beams is None or (self.number_of_beams != number_of_beams):
+            initialize_rad_depth_layer = True
+            initialize_rotation_layer = True
+        elif self.gantry_angles is None or (self.gantry_angles != gantry_angles).any():
+            initialize_rad_depth_layer = True
+            initialize_rotation_layer = True
+        elif self.collimator_angles is None or (self.collimator_angles != collimator_angles).any():
+            initialize_rad_depth_layer = True
+            initialize_rotation_layer = True
+        self.number_of_beams = number_of_beams
+        self.gantry_angles = gantry_angles
+        self.collimator_angles = collimator_angles
 
-    def _initialize_layers(self) -> None:
-        if self.layers_initialized:
-            return
+
+        if self.field_size is None or (self.field_size != new_beam_data.field_size):
+            initialize_beam_validation_layer = True
+            initialize_fluence_map_layer = True
+            initialize_fluence_volume_layer = True
+        self.field_size = new_beam_data.field_size
+
+
+        self.SID = new_beam_data.sid
+        if self.iso_center is None or (self.iso_center != new_beam_data.iso_center).any():
+            initialize_fluence_volume_layer = True
+            initialize_rad_depth_layer = True
+            initialize_rotation_layer = True
+        self.iso_center = new_beam_data.iso_center
+
         if self.dtype is None:
             return
         if self.device is None:
@@ -152,67 +160,76 @@ class DoseEngine(nn.Module):
         if self.number_of_beams is None:
             return
         
-
-        if self._adjust_values:
-            self.valid_parameters_layer = BeamValidationLayer(
+        if self._adjust_values and initialize_beam_validation_layer:
+            self.beam_validation_layer = BeamValidationLayer(
                 self.machine_config,
                 device = self.device,
                 dtype=self.dtype,
                 field_size=self.field_size,
             )
-        self.fluence_map_layer = FluenceMapLayer(
-            self.machine_config,
-            device = self.device,
-            dtype=self.dtype,
-            field_size=self.field_size,
-            verbose=self.verbose
-        )
 
-        self.fluence_volume_layer = FluenceVolumeLayer(
-            self.machine_config, 
-            device = self.device,
-            dtype=self.dtype,
-            resolution=self.dose_grid_spacing,
-            ct_array_shape=self.dose_grid_shape,
-            sid=self.SID,
-            iso_center=self.iso_center,
-            field_size=self.field_size,
-            verbose=self.verbose
-        )
+        if initialize_fluence_map_layer:
+            self.fluence_map_layer = FluenceMapLayer(
+                self.machine_config,
+                device = self.device,
+                dtype=self.dtype,
+                field_size=self.field_size,
+                verbose=self.verbose
+            )
+        
+        if initialize_fluence_volume_layer:
+            self.fluence_volume_layer = FluenceVolumeLayer(
+                self.machine_config, 
+                device = self.device,
+                dtype=self.dtype,
+                resolution=self.dose_grid_spacing,
+                ct_array_shape=self.dose_grid_shape,
+                sid=self.SID,
+                iso_center=self.iso_center,
+                field_size=self.field_size,
+                verbose=self.verbose
+            )
 
-        self.rad_depth_layer = RadiologicalDepthLayer(
-            self.machine_config, 
-            device = self.device,
-            dtype=self.dtype,
-            resolution=self.dose_grid_spacing,
-            ct_array_shape=self.dose_grid_shape,
-            gantry_angles=self.gantry_angles,
-            iso_center=self.iso_center,
-            verbose=self.verbose
-        )
-        self.pencil_beam_kernel_layer = PencilBeamKernelLayer(
-            self.machine_config, 
-            device = self.device,
-            dtype=self.dtype,
-            resolution=self.dose_grid_spacing,
-            kernel_size=self.kernel_size,
-            verbose=self.verbose
-        )
-        self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(
-            self.device, 
-            self.dtype,
-            verbose=self.verbose
-        )
-        self.rotation_layer = BeamRotationLayer(
-            self.machine_config, 
-            device=self.device, 
-            dtype=self.dtype,
-            ct_array_shape=self.dose_grid_shape,
-            gantry_angles=self.gantry_angles,
-            iso_center=self.iso_center,            
-            resolution=self.dose_grid_spacing,
-            verbose=self.verbose
-        )
+        if initialize_rad_depth_layer:
+            self.rad_depth_layer = RadiologicalDepthLayer(
+                self.machine_config, 
+                device = self.device,
+                dtype=self.dtype,
+                resolution=self.dose_grid_spacing,
+                ct_array_shape=self.dose_grid_shape,
+                gantry_angles=self.gantry_angles,
+                iso_center=self.iso_center,
+                verbose=self.verbose
+            )
+
+        if initialize_pencil_beam_kernel_layer:
+            self.pencil_beam_kernel_layer = PencilBeamKernelLayer(
+                self.machine_config, 
+                device = self.device,
+                dtype=self.dtype,
+                resolution=self.dose_grid_spacing,
+                kernel_size=self.kernel_size,
+                verbose=self.verbose
+            )
+
+        if initialize_beam_wise_conv_layer:
+            self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(
+                self.device, 
+                self.dtype,
+                verbose=self.verbose
+            )
+
+        if initialize_rotation_layer:
+            self.rotation_layer = BeamRotationLayer(
+                self.machine_config, 
+                device=self.device, 
+                dtype=self.dtype,
+                ct_array_shape=self.dose_grid_shape,
+                gantry_angles=self.gantry_angles,
+                iso_center=self.iso_center,            
+                resolution=self.dose_grid_spacing,
+                verbose=self.verbose
+            )
 
         self.layers_initialized = True
 
@@ -238,19 +255,6 @@ class DoseEngine(nn.Module):
 
         return (ix, iy, iz)
 
-    def compute_kernels(self, attenuation_map) -> tuple[torch.Tensor, torch.Tensor]:
-        if attenuation_map.dim() == 3:
-            attenuation_map = attenuation_map.unsqueeze(0)
-
-        with torch.no_grad():
-            batched_radiological_depths = self.rad_depth_layer(attenuation_map)
-            batched_kernels = torch.tensor(
-                self.pencil_beam_kernel_layer(batched_radiological_depths),
-                device=self.device,
-                dtype=self.dtype,
-            )
-
-        return (batched_radiological_depths.detach(), batched_kernels.detach())
 
     def _assert_sizes(self, density_image, leaf_positions, jaw_positions, mus):
         """Validate input tensor sizes."""
@@ -279,15 +283,15 @@ class DoseEngine(nn.Module):
         assert mus.shape == expected_mus, \
             f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
         
-        if self.precomputed_kernels is None:
-            if density_image is None:
-                raise ValueError("CT image must be provided.")
-            assert density_image.dim() == 4, \
-                f"CT image needs 4 dimensions [B, D, H, W], got {density_image.dim()}D: {density_image.shape}"
-            
-            expected_ct = (B, *self.dose_grid_shape)
-            assert density_image.shape == expected_ct, \
-                f"CT shape mismatch: expected {expected_ct}, got {density_image.shape}"
+        
+        if density_image is None:
+            raise ValueError("CT image must be provided.")
+        assert density_image.dim() == 4, \
+            f"CT image needs 4 dimensions [B, D, H, W], got {density_image.dim()}D: {density_image.shape}"
+        
+        expected_ct = (B, *self.dose_grid_shape)
+        assert density_image.shape == expected_ct, \
+            f"CT shape mismatch: expected {expected_ct}, got {density_image.shape}"
         
         
         devices = {leaf_positions.device, jaw_positions.device, mus.device}
@@ -327,7 +331,6 @@ class DoseEngine(nn.Module):
         Returns:
             Dose tensor [B, H, D, W].
         """
-
         self._set_device_dtype(leaf_positions.device, leaf_positions.dtype)
         if not self.layers_initialized:
             raise Exception("Layers haven't been initialized yet. Dose engine cannot perform dose calculations.")
@@ -335,18 +338,18 @@ class DoseEngine(nn.Module):
         self._assert_sizes(density_image, leaf_positions, jaw_positions, mus)
 
         with torch.amp.autocast(self.device.type, dtype=self.dtype):
-            if self.precomputed_kernels is not None:
-                batched_radiological_depths = self.precomputed_radiological_depths
-                batched_kernels = self.precomputed_kernels
-            else:
-                batched_radiological_depths, batched_kernels = self.compute_kernels(density_image)
+            if density_image.dim() == 3:
+                density_image = density_image.unsqueeze(0)
+            with torch.no_grad():
+                batched_radiological_depths = self.rad_depth_layer(density_image).detach()
+                batched_kernels = self.pencil_beam_kernel_layer(batched_radiological_depths).detach()
 
             if not(return_intermediates):
                 del batched_radiological_depths
             H, D, W = self.dose_grid_shape
 
             if self._adjust_values:
-                leaf_positions, jaw_positions, mus = self.valid_parameters_layer(
+                leaf_positions, jaw_positions, mus = self.beam_validation_layer(
                     leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
                 )
 
@@ -405,8 +408,7 @@ class DoseEngine(nn.Module):
         Returns:
             Dose tensor [1, H, D, W]
         """
-        self._add_data_information(density_image)
-        self._add_beam_information(beam_input, overwrite)
+        self._initialize_layers(beam_input, overwrite)
 
         # Add batching dimension to parameters
         if density_image is not None:
@@ -436,10 +438,10 @@ class DoseEngine(nn.Module):
     def compute_dose_sequential(
         self,
         beam_sequence: BeamSequence,
-        density_image: torch.Tensor | None = None,
+        density_image: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
-        Compute dose by processing beams sequentially (memory efficient).
+        Compute dose by processing beams sequentially or in batches (memory efficient).
 
         Args:
             beam_sequence: BeamSequence containing all control points
@@ -448,11 +450,11 @@ class DoseEngine(nn.Module):
         Returns:
             Accumulated dose tensor [1, H, D, W]
         """
+        self._initialize_layers(beam_sequence)
         total_dose = None
-        self._add_data_information(density_image)
-        self._add_beam_information(beam_sequence)
 
-        for i, beam in enumerate(beam_sequence):
+        # Process beams one by one
+        for beam in beam_sequence:
             beam_dose = self.compute_dose(
                 beam,
                 density_image=density_image,
@@ -464,7 +466,7 @@ class DoseEngine(nn.Module):
             else:
                 total_dose = total_dose + beam_dose
 
-        self._add_beam_information(beam_sequence, overwrite=True)
+        self._initialize_layers(beam_sequence, overwrite=True)
         return total_dose
 
     def calibrate(self, 
@@ -481,8 +483,6 @@ class DoseEngine(nn.Module):
         beam.mu = calibration_mu * beam.mu
         water_attenuation = torch.ones(self.dose_grid_shape).to(self.device).to(self.dtype)
 
-        self.precomputed_kernels = None
-        self.precomputed_radiological_depths = None
         self.layers_initialized = False
         old_kernel_size = self.kernel_size
 
@@ -507,10 +507,10 @@ class DoseEngine(nn.Module):
             self.machine_config.mean_photon_energy_MeV = calibration_factor
 
         if original_beam_template is not None:
-            self._add_beam_information(original_beam_template, True)
+            self._initialize_layers(original_beam_template, True)
 
         self.kernel_size = old_kernel_size
-        self.layers_initialized = False
-        self.precomputed_kernels = None
-        self.precomputed_radiological_depths = None
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
