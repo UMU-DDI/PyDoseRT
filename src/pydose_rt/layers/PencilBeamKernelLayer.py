@@ -78,7 +78,7 @@ class PencilBeamKernelLayer(nn.Module):
             radiological_depth (torch.Tensor): Tensor of shape [B*G, P, 1] representing radiological depth for each voxel.
 
         Returns:
-            np.ndarray: Dose kernels of shape [kH, kW, B*G, D].
+            torch.Tensor: Dose kernels of shape [kH, kW, B*G, D].
         """
 
         kernels = self.pbm.get_nested_kernels(radiological_depth).to(radiological_depth.device).to(radiological_depth.dtype)

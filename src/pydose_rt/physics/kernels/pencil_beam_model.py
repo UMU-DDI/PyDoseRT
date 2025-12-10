@@ -153,11 +153,11 @@ class PencilBeamModel:
     Model for generating pencil beam dose kernels for radiotherapy dose calculation.
 
     Attributes:
-        tpr (float): Tissue phantom ratio (TPR 20/10) for beam quality.
+        tpr (torch.Tensor): Tissue phantom ratio (TPR 20/10) for beam quality.
         config (object): Configuration object containing resolution and TPR.
         kernel_size (int): Size of the kernel (number of pixels).
         params (dict): Precomputed kernel parameters for the given TPR.
-        rs (np.ndarray): Radial distance grid for kernel calculation.
+        rs (torch.Tensor): Radial distance grid for kernel calculation.
     """
     def __init__(self, 
                  resolution, 
@@ -204,7 +204,7 @@ class PencilBeamModel:
 
         Args:
             parameter (str): Parameter name (key in coeffs).
-            TPR (float): Tissue phantom ratio.
+            TPR (torch.Tensor): Tissue phantom ratio.
 
         Returns:
             Tensor: Computed parameter value.
@@ -216,10 +216,10 @@ class PencilBeamModel:
         Compute the A component of the kernel at depth d.
 
         Args:
-            d (float or np.ndarray): Depth in cm.
+            d (torch.Tensor): Depth in cm.
 
         Returns:
-            float or np.ndarray: A component value.
+            torch.Tensor: A component value.
         """
         return self.depth_A_per_a(d) * self.depth_a(d)
 
@@ -228,10 +228,10 @@ class PencilBeamModel:
         Compute the B component of the kernel at depth d.
 
         Args:
-            d (float or np.ndarray): Depth in cm.
+            d (torch.Tensor): Depth in cm.
 
         Returns:
-            float or np.ndarray: B component value.
+            torch.Tensor: B component value.
         """
         return self.depth_B_per_b(d) * self.depth_b(d)
 
@@ -240,10 +240,10 @@ class PencilBeamModel:
         Compute the A/a term for the kernel at depth d.
 
         Args:
-            d (float or np.ndarray): Depth in cm.
+            d (torch.Tensor): Depth in cm.
 
         Returns:
-            float or np.ndarray: A/a term value.
+            torch.Tensor: A/a term value.
         """
         return (
             self.params["A1"]
@@ -256,10 +256,10 @@ class PencilBeamModel:
         Compute the B/b term for the kernel at depth d.
 
         Args:
-            d (float or np.ndarray): Depth in cm.
+            d (torch.Tensor): Depth in cm.
 
         Returns:
-            float or np.ndarray: B/b term value.
+            torch.Tensor: B/b term value.
         """
         return (
             self.params["B1"]
@@ -275,10 +275,10 @@ class PencilBeamModel:
         the corrigendum published in  Radiotherapy & oncology Volume 98, Issue 2p286February 2011
 
         Args:
-            d (float or np.ndarray): Depth in cm.
+            d (torch.Tensor): Depth in cm.
 
         Returns:
-            float or np.ndarray: a parameter value.
+            torch.Tensor: a parameter value.
         """
         return self.params["a2"] + self.params["a1"] * d
 
@@ -287,10 +287,10 @@ class PencilBeamModel:
         Compute the b parameter for the kernel at depth d.
 
         Args:
-            d (float or np.ndarray): Depth in cm.
+            d (torch.Tensor): Depth in cm.
 
         Returns:
-            float or np.ndarray: b parameter value.
+            torch.Tensor: b parameter value.
         """
         return (
             self.params["b1"]
@@ -312,13 +312,13 @@ class PencilBeamModel:
         Generate pencil beam kernel for given depths and radial grid.
 
         Args:
-            d (np.ndarray): Radiological depth [mm], shape (B*G, N, 1).  # TODO: Fix this documentation as it does not correspond with the implementation
-            r (np.ndarray): Radial grid [mm], shape (Hk, Wk).
+            d (torch.Tensor): Radiological depth [mm], shape (B*G, N, 1).  # TODO: Fix this documentation as it does not correspond with the implementation
+            r (torch.Tensor): Radial grid [mm], shape (Hk, Wk).
             normalize (bool): Normalize to the unit kernel at 10cm radiological depth.            
             depth_threshold_mm (float): Minimum radiological depth [mm] below which kernel is zero. Default is 0.5mm.
 
         Returns:
-            np.ndarray: Pencil beam kernel, shape (B*G, N, Hk, Wk).
+            torch.Tensor: Pencil beam kernel, shape (B*G, N, Hk, Wk).
         """
         # shapes
         r2 = r.to(d.dtype).to(d.device)                # (Hk, Wk)
@@ -382,26 +382,6 @@ class PencilBeamModel:
         
         return K.to(torch.float32)  # (BG, N, Hk, Wk)
 
-    def apply_flattening(self, kernel: torch.Tensor, r: torch.Tensor, max_radius: float = 16, alpha: float = 0.2, beta: float = 2.0) -> torch.Tensor:
-        """
-        Apply flattening filter to the kernel for beam profile correction.
-
-        Args:
-            kernel (np.ndarray): Kernel to be flattened.
-            r (np.ndarray): Radial grid.
-            max_radius (float): Maximum radius for flattening.
-            alpha (float): Flattening parameter.
-            beta (float): Flattening parameter.
-
-        Returns:
-            np.ndarray: Flattened kernel.
-        """
-        flattening_factor = alpha - beta * (r / max_radius) ** 2
-        flattening_factor = torch.clip(
-            flattening_factor, 0.5, 1.0
-        )  # Clip for stability
-        return kernel * flattening_factor
-
     def get_rs(self, kernel_size: tuple) -> torch.Tensor:
         """
         Compute radial distance grid for kernel calculation.
@@ -410,7 +390,7 @@ class PencilBeamModel:
             kernel_size (list or tuple): Size of the kernel [H, W].
 
         Returns:
-            np.ndarray: Radial distance grid in cm.
+            torch.Tensor: Radial distance grid in cm.
         """
         
         h = torch.arange(0, kernel_size[0], dtype=torch.int32)
@@ -431,10 +411,10 @@ class PencilBeamModel:
         Generate kernels for nested radiological depths.
 
         Args:
-            radiological_depth (np.ndarray): Array of radiological depths.
+            radiological_depth (torch.Tensor): Array of radiological depths.
 
         Returns:
-            np.ndarray: Nested kernels for all depths.
+            torch.Tensor: Nested kernels for all depths.
         """
         return self.get_pencil_beam(
             d=radiological_depth[..., 0, torch.newaxis, torch.newaxis],
@@ -446,8 +426,8 @@ class PencilBeamModel:
         Compute the kernel support radius limit for a given depth and field size.
 
         Args:
-            d (float): Depth in cm.
-            F (float): Field size parameter.
+            d (torch.Tensor): Depth in cm.
+            F (torch.Tensor): Field size parameter.
 
         Returns:
             Tensor: Radius limit for kernel support.
