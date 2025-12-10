@@ -396,11 +396,12 @@ def quick_plot(patient, dose_pred, title, show_ct: bool = False, out_path = None
     dose_pred = dose_pred.cpu().detach().numpy()
     mae_max = 0.1 * dose_max
     alpha = 0.6 if show_ct else 1.0
+    CoM = np.array(ndimage.measurements.center_of_mass(list(patient.structures.values())[0].cpu().detach().numpy()), dtype=np.int32)
     plt.figure()
 
     for axis in range(3):
         plot_idx = (axis * 3) + 1
-        slice_idx = dose_volume.shape[axis] // 2
+        slice_idx = CoM[axis]
         plt.subplot(3, 3, plot_idx)
         if show_ct:
             plt.imshow(np.take(ct_volume, slice_idx, axis=axis), cmap='gray')
