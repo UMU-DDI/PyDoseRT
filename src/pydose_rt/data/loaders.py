@@ -75,6 +75,8 @@ def load_dicom(
         new_spacing=new_spacing,
         interpolator=sitk.sitkLinear,
     )
+    
+    ct_resampled = center_crop_axial(ct_resampled, max_size_cm=40.0)
 
     # 2. Resample all structures to the CT grid (use nearest-neighbor!)
     resampled_structures_torch = {}
@@ -173,6 +175,57 @@ def resample_image_to_spacing(image, new_spacing, interpolator=sitk.sitkLinear):
     )
     return resampled
 
+def center_crop_axial(image, max_size_cm=40.0):
+    """
+    Crop the axial plane (x, y) of a SimpleITK image to a maximum physical size.
+    Args:
+        image: SimpleITK image to crop
+        max_size_cm: Maximum physical size in cm for x and y dimensions
+    Returns:
+        Cropped SimpleITK image with updated origin
+    """
+    max_size_mm = max_size_cm * 10.0  # Convert cm to mm
+
+    spacing = image.GetSpacing()  # (x, y, z)
+    size = image.GetSize()  # (nx, ny, nz)
+    origin = image.GetOrigin()  # (x, y, z)
+
+    # Calculate physical size in mm for x and y
+    physical_size_x = size[0] * spacing[0]
+    physical_size_y = size[1] * spacing[1]
+
+    # Determine crop size in voxels
+    new_size_x = min(size[0], int(max_size_mm / spacing[0]))
+    new_size_y = min(size[1], int(max_size_mm / spacing[1]))
+    new_size_z = size[2]  # Keep z unchanged
+
+    # If no cropping needed, return original image
+    if new_size_x == size[0] and new_size_y == size[1]:
+        return image
+
+    # Calculate crop start indices (center crop)
+    start_x = (size[0] - new_size_x) // 2
+    start_y = (size[1] - new_size_y) // 2
+    start_z = 0
+
+    # Update origin to account for cropping
+    new_origin = (
+        origin[0] + start_x * spacing[0],
+        origin[1] + start_y * spacing[1],
+        origin[2]
+    )
+
+    # Extract region of interest
+    cropped = sitk.RegionOfInterest(
+        image,
+        size=[new_size_x, new_size_y, new_size_z],
+        index=[start_x, start_y, start_z]
+    )
+
+    # Update origin
+    cropped.SetOrigin(new_origin)
+
+    return cropped
 
 def load_asc_measurements(path: str,
                           coord_map: Tuple[str, str, str] = ("X", "Y", "Z")):
