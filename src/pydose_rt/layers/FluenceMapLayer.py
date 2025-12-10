@@ -283,7 +283,7 @@ class FluenceMapLayer(nn.Module):
 
         if self.use_output_factor:
             OF = get_output_factor(field_size_mlc_mm, field_size_jaw_mm, self.output_factors)
-            fluence_map = OF * fluence_map
+            fluence_map = OF[:, None, None, None] * fluence_map
 
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]
 
