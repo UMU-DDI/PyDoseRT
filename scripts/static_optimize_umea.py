@@ -62,7 +62,7 @@ if remote:
     device = device
     dtype = torch.float32
 
-    max_iter = 100
+    max_iter = 300
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
