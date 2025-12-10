@@ -45,3 +45,4 @@ database/optimal_deviation_validation/LBFGS/_t4/static_optimize_deviation_val_LB
 database/optimal_deviation_validation/LBFGS/_t5/static_optimize_deviation_val_LBFGS.py
 *.npy
 *egg-info
+*.stats
