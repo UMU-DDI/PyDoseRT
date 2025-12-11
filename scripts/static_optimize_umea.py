@@ -64,7 +64,7 @@ if remote:
     device = device
     dtype = torch.float32
 
-    max_iter = 200
+    max_iter = 150
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
@@ -298,6 +298,10 @@ for test_i in range(n_tests):
                     "Bladder_D_mean": 7*dose_pred[0, patient.structures["Bladder"]].mean().item(),
                     "PTV_D_95": 7*dose_at_volume_percent(dose_pred[0].cpu().detach().numpy(), patient.structures[ptv_struct_name].cpu().detach().numpy(), 95) if ptv_struct_name in patient.structures.keys() else 0.0,
                     "PTV_D_98": 7*dose_at_volume_percent(dose_pred[0].cpu().detach().numpy(), patient.structures[ptv_struct_name].cpu().detach().numpy(), 98) if ptv_struct_name in patient.structures.keys() else 0.0,
+                    "Rectum_D_mean_ref": 7*patient.dose[patient.structures["Rectum"]].mean().item(),
+                    "Bladder_D_mean_ref": 7*patient.dose[patient.structures["Bladder"]].mean().item(),
+                    "PTV_D_95_ref": 7*dose_at_volume_percent(patient.dose.cpu().detach().numpy(), patient.structures[ptv_struct_name].cpu().detach().numpy(), 95) if ptv_struct_name in patient.structures.keys() else 0.0,
+                    "PTV_D_98_ref": 7*dose_at_volume_percent(patient.dose.cpu().detach().numpy(), patient.structures[ptv_struct_name].cpu().detach().numpy(), 98) if ptv_struct_name in patient.structures.keys() else 0.0,
                     "mae_ptv": torch.mean(torch.abs(dose_pred[0, patient.structures[ptv_struct_name]] - 6.1)).item() if ptv_struct_name in patient.structures.keys() else 0.0,
                     "mae_ctv": torch.mean(torch.abs(dose_pred[0, patient.structures["CTVT"]] - 6.1)).item() if "CTVT" in patient.structures.keys() else 0.0,
                     "mae_penilebulb": torch.mean(torch.abs(dose_pred[0, patient.structures["PenileBulb"]])).item() if "PenileBulb" in patient.structures.keys() else 0.0,

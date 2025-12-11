@@ -156,8 +156,7 @@ def print_paper_plot(
         colors='white'
     )
 
-    ax_axial.set_title('Dose distribution (pred) — axial')
-
+    ax_axial.set_title('PyDoseRT Optimized — axial')
 
     # coronal / sagittal panel
     ax_cor = fig.add_subplot(gs[1])
@@ -206,7 +205,7 @@ def print_paper_plot(
         colors='white'
     )
 
-    ax_cor.set_title('Dose distribution (pred) — sagittal')
+    ax_cor.set_title('PyDoseRT Optimized — sagittal')
 
 
     # DVH panel
