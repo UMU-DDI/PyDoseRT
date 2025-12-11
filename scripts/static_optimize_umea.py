@@ -125,7 +125,7 @@ for test_i in range(n_tests):
         optimization.structures['CTVT']["weight"] = 0.0
         optimization.structures['SeminalVesicles']["weight"] = 0.0
         optimization.structures['Prostate']["weight"] = 0.0
-        optimization.structures[ptv_struct_name]["weight"] = 100.0
+        optimization.structures[ptv_struct_name]["weight"] = np.random.choice([100.0, 1000.0])
         optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.1, 1.0])
         optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.0, 0.1, 1.0, 10.0])
         optimization.structures['FemoralHead_R']["weight"] = optimization.structures['FemoralHead_L']["weight"] 
@@ -219,11 +219,11 @@ for test_i in range(n_tests):
             # PTV_Prostata_gol_4270
 
             if ptv_struct_name in patient.structures.keys():
-                raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[ptv_struct_name]] - 42.7)**2), optimization.structures[ptv_struct_name]["weight"]))
+                raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[ptv_struct_name]] - 42.7)), optimization.structures[ptv_struct_name]["weight"]))
 
             for struct_name in ['PenileBulb', 'Prostate', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'External']:
                 if struct_name in patient.structures.keys():
-                    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[struct_name]])**2), optimization.structures[struct_name]["weight"]))
+                    raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[struct_name]])), optimization.structures[struct_name]["weight"]))
 
             raw_losses.append(0.001 * torch.mean(torch.abs(beam_sequence.leaf_positions)))
             loss = torch.stack(raw_losses).sum()

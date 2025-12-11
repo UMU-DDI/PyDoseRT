@@ -313,7 +313,7 @@ def print_results(
     ax.set_title('Jaws (lower)')
     _imshow_fullwidth(
         ax,
-        pred_jaws.cpu().detach().numpy()[0, :, 0:1],
+        np.transpose(pred_jaws.cpu().detach().numpy()[0, :, 0:1]),
         cmap='gray', vmin=-200.0, vmax=200.0
     )
 
@@ -322,7 +322,7 @@ def print_results(
     ax.set_title('Jaws (higher)')
     _imshow_fullwidth(
         ax,
-        pred_jaws.cpu().detach().numpy()[0, :, 1:2],
+        np.transpose(pred_jaws.cpu().detach().numpy()[0, :, 1:2]),
         cmap='gray', vmin=-200.0, vmax=200.0
     )
 
