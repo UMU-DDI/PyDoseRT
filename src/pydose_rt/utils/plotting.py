@@ -14,12 +14,12 @@ from pydose_rt.data import Patient, OptimizationConfig
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from scipy.ndimage import gaussian_filter
 
-def overlay_mask_outline(mask_slice, color="red", linewidth=1, sigma=1.0):
+def overlay_mask_outline(mask_slice, color="red", linewidth=1, sigma=2.0):
     # Smooth the binary mask to produce clean contour boundaries
     smoothed = gaussian_filter(mask_slice.astype(float), sigma=sigma)
 
     for contour in measure.find_contours(smoothed, 0.5):
-        plt.plot(contour[:, 1], contour[:, 0], color=color, linewidth=linewidth)
+        plt.plot(contour[:, 1], contour[:, 0], color=color, linewidth=linewidth, linestyle='solid')
 
 
 def print_paper_plot(
@@ -207,7 +207,7 @@ def print_paper_plot(
         colors='white'
     )
 
-    ax_cor.set_title('Dose distribution (pred) — coronal')
+    ax_cor.set_title('Dose distribution (pred) — sagittal')
 
 
     # DVH panel
