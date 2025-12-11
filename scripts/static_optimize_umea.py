@@ -145,7 +145,7 @@ for test_i in range(n_tests):
             dtype=dtype,
             requires_grad=True
             )
-        beam_sequence.jaw_positions.requires_grad_(False)
+        # beam_sequence.jaw_positions.requires_grad_(False)
 
         patient = patient.to(device).to(dtype)
         ct_volume = patient.density_image.unsqueeze(0)
