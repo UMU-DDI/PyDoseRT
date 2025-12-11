@@ -101,7 +101,7 @@ gantry_angles = torch.rad2deg(beam_sequence.gantry_angles)
 number_of_leaf_pairs  = beam_sequence.num_leaf_pairs
 field_size = beam_sequence.field_size
 iso_center = beam_sequence.iso_center
-collimator_angles = torch.rad2_deg(beam_sequence.collimator_angles)
+collimator_angles = torch.rad2deg(beam_sequence.collimator_angles)
 sid = beam_sequence.sid
 open_field_size = 100.0
 
