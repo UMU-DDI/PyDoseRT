@@ -19,7 +19,7 @@ def overlay_mask_outline(mask_slice, color="red", linewidth=1, sigma=2.0):
     smoothed = gaussian_filter(mask_slice.astype(float), sigma=sigma)
 
     for contour in measure.find_contours(smoothed, 0.5):
-        plt.plot(contour[:, 1], contour[:, 0], color=color, linewidth=linewidth, linestyle=(0, (1, 1)))
+        plt.plot(contour[:, 1], contour[:, 0], color=color, linewidth=linewidth, linestyle=(0, (1, 2)))
 
 def print_paper_plot(
     experiment,

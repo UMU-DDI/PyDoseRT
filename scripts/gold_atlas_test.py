@@ -36,7 +36,7 @@ for patient_name in sorted(os.listdir(base_path)):
             torch.randn(1, device=device)  # triggers context creation
             torch.cuda.synchronize()
 
-        kernel_size = 55
+        kernel_size = 251
 
         patient, beam_sequences = loaders.load_dicom(
                     ct_folder=ct_folder, 
@@ -44,7 +44,7 @@ for patient_name in sorted(os.listdir(base_path)):
                     plan_path=rtplan_path, 
                     struct_path=rtstruct_path,
                     struct_names=["CTV", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"],
-                    use_delivery=False
+                    use_delivery=True
                     )
         beam_sequence = BeamSequence.from_beams([beam for beam in beam_sequences[0]] + [beam for beam in beam_sequences[1]])
         # beam_sequence = beam_sequence[0:2]
@@ -81,7 +81,7 @@ for patient_name in sorted(os.listdir(base_path)):
         print(f"Dose computation in {time.time() - st} seconds.")
         # np.savez(f"out/dose_{patient_name}.npy", dose_pred.cpu().numpy())
 
-        ext_mask = binary_erosion(binary_fill_holes(patient.structures["External"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=5)
+        ext_mask = binary_erosion(binary_fill_holes(patient.structures["External"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=7)
         ext_mask *= (dose_volume > 0.1 * dose_volume.max()).cpu().detach().numpy()
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
         print(dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean())
