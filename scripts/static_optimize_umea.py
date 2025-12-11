@@ -13,7 +13,7 @@ from pydose_rt import DoseEngine
 from pydose_rt.objectives.losses import compute_dvh_loss, scale_loss
 from pydose_rt.objectives.metrics import dose_at_volume_percent
 from pydose_rt.layers import BeamValidationLayer
-from pydose_rt.utils.plotting import print_results, make_animation
+from pydose_rt.utils.plotting import print_results, make_animation, print_paper_plot
 from pydose_rt.objectives.metrics import result_validation
 from pydose_rt.utils.utils import get_initial_weights
 from dotenv import load_dotenv
@@ -60,6 +60,7 @@ if remote:
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
     kernel_size = 55
+    n_tests = 50
     device = device
     dtype = torch.float32
 
@@ -85,11 +86,12 @@ else:
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")
 
     kernel_size = 3
+    n_tests = 1
     device = device
     dtype = torch.float32
 
 
-    max_iter = 2
+    max_iter = 1
 
 ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
 machine_config = MachineConfig(
@@ -109,7 +111,6 @@ open_field_size = 100.0
 print_stuff = 0
 loss_plot = 1.0
 best_results = []
-n_tests = 50
 patience_thr = max_iter
 oar_dose = 10.0
 
@@ -212,8 +213,6 @@ for test_i in range(n_tests):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             st = time.time()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
             # Compute loss
             dose_pred_loss = dose_pred[0] * 7
             raw_losses = []
@@ -224,7 +223,7 @@ for test_i in range(n_tests):
             if "CTVT" in patient.structures.keys():
                 raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures["CTVT"]] - 42.7)), optimization.structures["CTVT"]["weight"]))
 
-            for struct_name in ['PenileBulb', 'Prostate', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'SeminalVesicles', 'External']:
+            for struct_name in ['PenileBulb', 'Prostate', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'External']:
                 if struct_name in patient.structures.keys():
                     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[struct_name]])), optimization.structures[struct_name]["weight"]))
 
@@ -346,6 +345,7 @@ for test_i in range(n_tests):
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
         experiment.log_asset_data(dose_pred[0].cpu().detach().numpy(), "dose.npy")
         print_results(experiment, optimization, patient, beam_sequence, dose_pred[0], title, plot_ct=True, preset="gold-atlas")
+        print_paper_plot(experiment, optimization, patient, 7*dose_pred[0]) # dose_pred[0]
         make_animation(experiment, patient, engine, animation_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
