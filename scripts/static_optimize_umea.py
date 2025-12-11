@@ -62,7 +62,7 @@ if remote:
     device = device
     dtype = torch.float32
 
-    max_iter = 300
+    max_iter = 500
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
@@ -101,7 +101,7 @@ gantry_angles = torch.rad2deg(beam_sequence.gantry_angles)
 number_of_leaf_pairs  = beam_sequence.num_leaf_pairs
 field_size = beam_sequence.field_size
 iso_center = beam_sequence.iso_center
-collimator_angles = beam_sequence.collimator_angles
+collimator_angles = torch.rad2_deg(beam_sequence.collimator_angles)
 sid = beam_sequence.sid
 open_field_size = 100.0
 
@@ -109,7 +109,7 @@ print_stuff = 0
 loss_plot = 1.0
 best_results = []
 n_tests = 50
-patience_thr = 100
+patience_thr = max_iter
 oar_dose = 10.0
 
 for test_i in range(n_tests):
@@ -171,7 +171,8 @@ for test_i in range(n_tests):
         epoch = 0
         lr = 1.0
         optimizer = torch.optim.AdamW(beam_sequence.parameters(),
-                                      lr=lr
+                                      lr=lr,
+                                      weight_decay=1e-4
                                       )
         # lr = np.random.choice([0.1, 0.05, 0.01, 0.005, 0.001])
         # optimizer = torch.optim.LBFGS(
@@ -225,20 +226,6 @@ for test_i in range(n_tests):
                 if struct_name in patient.structures.keys():
                     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[struct_name]])), optimization.structures[struct_name]["weight"]))
 
-            # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["FemoralHead_L"], 20), optimization.structures["FemoralHead_L"]["weight"])) # 
-            # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["FemoralHead_R"], 20), optimization.structures["FemoralHead_R"]["weight"])) # D_
-            # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["Bladder"], 40), optimization.structures["Bladder"]["weight"]))
-            # raw_losses.append(scale_loss(dvh_volume_objective(dose_pred, patient.structures["Bladder"], 21.0), optimization.structures["Bladder"]["weight"]))
-            # raw_losses.append(scale_loss(dvh_percentile_objective(dose_pred, patient.structures["Rectum"], 40), optimization.structures["Rectum"]["weight"]))
-            # raw_losses.append(scale_loss(dvh_volume_objective(dose_pred, patient.structures["Rectum"], 21.0), optimization.structures["Rectum"]["weight"]))
-            
-
-            # raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.leaf_positions[1:, ...] - beam_sequence.leaf_positions[:-1, ...]))), weights["leaf_complexity_loss"]))
-            # raw_losses.append(scale_loss(leaf_range_loss(beam_sequence.leaf_positions, beam_sequence.field_size[0], machine_config.maximum_leaf_tip_overlap), weights["leaf_reg_loss"]))
-            # raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.mus[1:, ...] - beam_sequence.mus[:-1, ...]))), weights["mu_complexity_loss"]))
-            # raw_losses.append(scale_loss(torch.mean((torch.abs(beam_sequence.jaw_positions[1:, ...] - beam_sequence.jaw_positions[:-1, ...]))), weights["jaw_complexity_loss"]))
-
-            # raw_losses = compute_dvh_loss(patient, optimization, machine_config, dose_pred[0], dose_target, beam_sequence, weights)
             loss = torch.stack(raw_losses).sum()
             
             # Backprop
@@ -278,7 +265,7 @@ for test_i in range(n_tests):
             dose_pred = latest["dose_pred"]
             loss_val = latest["loss_val"]
             beam_sequence = latest["beam_sequence"]
-            mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred))).cpu().detach().numpy(), 4)
+            mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred))[dose_target > (0.1 * dose_target.max())]).cpu().detach().numpy(), 4)
 
             mask_oar = patient.structures["Prostate"]
             for struct_name in ["PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles"]:
