@@ -345,7 +345,7 @@ for test_i in range(n_tests):
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
         experiment.log_asset_data(dose_pred[0].cpu().detach().numpy(), "dose.npy")
         print_results(experiment, optimization, patient, beam_sequence, dose_pred[0], title, plot_ct=True, preset="gold-atlas")
-        print_paper_plot(experiment, optimization, patient, 7*patient.dose) # dose_pred[0]
+        print_paper_plot(experiment, optimization, patient, 7*dose_pred[0]) # dose_pred[0]
         make_animation(experiment, patient, engine, animation_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
