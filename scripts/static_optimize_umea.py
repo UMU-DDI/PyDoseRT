@@ -11,6 +11,7 @@ from pathlib import Path
 from pydose_rt.data import Patient, OptimizationConfig, MachineConfig, loaders, BeamSequence
 from pydose_rt import DoseEngine
 from pydose_rt.objectives.losses import compute_dvh_loss, scale_loss
+from pydose_rt.objectives.metrics import dose_at_volume_percent
 from pydose_rt.layers import BeamValidationLayer
 from pydose_rt.utils.plotting import print_results, make_animation
 from pydose_rt.objectives.metrics import result_validation
@@ -62,7 +63,7 @@ if remote:
     device = device
     dtype = torch.float32
 
-    max_iter = 500
+    max_iter = 200
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
@@ -294,6 +295,10 @@ for test_i in range(n_tests):
                     "dose_mae": mae_loss,
                     "lr": lr_now,
                     "mae_loss": mae_loss,
+                    "Rectum_D_mean": dose_pred[0, patient.structures["Rectum"]].mean().item(),
+                    "Bladder_D_mean": dose_pred[0, patient.structures["Bladder"]].mean().item(),
+                    "PTV_D_95": dose_at_volume_percent(dose_pred[0].cpu().detach().numpy(), patient.structures[ptv_struct_name].cpu().detach().numpy(), 95) if ptv_struct_name in patient.structures.keys() else 0.0,
+                    "PTV_D_98": dose_at_volume_percent(dose_pred[0].cpu().detach().numpy(), patient.structures[ptv_struct_name].cpu().detach().numpy(), 98) if ptv_struct_name in patient.structures.keys() else 0.0,
                     "mae_ptv": torch.mean(torch.abs(dose_pred[0, patient.structures[ptv_struct_name]] - 6.1)).item() if ptv_struct_name in patient.structures.keys() else 0.0,
                     "mae_ctv": torch.mean(torch.abs(dose_pred[0, patient.structures["CTVT"]] - 6.1)).item() if "CTVT" in patient.structures.keys() else 0.0,
                     "mae_penilebulb": torch.mean(torch.abs(dose_pred[0, patient.structures["PenileBulb"]])).item() if "PenileBulb" in patient.structures.keys() else 0.0,
