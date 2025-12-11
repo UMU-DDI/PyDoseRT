@@ -204,59 +204,20 @@ def export_plan(treatment: OptimizationConfig, input_plan_path, output_plan_path
     ds = pydicom.dcmread(input_plan_path)
  
     # Remove batch dimension
-    leafs = treatment.plan_mlcs[0]  # (2, num_cp, num_leaves)
-    jaws = treatment.plan_jaws[0]    # (2, num_cp)
-    mus = treatment.plan_mus[0]      # (num_cp,)
- 
-    # Reverse the scaling transformation
-    leafs = leafs * scaling - (scaling / 2)
-    jaws = jaws * scaling - (scaling / 2)
- 
-    mus = np.hstack([0.0, mus])  # (2, num_cp)
-    # Split leafs back into higher and lower banks
-    beam_higher = np.vstack([leafs[1][1:2, :], leafs[1]])  # (num_cp, num_leaves)
-    beam_lower = np.vstack([leafs[0][1:2, :], leafs[0]])   # (num_cp, num_leaves)
-    jaw_lower = np.hstack([jaws[0][1:2], jaws[0]])    # (num_cp,)
-    jaw_higher = np.hstack([jaws[1][1:2], jaws[1]])    # (num_cp,)
+    leafs = treatment[0].leaf_positions  # (2, num_cp, num_leaves)
+    jaws = treatment[0].jaw_positions    # (2, num_cp)
+    mus = treatment[0].mus      # (num_cp,)
+
  
     num_cp = len(mus)
-    multi_cp = num_cp > 1
  
-    # Convert differential MUs back to cumulative if multi-control point
-    if multi_cp:
-        cumulative_mus = np.cumsum(mus) / np.sum(mus)
-        total_mu = np.sum(mus)
-        cumulative_weights = cumulative_mus / cumulative_mus.max()
- 
-        # For multi-CP, we need to convert averaged positions back to actual control point positions        # This reverses the averaging done in fetch_plan_data
+    cumulative_mus = np.cumsum(mus)
+    cumulative_mus -= cumulative_mus[0]
+    cumulative_mus /= np.sum(mus)
+    total_mu = np.sum(mus)
+    cumulative_weights = cumulative_mus / cumulative_mus.max()
+    
 
-        actual_beam_higher = np.zeros((num_cp, beam_higher.shape[1]))
-        actual_beam_lower = np.zeros((num_cp, beam_lower.shape[1]))
-        actual_jaw_lower = np.zeros(num_cp)
-        actual_jaw_higher = np.zeros(num_cp)
- 
-        # Extrapolate first control point backwards from first two midpoints
-        # If m[0] and m[1] are midpoints, assume linear progression:
-        # p[0] = 2*m[0] - m[1] ensures proper reconstruction
-        actual_beam_higher[0] = beam_higher[0]
-        actual_beam_lower[0] = beam_lower[0]
-        actual_jaw_lower[0] = jaw_lower[0]
-        actual_jaw_higher[0] = jaw_higher[0]
- 
-        # Reconstruct subsequent control points using midpoint formula: p[i+1] = 2*m[i] - p[i]
-        for i in range(num_cp):
-            actual_beam_higher[i] = beam_higher[i]
-            actual_beam_lower[i] = beam_lower[i]
-            actual_jaw_lower[i] = jaw_lower[i]
-            actual_jaw_higher[i] = jaw_higher[i]
-    else:
-        total_mu = mus[0]
-        cumulative_weights = [1.0]
-        actual_beam_higher = beam_higher
-        actual_beam_lower = beam_lower
-        actual_jaw_lower = jaw_lower
-        actual_jaw_higher = jaw_higher
- 
     # Find the beam to modify
     beam_found = False
     for beam in ds.BeamSequence:
@@ -280,14 +241,10 @@ def export_plan(treatment: OptimizationConfig, input_plan_path, output_plan_path
                     break
  
                 # Update cumulative meterset weight
-                if multi_cp:
-                    if index == 0:
-                        cps.CumulativeMetersetWeight = 0.0
-                    else:
-                        cps.CumulativeMetersetWeight = float(cumulative_weights[index])
+                if index == 0:
+                    cps.CumulativeMetersetWeight = 0.0
                 else:
-                    if hasattr(cps, "CumulativeMetersetWeight"):
-                        cps.CumulativeMetersetWeight = 1.0
+                    cps.CumulativeMetersetWeight = float(cumulative_weights[index])
  
                 # Update MLC and jaw positions
                 if "BeamLimitingDevicePositionSequence" in cps:
@@ -295,16 +252,16 @@ def export_plan(treatment: OptimizationConfig, input_plan_path, output_plan_path
                         if sequence.RTBeamLimitingDeviceType == "MLCX":
                             # Combine higher and lower banks
                             mlc_positions = np.concatenate([
-                                actual_beam_lower[index],
-                                actual_beam_higher[index]
+                                leafs[index, :, 0],
+                                leafs[index, :, 1]
                             ])
                             mlc_positions = [float(x) for x in mlc_positions]
                             sequence.LeafJawPositions = mlc_positions
  
                         elif sequence.RTBeamLimitingDeviceType == "ASYMX":
                             jaw_positions = [
-                                float(actual_jaw_lower[index]),
-                                float(actual_jaw_higher[index])
+                                float(jaws[index, 0]),
+                                float(jaws[index, 1])
                             ]
                             sequence.LeafJawPositions = jaw_positions
  

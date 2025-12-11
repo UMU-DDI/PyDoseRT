@@ -123,14 +123,14 @@ for test_i in range(n_tests):
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
         optimization.structures['CTVT']["weight"] = 100.0
         optimization.structures[ptv_struct_name]["weight"] = 100.0
-        optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.01, 0.1])
-        optimization.structures['Prostate']["weight"] = np.random.choice([0.01, 0.1, 1.0, 10.0, 100.0])
-        optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.01, 0.1, 1.0, 10.0])
-        optimization.structures['FemoralHead_R']["weight"] = optimization.structures['FemoralHead_L']["weight"]
-        optimization.structures['Bladder']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0, 100.0])
-        optimization.structures['Rectum']["weight"] = np.random.choice([0.0, 0.01, 0.1, 1.0, 10.0])
+        optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.1])
+        optimization.structures['Prostate']["weight"] = np.random.choice([0.1, 1.0, 10.0])
+        optimization.structures['FemoralHead_L']["weight"] = 10.0
+        optimization.structures['FemoralHead_R']["weight"] = 10.0
+        optimization.structures['Bladder']["weight"] = np.random.choice([10.0, 100.0])
+        optimization.structures['Rectum']["weight"] = np.random.choice([10.0, 100.0])
         optimization.structures['SeminalVesicles']["weight"] = 0.0
-        optimization.structures['External']["weight"] = 100.0
+        optimization.structures['External']["weight"] = 1.0
 
 
         beam_sequence = BeamSequence.create(
@@ -161,6 +161,7 @@ for test_i in range(n_tests):
             dtype=dtype, 
             device=device
         )
+        engine.calibrate(machine_config.calibration_mu, beam_sequence.to_delivery())
         valid_parameters_layer = BeamValidationLayer(
             machine_config=machine_config, 
             device=device,
@@ -227,6 +228,7 @@ for test_i in range(n_tests):
                 if struct_name in patient.structures.keys():
                     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[struct_name]])), optimization.structures[struct_name]["weight"]))
 
+            raw_losses.append(0.001 * torch.mean(torch.abs(beam_sequence.leaf_positions)))
             loss = torch.stack(raw_losses).sum()
             
             # Backprop
