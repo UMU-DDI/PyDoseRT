@@ -64,7 +64,7 @@ if remote:
     device = device
     dtype = torch.float32
 
-    max_iter = 200
+    max_iter = 100
 else:
     base = Path(f"/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/{patient_name}")
 
@@ -125,13 +125,13 @@ for test_i in range(n_tests):
         optimization.structures['CTVT']["weight"] = 100.0
         optimization.structures[ptv_struct_name]["weight"] = 100.0
         optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.1])
-        optimization.structures['Prostate']["weight"] = np.random.choice([0.1, 1.0, 10.0])
+        optimization.structures['Prostate']["weight"] = np.random.choice([0.1, 10.0])
         optimization.structures['FemoralHead_L']["weight"] = 10.0
         optimization.structures['FemoralHead_R']["weight"] = 10.0
-        optimization.structures['Bladder']["weight"] = np.random.choice([10.0, 100.0])
-        optimization.structures['Rectum']["weight"] = np.random.choice([10.0, 100.0])
+        optimization.structures['Bladder']["weight"] = np.random.choice([10.0, 25.0, 50.0, 75.0, 100.0])
+        optimization.structures['Rectum']["weight"] = np.random.choice([10.0, 25.0, 50.0, 75.0])
         optimization.structures['SeminalVesicles']["weight"] = 0.0
-        optimization.structures['External']["weight"] = 1.0
+        optimization.structures['External']["weight"] = np.random.choice([1.0, 10.0, 25.0])
 
 
         beam_sequence = BeamSequence.create(
@@ -345,7 +345,7 @@ for test_i in range(n_tests):
         experiment.log_asset_data(beam_sequence.mus.cpu().detach().numpy(), "mu_values.npy")
         experiment.log_asset_data(dose_pred[0].cpu().detach().numpy(), "dose.npy")
         print_results(experiment, optimization, patient, beam_sequence, dose_pred[0], title, plot_ct=True, preset="gold-atlas")
-        print_paper_plot(experiment, optimization, patient, 7*dose_pred[0]) # dose_pred[0]
+        print_paper_plot(experiment, optimization, patient, 7*patient.dose) # dose_pred[0]
         make_animation(experiment, patient, engine, animation_sequence, dose_max=7.0)
     except Exception as e:
         print("Exception during test:", e)
