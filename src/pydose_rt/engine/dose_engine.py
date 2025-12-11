@@ -510,7 +510,3 @@ class DoseEngine(nn.Module):
             self._initialize_layers(original_beam_template, True)
 
         self.kernel_size = old_kernel_size
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
