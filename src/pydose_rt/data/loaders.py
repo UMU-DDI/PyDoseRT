@@ -17,7 +17,6 @@ def load_dicom(
     plan_path: Path | None,
     struct_path: Path | None,
     struct_names: List[str] | None = None,
-    recenter: bool = True,
     use_delivery: bool = False,
     new_spacing: tuple[float, float, float] = (2.0, 2.0, 2.0),
     device: torch.device | str = 'cuda',
