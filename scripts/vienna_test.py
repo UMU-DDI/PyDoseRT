@@ -23,7 +23,7 @@ machine_config = MachineConfig(
     )
 all_results = []
 kernel_size = 51
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/transfer_files/')
+base_path = Path('path_to_files/')
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
