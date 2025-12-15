@@ -203,7 +203,7 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
             masks[struct_names[idx]] = mask
     return masks
 
-def load_dose(path, new_spacing=(2.0, 2.0, 2.0)):
+def load_dose(path):
     # Load with pydicom for DoseGridScaling
     dataset = pydicom.dcmread(path)
     scaling = float(dataset.DoseGridScaling)
@@ -214,35 +214,13 @@ def load_dose(path, new_spacing=(2.0, 2.0, 2.0)):
     dose = reader.Execute()
     dose = sitk.Cast(dose, sitk.sitkFloat32) * scaling
 
-    # ------------------------------
-    # Resample to new_spacing
-    # ------------------------------
-    original_spacing = dose.GetSpacing()
-    original_size = dose.GetSize()
-
-    # Compute new size preserving physical dimensions
-    new_size = [
-        int(round(osz * ospc / nspc))
-        for osz, ospc, nspc in zip(original_size, original_spacing, new_spacing)
-    ]
-
-    resampler = sitk.ResampleImageFilter()
-    resampler.SetInterpolator(sitk.sitkLinear)
-    resampler.SetOutputSpacing(new_spacing)
-    resampler.SetSize(new_size)
-    resampler.SetOutputDirection(dose.GetDirection())
-    resampler.SetOutputOrigin(dose.GetOrigin())
-    resampler.SetDefaultPixelValue(0.0)
-
-    dose_resampled = resampler.Execute(dose)
-
     # Beam name
     beam_name = dataset.ReferencedRTPlanSequence[0].ReferencedSOPInstanceUID
     beam_number = safe_get_beam_number(dataset)
     if beam_number is not None:
         beam_name = f"{beam_name}_{beam_number}"
 
-    return dose_resampled, beam_name
+    return dose, beam_name
 
 def safe_get_beam_number(ds):
     """

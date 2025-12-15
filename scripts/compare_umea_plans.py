@@ -13,22 +13,38 @@ dtype=torch.float32
 
 do_plot = True
 
-field_sizes = [100]
+field_sizes = [50, 100, 200]
 
 raw_measurements = loaders.load_asc_measurements("/home/bolo/Documents/PyDoseRT/test_data/10 MV Photons/TrueBeam X10 Squares OK.asc", coord_map=("X", "Z", "Y"))
 results =  []
+
+if do_plot:
+    cols = 1
+    rows = 1
+
+    fig = plt.figure(figsize=(15, 10))
+    # axes = axes.flatten()
 for field_size in field_sizes:
     exp_name = f"{field_size}"
 
     measurements = raw_measurements.copy()
     measurements = [measurement for measurement in measurements if measurement["header_dict"]["FSZ"] == [str(field_size), str(field_size)]]
     # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == measurement["header_dict"]["STS"][2]]
-    measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][1]) == 0.0) and (float(measurement["header_dict"]["EDS"][2]) != 200.0) and (float(measurement["header_dict"]["EDS"][0]) != 0.0)]
+    # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == str(100.0)]
+    # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][1] == str(0.0)]
+
+
+    measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][1] == str(0.0)]
+    measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][0] == str(0.0)]
+
+
+    # measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][1]) == 0.0) and (float(measurement["header_dict"]["EDS"][2]) != 200.0) and (float(measurement["header_dict"]["EDS"][0]) != 0.0)]
 
     resolution = (1.0, 1.0, 1.0)
     ct_array_shape = (500, 500, 500)
     machine_config = MachineConfig(
-        preset="src/pydose_rt/data/machine_presets/umea_10MV.json"
+        preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
+        # profile_corrections=None,
         )
     phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)
     number_of_beams=1
@@ -59,18 +75,12 @@ for field_size in field_sizes:
         density_image=phantom.density_image).detach()
     dose = dose
 
-    if do_plot:
-        N = len(measurements)
-        cols = 3
-        rows = math.ceil(N / cols)
-
-        fig = plt.figure(figsize=(15, 10))
-        # axes = axes.flatten()
 
     for i, measurement in enumerate(measurements):
         samples = sample_tensor_nearest(dose[0, ...], resolution, np.subtract(iso_center, (0.5, 100.5, 0.5)), measurement["coords_engine"])
         samples = samples * measurement["dose"].max() / samples.max()
-        mape = np.mean(np.abs(samples - measurement["dose"])[measurement["dose"] > 0] /  measurement["dose"][measurement["dose"] > 0])
+        # mape = np.mean(np.abs(samples - measurement["dose"])[measurement["dose"] > 0] /  measurement["dose"][measurement["dose"] > 0])
+        mape = np.mean(np.abs(samples - measurement["dose"]))
         results.append(mape)
 
         if (do_plot):
@@ -102,20 +112,17 @@ for field_size in field_sizes:
                 varying_str = "+".join(axis_names[changing_idx])
                 axis_label = f"Distance along {varying_str} [mm]"
 
-            plt.plot(ticks, samples, color="orange", linestyle="solid")
-            plt.plot(ticks, measurement["dose"], color="blue", linestyle="dashed")
+            plt.plot(ticks, samples, color="orange", linestyle="solid", label=f"PyDoseRT - {str(int(field_size / 10))}x{str(int(field_size /10))}cm")
+            plt.plot(ticks, measurement["dose"], color="blue", linestyle="dashed", label=f"Measurement - {str(int(field_size / 10))}x{str(int(field_size /10))}cm")
 
-            # plt.set_title(f"{measurement['header_dict']['STS']} - {measurement['header_dict']['EDS']}")
             plt.xlabel(axis_label)
-    if do_plot:
-        plt.axis('off')
-
-        plt.tight_layout()
-        plt.savefig(f"out/profiles_{exp_name}.png")
-        plt.close()
-        # plt.show()
+            print(f"Experiment: {exp_name}\t\tResults: {np.mean(results)}")
+if do_plot:
+    # plt.axis('off')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f"out/profiles.png")
+    plt.close()
     
-    del machine_config, dose_engine, dose, phantom
-print(f"Experiment: {exp_name}\t\tResults: {np.mean(results)}")
 
     

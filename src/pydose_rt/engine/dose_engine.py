@@ -506,7 +506,6 @@ class DoseEngine(nn.Module):
             print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
 
+        self.kernel_size = old_kernel_size
         if original_beam_template is not None:
             self._initialize_layers(original_beam_template, True)
-
-        self.kernel_size = old_kernel_size

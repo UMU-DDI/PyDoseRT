@@ -1,0 +1,172 @@
+{
+  "prescription_gy": 6.1,
+  "structures": {
+    "CTVT": {
+      "color": "red",
+      "lower_bound_gy": 42.7,
+      "higher_bound_gy": 44.8,
+      "lower_bound_target_percent": 98.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 1500.0,
+      "clinical_criteria": []
+    },
+    "PTV": {
+      "color": "black",
+      "lower_bound_gy": 38.43,
+      "higher_bound_gy": 45.69,
+      "lower_bound_target_percent": 99.0,
+      "higher_bound_target_percent": 2.0,
+      "weight": 1000.0,
+      "clinical_criteria": [
+        {
+          "criterion_type": "dose_at_volume",
+          "constraint_type": "at_least",
+          "dose_percent": 90.0,
+          "volume_percent": 99.0,
+          "description": "At least 90% prescription dose at 99.00 % volume"
+        },
+        {
+          "criterion_type": "dose_at_volume",
+          "constraint_type": "at_most",
+          "dose_percent": 107.0,
+          "volume_percent": 2.0,
+          "description": "At most 107% prescription dose at 2.00 % volume"
+        }
+      ]
+    },
+    "FemoralHead_L": {
+      "color": "green",
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 29.9,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
+      "clinical_criteria": [
+        {
+          "criterion_type": "dose_at_volume",
+          "constraint_type": "at_most",
+          "dose_percent": 70.0,
+          "volume_percent": 0.0,
+          "description": "At most 70% prescription dose at 0.00 % volume"
+        }
+      ]
+    },
+    "FemoralHead_R": {
+      "color": "blue",
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 29.9,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
+      "clinical_criteria": [
+        {
+          "criterion_type": "dose_at_volume",
+          "constraint_type": "at_most",
+          "dose_percent": 70.0,
+          "volume_percent": 0.0,
+          "description": "At most 70% prescription dose at 0.00 % volume"
+        }
+      ]
+    },
+    "Bladder": {
+      "color": "yellow",
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 38.5,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 85.0,
+      "weight": 0.1,
+      "clinical_criteria": [
+        {
+          "criterion_type": "volume_at_dose",
+          "constraint_type": "at_most",
+          "dose_percent": 90.0,
+          "volume_percent": 15.0,
+          "description": "At most 15.00 % volume at 90% prescription dose"
+        },
+        {
+          "criterion_type": "volume_at_dose",
+          "constraint_type": "at_most",
+          "dose_percent": 75.0,
+          "volume_percent": 35.0,
+          "description": "At most 35.00 % volume at 75% prescription dose"
+        },
+        {
+          "criterion_type": "volume_at_dose",
+          "constraint_type": "at_most",
+          "dose_percent": 65.5,
+          "volume_percent": 40.0,
+          "description": "At most 40.00 % volume at 65.5% prescription dose"
+        },
+        {
+          "criterion_type": "dose_at_volume",
+          "constraint_type": "at_most",
+          "dose_percent": 105.4,
+          "volume_percent": 0.0,
+          "description": "At most 105.4% prescription dose at 0.00 % volume"
+        },
+        {
+          "criterion_type": "volume_at_dose",
+          "constraint_type": "at_most",
+          "dose_percent": 57.4,
+          "volume_percent": 50.0,
+          "description": "At most 50.00 % volume at 57.4% prescription dose"
+        }
+      ]
+    },
+    "Rectum": {
+      "color": "pink",
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 38.5,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 85.0,
+      "weight": 0.1,
+      "clinical_criteria": [
+        {
+          "criterion_type": "volume_at_dose",
+          "constraint_type": "at_most",
+          "dose_percent": 90.0,
+          "volume_percent": 15.0,
+          "description": "At most 15.00 % volume at 90% prescription dose"
+        },
+        {
+          "criterion_type": "volume_at_dose",
+          "constraint_type": "at_most",
+          "dose_percent": 75.0,
+          "volume_percent": 35.0,
+          "description": "At most 35.00 % volume at 75% prescription dose"
+        },
+        {
+          "criterion_type": "volume_at_dose",
+          "constraint_type": "at_most",
+          "dose_percent": 65.5,
+          "volume_percent": 40.0,
+          "description": "At most 40.00 % volume at 65.5% prescription dose"
+        },
+        {
+          "criterion_type": "dose_at_volume",
+          "constraint_type": "at_most",
+          "dose_percent": 105.4,
+          "volume_percent": 0.0,
+          "description": "At most 105.4% prescription dose at 0.00 % volume"
+        }
+      ]
+    },
+    "Body": {
+      "color": "orange",
+      "lower_bound_gy": 0.0,
+      "higher_bound_gy": 46.97,
+      "lower_bound_target_percent": 0.0,
+      "higher_bound_target_percent": 100.0,
+      "weight": 0.1,
+      "clinical_criteria": [
+        {
+          "criterion_type": "dose_at_volume_cc",
+          "constraint_type": "at_most",
+          "dose_percent": 110.0,
+          "volume_cc": 0.01,
+          "description": "At most 110% of prescription dose at 0.01 cm³ volume"
+        }
+      ]
+    }
+  }
+}

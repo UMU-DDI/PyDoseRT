@@ -12,19 +12,19 @@ from scipy.ndimage import binary_fill_holes, binary_erosion
 from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
 import torch
 
-optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json",)
+optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/vienna.json",)
 machine_config = MachineConfig(
-    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
-    # profile_corrections=None,
-    # output_factors=None,
-    # head_scatter_amplitude=None,
-    # head_scatter_sigma=None
+    preset="src/pydose_rt/data/machine_presets/vienna_10MV.json",
+    profile_corrections=None,
+    output_factors=None,
+    head_scatter_amplitude=None,
+    head_scatter_sigma=None,
+    mlc_transmission=0.015
     )
-    
 all_results = []
-kernel_size = 251
-base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/')
-for patient_name in sorted(os.listdir(base_path))[0:1]:
+kernel_size = 51
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/transfer_files/')
+for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
         ct_folder, rtplan_path, rtdose_path, rtstruct_path = find_patient_paths(patient_dir)
@@ -43,18 +43,20 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
                     dose_path=rtdose_path,
                     plan_path=rtplan_path,
                     struct_path=rtstruct_path,
-                    struct_names=["CTV", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"],
+                    new_spacing=(3.0, 3.0, 3.0),
+                    struct_names=["CTV", "PTV", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "Body"],
                     use_delivery=True
                     )
-        beam_sequence = BeamSequence.from_beams([beam for beam in beam_sequences[0]] + [beam for beam in beam_sequences[1]])
+        patient.dose = patient.dose * patient.structures["Body"]
+        beam_sequence = beam_sequences[0]
         # beam_sequence = beam_sequence[0:2]
 
         ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
         patient = patient.to(device).to(dtype)
         dose_volume = patient.dose
-        density_image = torch.where(patient.structures["External"], patient.density_image, 0.0)
-        # ct_volume = patient.get_masked_ct("External")
-        # dose_volume = patient.get_masked_dose("External")
+        density_image = torch.where(patient.structures["Body"], patient.density_image, 0.0)
+        # ct_volume = patient.get_masked_ct("Body")
+        # dose_volume = patient.get_masked_dose("Body")
 
         doses = []
         beam_sequence = beam_sequence.to(device).to(dtype)
@@ -82,9 +84,9 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
         print(f"Dose computation in {time.time() - st} seconds.")
         # np.savez(f"out/dose_{patient_name}.npy", dose_pred.cpu().numpy())
 
-        ext_mask = binary_erosion(binary_fill_holes(patient.structures["External"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=7)
+        ext_mask = binary_erosion(binary_fill_holes(patient.structures["Body"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=7)
         ext_mask *= (dose_volume > 0.1 * dose_volume.max()).cpu().detach().numpy()
-        dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
+        dose_pred = torch.where(patient.structures["Body"], dose_pred[0], 0.0)
         scale = dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean()
         print(scale)
         # dose_pred = dose_pred * scale
@@ -120,7 +122,7 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
             beam_sequence, 
             dose_pred, 
             title=title, 
-            preset="gold-atlas", 
+            preset="gold-atlas",
             out_path=f"out/final_{patient_name}.png"
             )
 
