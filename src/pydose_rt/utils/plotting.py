@@ -118,6 +118,8 @@ def print_paper_plot(
 
     # ---- ROI outlines ----
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         overlay_mask_outline(
             roi.cpu().detach().numpy()[axial_z, axial_ystart:axial_yend, axial_xstart:axial_xend],
@@ -186,6 +188,8 @@ def print_paper_plot(
 
     # ---- ROI outlines ----
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         overlay_mask_outline(
             np.flipud(roi.cpu().detach().numpy()[coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]),
@@ -236,6 +240,8 @@ def print_paper_plot(
     # DVH panel
     ax = fig.add_subplot(gs[2])
     for idx, (struct_name, struct) in enumerate(treatment.structures.items()):
+        if len(patient.structures) <= idx:
+            continue
         color = struct["color"]
         roi = list(patient.structures.values())[idx]
         dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
@@ -308,7 +314,7 @@ def print_comparison_plot(
     })
 
     # compute a consistent dose max across predicted and reference dose
-    dose_max = float(max(patient.dose.max(), dose_pred.max()).item())
+    dose_max = dose_scaling * float(max(patient.dose.max(), dose_pred.max()).item())
 
     def _hide_ticks(ax):
         ax.set_xticks([])
@@ -363,6 +369,8 @@ def print_comparison_plot(
 
     # ---- ROI outlines ----
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         overlay_mask_outline(
             roi.cpu().detach().numpy()[axial_z, axial_ystart:axial_yend, axial_xstart:axial_xend],
@@ -432,6 +440,8 @@ def print_comparison_plot(
 
     # ---- ROI outlines ----
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         overlay_mask_outline(
             roi.cpu().detach().numpy()[axial_z, axial_ystart:axial_yend, axial_xstart:axial_xend],
@@ -491,25 +501,26 @@ def print_comparison_plot(
         title_fontsize=10
     )
 
-    # DVH panel
-    ax = fig.add_subplot(gs[2])
-    for idx, (struct_name, struct) in enumerate(treatment.structures.items()):
-        color = struct["color"]
-        roi = list(patient.structures.values())[idx]
-        dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
-        if dose_values.size == 0:
-            continue
-        bins = np.linspace(0, dose_max, 1000)
-        hist, bin_edges = np.histogram(dose_values, bins=bins, density=False)
-        cumulative_hist = np.cumsum(hist[::-1])[::-1]
-        cumulative_hist_normalized = cumulative_hist / cumulative_hist.max()
-        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle='solid', label=struct_name, color=color, linewidth=1.25)
+    gs_right = gridspec.GridSpecFromSubplotSpec(
+        2, 1,
+        subplot_spec=gs[0, 2],
+        height_ratios=[1, 1],
+        hspace=0.25
+    )
 
-    ax.set_xlabel("Dose (Gy)")
-    ax.set_ylabel("Volume Fraction")
-    ax.set_title("Dose Volume Histogram (DVH)")
-    ax.grid(True, linestyle=':', linewidth=0.5)
-    ax.legend(loc="lower left", frameon=False)
+    ax_right_top = fig.add_subplot(gs_right[0, 0])
+    ax_right_top.set_xlabel("Dose (Gy)")
+    ax_right_top.set_ylabel("Volume Fraction")
+    ax_right_top.set_title("Dose Volume Histogram (DVH)")
+    ax_right_top.grid(True, linestyle=':', linewidth=0.5)
+    ax_right_top.legend(loc="lower left", frameon=False)
+    # ax_right_top.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle='solid', label=struct_name, color=color, linewidth=1.25)
+    ax_right_bottom = fig.add_subplot(gs_right[1, 0])
+    ax_right_bottom.set_xlabel("Dose (Gy)")
+    ax_right_bottom.set_ylabel("Volume Fraction")
+    ax_right_bottom.set_title("Dose Volume Histogram (DVH)")
+    ax_right_bottom.grid(True, linestyle=':', linewidth=0.5)
+    ax_right_bottom.legend(loc="lower left", frameon=False)
 
     # Layout & save
     fig.tight_layout(rect=[0, 0, 1, 0.98])
@@ -672,6 +683,8 @@ def print_results(
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, axial)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         overlay_mask_outline(roi.cpu().detach().numpy()[axial_z, axial_xstart:axial_xend, :], color=color)
 
@@ -681,6 +694,8 @@ def print_results(
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, coronal)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         overlay_mask_outline(np.flipud(roi.cpu().detach().numpy()[coronal_zstart:coronal_zend, coronal_ystart:coronal_yend, coronal_x]), color=color)
 
@@ -692,6 +707,8 @@ def print_results(
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, axial)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         overlay_mask_outline(roi.cpu().detach().numpy()[axial_z, axial_xstart:axial_xend, :], color=color)
 
@@ -709,6 +726,8 @@ def print_results(
     # --- 10) DVH (line plot; same panel height as others for uniformity)
     ax = fig.add_subplot(gs[9])
     for idx, (color, roi_name) in enumerate([(struct["color"], struct_name) for struct_name, struct in treatment.structures.items()]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
@@ -720,6 +739,8 @@ def print_results(
         ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle="solid", label=roi_name, color=color)
 
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()]):
+        if len(patient.structures) <= idx:
+            continue
         roi = list(patient.structures.values())[idx]
         dose_values = patient.dose[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:

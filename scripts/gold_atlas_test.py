@@ -82,7 +82,7 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
         print(f"Dose computation in {time.time() - st} seconds.")
         # np.savez(f"out/dose_{patient_name}.npy", dose_pred.cpu().numpy())
 
-        ext_mask = binary_erosion(binary_fill_holes(patient.structures["External"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=7)
+        ext_mask = binary_erosion(binary_fill_holes(patient.structures["External"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=5)
         ext_mask *= (dose_volume > 0.1 * dose_volume.max()).cpu().detach().numpy()
         dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
         scale = dose_volume[patient.structures[ptv_struct_name] > 0].mean() / dose_pred[patient.structures[ptv_struct_name] > 0].mean()
