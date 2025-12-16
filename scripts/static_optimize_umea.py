@@ -54,7 +54,7 @@ if remote:
                 dose_path=rtdose_path,
                 plan_path=[ rtplan_path ],
                 struct_path=rtstruct_path,
-                struct_names=["CTVT", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
+                struct_names=["CTVT", "PTV", "PenileBulb", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
     beam_sequence = beam_sequence[0]
     optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json")

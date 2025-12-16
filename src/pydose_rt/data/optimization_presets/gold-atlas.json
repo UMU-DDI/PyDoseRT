@@ -37,9 +37,6 @@
     "PenileBulb": {
       "color": "cyan"
     },
-    "Prostate": {
-      "color": "purple"
-    },
     "FemoralHead_L": {
       "color": "green",
       "lower_bound_gy": 0.0,

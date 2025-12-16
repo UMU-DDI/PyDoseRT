@@ -92,10 +92,10 @@ def print_paper_plot(
     # compute center of mass safely (avoid deprecated measurements namespace)
     CoM = np.array(ndimage.center_of_mass(list(patient.structures.values())[0].cpu().detach().numpy()), dtype=np.int32)
     axial_z = CoM[0]
-    axial_xstart = max(CoM[2] - 48, 0)
-    axial_xend = CoM[2] + 48
-    axial_ystart = max(CoM[1] - 48, 0)
-    axial_yend = CoM[1] + 48
+    axial_xstart = max(CoM[2] - 64, 0)
+    axial_xend = CoM[2] + 64
+    axial_ystart = max(CoM[1] - 64, 0)
+    axial_yend = CoM[1] + 64
     coronal_x = CoM[2]
     coronal_zstart = max(CoM[0] - 40, 0)
     coronal_zend = CoM[0] + 40
