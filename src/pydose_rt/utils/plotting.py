@@ -11,8 +11,8 @@ import cv2
 from pydose_rt.data.beam import BeamSequence
 from pydose_rt.engine.dose_engine import DoseEngine
 from pydose_rt.data import Patient, OptimizationConfig
-from matplotlib.colors import ListedColormap, BoundaryNorm
 from scipy.ndimage import gaussian_filter
+from matplotlib.lines import Line2D
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1, sigma=2.0):
     # Smooth the binary mask to produce clean contour boundaries
@@ -140,6 +140,17 @@ def print_paper_plot(
     rgba_colors = [(r, g, b, a) for (r, g, b), a in zip(rgb_colors, alphas[1:])]
     cmap_disc = ListedColormap(rgba_colors)
 
+    # ---- Isodose legend handles (percent-based) ----
+    isodose_handles = [
+        Line2D(
+            [0], [0],
+            color=rgba_colors[i][:3],   # RGB only (legend ignores alpha well)
+            linewidth=3,
+            label=f"{isodose_percent_levels[i]}%"
+        )
+        for i in range(len(isodose_percent_levels))
+    ]
+
     # ---- Filled isodose bands (transparent → opaque) ----
     ax_axial.contourf(
         dose_axial,
@@ -157,7 +168,14 @@ def print_paper_plot(
     )
 
     ax_axial.set_title('PyDoseRT Optimized — axial')
-
+    ax_axial.legend(
+        handles=isodose_handles,
+        title="Isodose levels",
+        loc="lower left",
+        frameon=False,
+        fontsize=9,
+        title_fontsize=10
+    )
     # coronal / sagittal panel
     ax_cor = fig.add_subplot(gs[1])
     ax_cor.set_aspect('equal')
@@ -206,7 +224,14 @@ def print_paper_plot(
     )
 
     ax_cor.set_title('PyDoseRT Optimized — sagittal')
-
+    ax_cor.legend(
+        handles=isodose_handles,
+        title="Isodose levels",
+        loc="lower left",
+        frameon=False,
+        fontsize=9,
+        title_fontsize=10
+    )
 
     # DVH panel
     ax = fig.add_subplot(gs[2])
@@ -243,6 +268,254 @@ def print_paper_plot(
         plt.savefig(out_path, dpi=300, bbox_inches='tight')
         if experiment is not None:
             experiment.log_figure(out_path, overwrite=True)
+        plt.close(fig)
+
+def print_comparison_plot(
+    treatment: object,
+    patient: object,
+    dose_pred: torch.Tensor,
+    dose_scaling: float,
+    out_path=None,
+    isodose_percent_levels=(20, 40, 60, 80, 90, 95, 100, 105, 107, 110),
+    cmap_dose="turbo",
+):
+    """Updated plotting routine for publication-ready figures.
+
+    Minimal changes from the original function but with a few cleanups:
+      - avoids deprecated ndimage.measurements
+      - adds isodose contours (percent levels by default)
+      - uses a cleaner colormap and a shared colorbar for dose panels
+      - small style tweaks (font sizes, line widths) for publication
+
+    Parameters
+    ----------
+    experiment, treatment, patient, dose_pred, out_path
+        same meaning as in the original function
+    dose_alpha : float
+        alpha for overlaying dose prediction over the background CT
+    isodose_percent_levels : sequence of int
+        isodose percent levels to draw on the dose panels (e.g. [95,80,50,...])
+    cmap_dose : str
+        matplotlib colormap used for dose wash
+    """
+
+    # --- style tweaks for publication
+    plt.rcParams.update({
+        "font.size": 10,
+        "axes.titlesize": 12,
+        "axes.labelsize": 10,
+        "legend.fontsize": 9,
+    })
+
+    # compute a consistent dose max across predicted and reference dose
+    dose_max = float(max(patient.dose.max(), dose_pred.max()).item())
+
+    def _hide_ticks(ax):
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.tick_params(bottom=False, left=False)
+
+    def _imshow_fullwidth(ax, img, *, cmap='gray', vmin=None, vmax=None, alpha=1.0):
+        """
+        Show any array so it fills the axes horizontally and uses a fixed panel height.
+        Keeping data coordinates unchanged ensures overlays (contours) stay aligned.
+        """
+        im = ax.imshow(
+            img,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            interpolation='none',
+            aspect='auto',
+            alpha=alpha,
+        )
+        _hide_ticks(ax)
+        return im
+
+    # Figure + GridSpec: two narrow image columns and a wider DVH column
+    fig = plt.figure(figsize=(24, 6))
+    gs = gridspec.GridSpec(1, 3, figure=fig, width_ratios=[1, 1, 2], wspace=0.25)
+
+    # compute center of mass safely (avoid deprecated measurements namespace)
+    CoM = np.array(ndimage.center_of_mass(list(patient.structures.values())[0].cpu().detach().numpy()), dtype=np.int32)
+    axial_z = CoM[0]
+    axial_xstart = max(CoM[2] - 64, 0)
+    axial_xend = CoM[2] + 64
+    axial_ystart = max(CoM[1] - 64, 0)
+    axial_yend = CoM[1] + 64
+    coronal_x = CoM[2]
+    coronal_zstart = max(CoM[0] - 40, 0)
+    coronal_zend = CoM[0] + 40
+    coronal_ystart = max(CoM[1] - 40, 0)
+    coronal_yend = CoM[1] + 40
+
+    def _dose_slice_axial(arr, z=44, y_start=0, y_end=256, x_start=0, x_end=256):
+        return arr[z, y_start:y_end, x_start:x_end]
+
+
+    # draw axial panel (CT background + dose wash + isodose contours + structure outlines)
+    ax_axial = fig.add_subplot(gs[0])
+    ax_axial.set_aspect('equal')
+    ct_axial = _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+    dose_axial = _dose_slice_axial(dose_scaling*dose_pred.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+
+    _imshow_fullwidth(ax_axial, ct_axial, cmap='gray')
+
+    # ---- ROI outlines ----
+    for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        roi = list(patient.structures.values())[idx]
+        overlay_mask_outline(
+            roi.cpu().detach().numpy()[axial_z, axial_ystart:axial_yend, axial_xstart:axial_xend],
+            color=color,
+            linewidth=2.0
+        )
+
+    # ---- Discrete isodose levels (0%,10%,20%,...,90% for example) ----
+    boundaries_pct = (0,) + isodose_percent_levels                # e.g. (0,10,20,...)
+    boundaries_abs = [b/100.0 * dose_max for b in boundaries_pct]
+
+    # ---- Progressive alpha: 0.0 → 1.0 ----
+    alphas = np.linspace(0.0, 1.0, len(boundaries_pct))
+
+    # ---- Build a colormap with (r,g,b,alpha) per band ----
+    n_colors = len(boundaries_pct) - 1
+    base_cmap = plt.get_cmap(cmap_dose)
+    rgb_colors = base_cmap(np.linspace(0, 1, n_colors))[:, :3]    # strip old alpha
+
+    rgba_colors = [(r, g, b, a) for (r, g, b), a in zip(rgb_colors, alphas[1:])]
+    cmap_disc = ListedColormap(rgba_colors)
+
+    # ---- Isodose legend handles (percent-based) ----
+    isodose_handles = [
+        Line2D(
+            [0], [0],
+            color=rgba_colors[i][:3],   # RGB only (legend ignores alpha well)
+            linewidth=3,
+            label=f"{isodose_percent_levels[i]}%"
+        )
+        for i in range(len(isodose_percent_levels))
+    ]
+
+    # ---- Filled isodose bands (transparent → opaque) ----
+    ax_axial.contourf(
+        dose_axial,
+        levels=boundaries_abs,
+        cmap=cmap_disc,
+        antialiased=True
+    )
+
+    # ---- Thin white outlines between bands ----
+    ax_axial.contour(
+        dose_axial,
+        levels=boundaries_abs,
+        linewidths=0.6,
+        colors='white'
+    )
+
+    ax_axial.set_title('PyDoseRT Optimized — axial')
+    ax_axial.legend(
+        handles=isodose_handles,
+        title="Isodose levels",
+        loc="lower left",
+        frameon=False,
+        fontsize=9,
+        title_fontsize=10
+    )
+    # coronal / sagittal panel
+
+    ax_axial = fig.add_subplot(gs[1])
+    ax_axial.set_aspect('equal')
+    ct_axial = _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+    dose_axial = _dose_slice_axial(dose_scaling*patient.dose.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+
+    _imshow_fullwidth(ax_axial, ct_axial, cmap='gray')
+
+    # ---- ROI outlines ----
+    for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
+        roi = list(patient.structures.values())[idx]
+        overlay_mask_outline(
+            roi.cpu().detach().numpy()[axial_z, axial_ystart:axial_yend, axial_xstart:axial_xend],
+            color=color,
+            linewidth=2.0
+        )
+
+    # ---- Discrete isodose levels (0%,10%,20%,...,90% for example) ----
+    boundaries_pct = (0,) + isodose_percent_levels                # e.g. (0,10,20,...)
+    boundaries_abs = [b/100.0 * dose_max for b in boundaries_pct]
+
+    # ---- Progressive alpha: 0.0 → 1.0 ----
+    alphas = np.linspace(0.0, 1.0, len(boundaries_pct))
+
+    # ---- Build a colormap with (r,g,b,alpha) per band ----
+    n_colors = len(boundaries_pct) - 1
+    base_cmap = plt.get_cmap(cmap_dose)
+    rgb_colors = base_cmap(np.linspace(0, 1, n_colors))[:, :3]    # strip old alpha
+
+    rgba_colors = [(r, g, b, a) for (r, g, b), a in zip(rgb_colors, alphas[1:])]
+    cmap_disc = ListedColormap(rgba_colors)
+
+    # ---- Isodose legend handles (percent-based) ----
+    isodose_handles = [
+        Line2D(
+            [0], [0],
+            color=rgba_colors[i][:3],   # RGB only (legend ignores alpha well)
+            linewidth=3,
+            label=f"{isodose_percent_levels[i]}%"
+        )
+        for i in range(len(isodose_percent_levels))
+    ]
+
+    # ---- Filled isodose bands (transparent → opaque) ----
+    ax_axial.contourf(
+        dose_axial,
+        levels=boundaries_abs,
+        cmap=cmap_disc,
+        antialiased=True
+    )
+
+    # ---- Thin white outlines between bands ----
+    ax_axial.contour(
+        dose_axial,
+        levels=boundaries_abs,
+        linewidths=0.6,
+        colors='white'
+    )
+
+    ax_axial.set_title('PyDoseRT Optimized — axial')
+    ax_axial.legend(
+        handles=isodose_handles,
+        title="Isodose levels",
+        loc="lower left",
+        frameon=False,
+        fontsize=9,
+        title_fontsize=10
+    )
+
+    # DVH panel
+    ax = fig.add_subplot(gs[2])
+    for idx, (struct_name, struct) in enumerate(treatment.structures.items()):
+        color = struct["color"]
+        roi = list(patient.structures.values())[idx]
+        dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
+        if dose_values.size == 0:
+            continue
+        bins = np.linspace(0, dose_max, 1000)
+        hist, bin_edges = np.histogram(dose_values, bins=bins, density=False)
+        cumulative_hist = np.cumsum(hist[::-1])[::-1]
+        cumulative_hist_normalized = cumulative_hist / cumulative_hist.max()
+        ax.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle='solid', label=struct_name, color=color, linewidth=1.25)
+
+    ax.set_xlabel("Dose (Gy)")
+    ax.set_ylabel("Volume Fraction")
+    ax.set_title("Dose Volume Histogram (DVH)")
+    ax.grid(True, linestyle=':', linewidth=0.5)
+    ax.legend(loc="lower left", frameon=False)
+
+    # Layout & save
+    fig.tight_layout(rect=[0, 0, 1, 0.98])
+
+    if out_path is not None:
+        plt.savefig(out_path, dpi=300, bbox_inches='tight')
         plt.close(fig)
 
 def print_results(

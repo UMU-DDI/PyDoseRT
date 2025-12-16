@@ -78,7 +78,7 @@ else:
                 dose_path=rtdose_path, 
                 plan_path=rtplan_path, 
                 struct_path=rtstruct_path,
-                struct_names=["CTVT", "PTV", "PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
+                struct_names=["CTVT", "PTV", "PenileBulb", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles", "External"]
                 )
     beam_sequence: BeamSequence = beam_sequence[0]
     beam_sequence = beam_sequence.clone()[::16]
@@ -124,7 +124,6 @@ for test_i in range(n_tests):
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
         optimization.structures['CTVT']["weight"] = 0.0
         optimization.structures['SeminalVesicles']["weight"] = 0.0
-        optimization.structures['Prostate']["weight"] = 0.0
         optimization.structures[ptv_struct_name]["weight"] = np.random.choice([100.0, 1000.0])
         optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.1, 1.0])
         optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.0, 0.1, 1.0, 10.0])
@@ -221,7 +220,7 @@ for test_i in range(n_tests):
             if ptv_struct_name in patient.structures.keys():
                 raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[ptv_struct_name]] - 42.7)), optimization.structures[ptv_struct_name]["weight"]))
 
-            for struct_name in ['PenileBulb', 'Prostate', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'External']:
+            for struct_name in ['PenileBulb', 'FemoralHead_L', 'FemoralHead_R', 'Bladder', 'Rectum', 'External']:
                 if struct_name in patient.structures.keys():
                     raw_losses.append(scale_loss(torch.mean(torch.abs(dose_pred_loss[patient.structures[struct_name]])), optimization.structures[struct_name]["weight"]))
 
@@ -267,8 +266,8 @@ for test_i in range(n_tests):
             beam_sequence = latest["beam_sequence"]
             mae_loss = np.round(torch.mean(torch.abs((dose_target - dose_pred))[dose_target > (0.1 * dose_target.max())]).cpu().detach().numpy(), 4)
 
-            mask_oar = patient.structures["Prostate"]
-            for struct_name in ["PenileBulb", "Prostate", "FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles"]:
+            mask_oar = patient.structures["PenileBulb"].clone()
+            for struct_name in ["FemoralHead_L", "FemoralHead_R", "Bladder", "Rectum", "SeminalVesicles"]:
                 if struct_name in patient.structures.keys():
                     mask_oar += patient.structures[struct_name]
 
@@ -305,7 +304,6 @@ for test_i in range(n_tests):
                     "mae_ptv": torch.mean(torch.abs(dose_pred[0, patient.structures[ptv_struct_name]] - 6.1)).item() if ptv_struct_name in patient.structures.keys() else 0.0,
                     "mae_ctv": torch.mean(torch.abs(dose_pred[0, patient.structures["CTVT"]] - 6.1)).item() if "CTVT" in patient.structures.keys() else 0.0,
                     "mae_penilebulb": torch.mean(torch.abs(dose_pred[0, patient.structures["PenileBulb"]])).item() if "PenileBulb" in patient.structures.keys() else 0.0,
-                    "mae_prostate": torch.mean(torch.abs(dose_pred[0, patient.structures["Prostate"]])).item() if "Prostate" in patient.structures.keys() else 0.0,
                     "mae_femoralhead_l": torch.mean(torch.abs(dose_pred[0, patient.structures["FemoralHead_L"]])).item() if "FemoralHead_L" in patient.structures.keys() else 0.0,
                     "mae_femoralhead_r": torch.mean(torch.abs(dose_pred[0, patient.structures["FemoralHead_R"]])).item() if "FemoralHead_R" in patient.structures.keys() else 0.0,
                     "mae_bladder": torch.mean(torch.abs(dose_pred[0, patient.structures["Bladder"]])).item() if "Bladder" in patient.structures.keys() else 0.0,

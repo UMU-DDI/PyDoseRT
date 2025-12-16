@@ -9,7 +9,7 @@ from pydose_rt.utils.utils import find_patient_paths
 import numpy as np
 from pydose_rt import DoseEngine
 from scipy.ndimage import binary_fill_holes, binary_erosion
-from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
+from pydose_rt.utils.plotting import print_results, make_animation, quick_plot, print_comparison_plot
 import torch
 
 optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/gold-atlas.json",)
@@ -123,6 +123,7 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
             preset="gold-atlas", 
             out_path=f"out/final_{patient_name}.png"
             )
+        print_comparison_plot(optimization, patient, dose_pred, dose_scaling=7, out_path=f"out/comparison_{patient_name}.png")
 
         # make_animation(
         #     None, 
