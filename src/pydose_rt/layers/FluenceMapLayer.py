@@ -209,7 +209,7 @@ class FluenceMapLayer(nn.Module):
         sharpness = self.training_sharpness if self.training else None
 
         # ---------- new box (no sigmoids) ----------
-        mask = fractional_box_overlap(d, left_positions, right_positions, sharpness, min_value=self.mlc_transmission)
+        mask = fractional_box_overlap(d, left_positions, right_positions, min_value=self.mlc_transmission)
         # -------------------------------------------
 
         # Reshape
@@ -229,7 +229,7 @@ class FluenceMapLayer(nn.Module):
             j = self.jaw_indices
             if j.device != leaf_positions.device:
                 j = j.to(leaf_positions.device)  # [1, H, N]
-            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions, sharpness)
+            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions)
 
             jaw_mask = jaw_mask.view(B, G, H, 1)
             jaw_mask = jaw_mask.view(B * G, 1, H, 1)

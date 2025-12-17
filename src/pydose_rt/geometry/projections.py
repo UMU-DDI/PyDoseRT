@@ -14,40 +14,23 @@ def soft_min(a, b, sharpness=10.0):
     # min(a, b) = -max(-a, -b)
     return -soft_max(-a, -b, sharpness)
 
-def fractional_box_overlap(d, left, right, sharpness=10.0, min_value=0.0, max_value=1.0) -> torch.Tensor:
+def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0) -> torch.Tensor:
     """
-    Compute fractional overlap with smooth STE for stable gradient propagation.
-    Forward pass: Uses geometric max/min for accurate overlap computation.
-    Backward pass: Uses smooth approximation of max/min that considers bin position,
-                   providing position-aware gradients for both left and right edges.
- 
+    Compute fractional overlap with geometric max/min for accurate overlap computation.
     Args:
         d: Bin center positions
         left: Left edge positions
         right: Right edge positions
-        sharpness: Controls how closely soft operations approximate hard ones (default: 10.0)
     """
     half_w = 0.5
     bin_start = d - half_w
     bin_end   = d + half_w
  
-    # ----- Hard geometric overlap (forward) -----
     overlap_start_hard = torch.maximum(left - half_w, bin_start)
     overlap_end_hard = torch.minimum(right + half_w, bin_end)
-    hard = torch.clamp(overlap_end_hard - overlap_start_hard, min=0.0, max=1.0)
- 
-    # ----- Smooth surrogate (backward) -----
-    # Uses smooth max/min that considers actual positions relative to bin edges
-    if sharpness is None:
-        overlap_start_soft = overlap_start_hard
-        overlap_end_soft = overlap_end_hard
-    else:
-        overlap_start_soft = soft_max(left, bin_start, sharpness)
-        overlap_end_soft = soft_min(right, bin_end, sharpness)
-    soft = torch.clamp(overlap_end_soft - overlap_start_soft, min=min_value, max=max_value)
-    overlap = soft + (hard - soft).detach()
- 
-    return overlap.to(d.dtype)
+    hard = torch.clamp(overlap_end_hard - overlap_start_hard, min=min_value, max=max_value)
+
+    return hard
 
 def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_size: int, dtype: type) -> torch.Tensor:
     """
