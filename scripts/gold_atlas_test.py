@@ -24,7 +24,7 @@ machine_config = MachineConfig(
 all_results = []
 kernel_size = 251
 base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/GoldAtlasPlans/10X/')
-for patient_name in sorted(os.listdir(base_path))[0:1]:
+for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
         ct_folder, rtplan_path, rtdose_path, rtstruct_path = find_patient_paths(patient_dir)
@@ -99,7 +99,7 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None)
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None, gamma_threshold_distance=2.0, gamma_threshold_dose=2.0)
         if "clinical_criteria" in res.keys():
             print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
         if "gamma_pass_rate" in res.keys():
@@ -123,7 +123,7 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
             preset="gold-atlas", 
             out_path=f"out/final_{patient_name}.png"
             )
-        print_comparison_plot(optimization, patient, dose_pred, dose_scaling=7, out_path=f"out/comparison_{patient_name}.png")
+        print_comparison_plot(optimization, patient, dose_pred, out_path=f"out/comparison_{patient_name}.png")
 
         # make_animation(
         #     None, 
@@ -139,4 +139,4 @@ for patient_name in sorted(os.listdir(base_path))[0:1]:
         print(e)
         
 df = pd.DataFrame(all_results)
-df.to_csv("out/results_summary.csv", index=False)
+df.to_csv("out/gold_atlas_results_summary.csv", index=False)

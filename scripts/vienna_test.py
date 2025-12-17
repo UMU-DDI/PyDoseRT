@@ -9,7 +9,7 @@ from pydose_rt.utils.utils import find_patient_paths
 import numpy as np
 from pydose_rt import DoseEngine
 from scipy.ndimage import binary_fill_holes, binary_erosion
-from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
+from pydose_rt.utils.plotting import print_comparison_plot, print_results, make_animation, quick_plot
 import torch
 
 optimization = OptimizationConfig.from_json("src/pydose_rt/data/optimization_presets/vienna.json",)
@@ -19,11 +19,11 @@ machine_config = MachineConfig(
     output_factors=None,
     head_scatter_amplitude=None,
     head_scatter_sigma=None,
-    mlc_transmission=0.015
+    mlc_transmission=0.0
     )
 all_results = []
 kernel_size = 51
-base_path = Path('path_to_files/')
+base_path = Path('/home/bolo/Documents/PyDoseRT/test_data/transfer_files/')
 for patient_name in sorted(os.listdir(base_path)):
     try:
         patient_dir = base_path / patient_name
@@ -91,7 +91,7 @@ for patient_name in sorted(os.listdir(base_path)):
         print(scale)
         # dose_pred = dose_pred * scale
 
-        dose_max = max(dose_volume.max(), dose_pred.max()).item()
+        dose_max = patient.number_of_fractions * max(dose_volume.max(), dose_pred.max()).item()
 
         mae_map = torch.abs(dose_pred - dose_volume)
         mae_loss = np.mean(10.0*mae_map[ext_mask].cpu().detach().numpy())
@@ -101,7 +101,7 @@ for patient_name in sorted(os.listdir(base_path)):
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None)
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None, gamma_threshold_distance=3.0, gamma_threshold_dose=3.0)
         if "clinical_criteria" in res.keys():
             print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
         if "gamma_pass_rate" in res.keys():
@@ -109,6 +109,7 @@ for patient_name in sorted(os.listdir(base_path)):
 
         print(res_string)
         quick_plot(patient, dose_pred, title=res_string, out_path=f"out/quick_{patient_name}.png")
+        print_comparison_plot(optimization, patient, dose_pred, out_path=f"out/comparison_{patient_name}.png")
 
         row = {"patient_name": patient_name}
         row.update(res)        # Adds all scalar keys from res
@@ -140,4 +141,4 @@ for patient_name in sorted(os.listdir(base_path)):
         print(e)
         
 df = pd.DataFrame(all_results)
-df.to_csv("out/results_summary.csv", index=False)
+df.to_csv("out/vienna_results_summary.csv", index=False)

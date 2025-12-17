@@ -164,32 +164,6 @@ def volume_at_dose_min(
     actual_volume = volume_at_dose(dose_array, structure_mask, threshold_dose)
     return volume_threshold_percent / actual_volume if actual_volume > 0 else float('inf')
 
-def validate_clinical_criteria(patient: Patient,
-                               optimization_config: OptimizationConfig,
-                               pred_dose: np.ndarray) -> Dict[str, Dict[str, float]]:
-    """
-    Validate predicted dose against clinical criteria.
-
-    This is a convenience wrapper around OptimizationConfig.validate().
-
-    Parameters:
-    -----------
-    patient : Patient
-        Patient data including structure masks
-    optimization_config : OptimizationConfig
-        Treatment configuration with clinical criteria
-    pred_dose : np.ndarray
-        Predicted dose distribution (Gy), shape (1, D, H, W) or (D, H, W)
-
-    Returns:
-    --------
-    Dict[str, Dict[str, float]]
-        Nested dictionary with structure names as keys, and for each structure:
-        - 'criteria': List of criterion results
-        - Each criterion has: 'type', 'description', 'value', 'threshold', 'ratio', 'passed'
-    """
-    return optimization_config.validate(pred_dose, patient)
-
 def result_validation(patient: Patient,
                       machine_config: MachineConfig,
                       beam_sequence: BeamSequence,
@@ -197,52 +171,57 @@ def result_validation(patient: Patient,
                       optimization_config: OptimizationConfig = None,
                       compute_gamma: bool = False,                      
                       compute_clinical_criteria: bool = True,
-                      global_normalisation = None):
+                      global_normalisation = None,
+                      gamma_threshold_dose: float = 3.0,
+                      gamma_threshold_distance: float = 3.0
+                      ) -> Dict[str, float]:
     results = {}
     patient = patient.to('cpu')
     
     # Validate clinical criteria if requested
     if compute_clinical_criteria:
-        pred_dose_np = pred_dose.cpu().detach().numpy()
+        pred_dose_np = patient.number_of_fractions * pred_dose.cpu().detach().numpy()
+        patient_dose_np = patient.number_of_fractions * patient.dose.cpu().detach().numpy()
+
         validation_results = optimization_config.validate(pred_dose_np, patient)
         clinical_results = dict(sum([[(k + "_" +  v['type'], v['ratio']) for v in v_list['criteria']] for k, v_list in validation_results.items()], []))
         clinical_results["passed_test"] = np.mean(np.array(list(clinical_results.values())) < 1.0)
         results['clinical_criteria'] = clinical_results
 
-        dose_50_percent = 0.5 * patient.dose.cpu().detach().numpy().max()
-        dose_max = patient.dose.cpu().detach().numpy().max()
-        dose_95_percent = 0.95 * patient.dose.cpu().detach().numpy().max()
+        dose_50_percent = 0.5 * optimization_config.prescription_gy
+        dose_max = optimization_config.prescription_gy
+        dose_95_percent = 0.95 * optimization_config.prescription_gy
     
         dose_pred_50 = pred_dose_np > dose_50_percent
-        dose_true_50 = patient.dose.cpu().detach().numpy() > dose_50_percent
+        dose_true_50 = patient_dose_np > dose_50_percent
         results['dice_50'] = 2 * np.sum(dose_pred_50 * dose_true_50) / (np.sum(dose_pred_50) + np.sum(dose_true_50))
 
 
         dose_pred_95 = pred_dose_np > dose_95_percent
-        dose_true_95 = patient.dose.cpu().detach().numpy() > dose_95_percent
+        dose_true_95 = patient_dose_np > dose_95_percent
         results['dice_95'] = 2 * np.sum(dose_pred_95 * dose_true_95) / (np.sum(dose_pred_95) + np.sum(dose_true_95))
 
-        results['mean_dose_diff'] = np.mean(pred_dose_np - patient.dose.cpu().detach().numpy())
-        results['mean_abs_dose_diff'] = np.mean(np.abs(pred_dose_np - patient.dose.cpu().detach().numpy()))
-        results['mean_95th_percentile_diff'] = np.percentile(np.abs(pred_dose_np - patient.dose.cpu().detach().numpy()), 95.0)
+        results['mean_dose_diff'] = np.mean(pred_dose_np - patient_dose_np)
+        results['mean_abs_dose_diff'] = np.mean(np.abs(pred_dose_np - patient_dose_np))
+        results['mean_95th_percentile_diff'] = np.percentile(np.abs(pred_dose_np - patient_dose_np), 95.0)
 
         for mask_name in patient.structures.keys():
             results[f"{mask_name}_D_max"] = np.abs(patient.dose[patient.structures[mask_name]].cpu().detach().numpy().max() - pred_dose[patient.structures[mask_name]].cpu().detach().numpy().max())
             results[f"{mask_name}_D_mean"] = np.abs(patient.dose[patient.structures[mask_name]].cpu().detach().numpy().mean() - pred_dose[patient.structures[mask_name]].cpu().detach().numpy().mean())
         for mask_name in patient.structures.keys():
             for percent in [0.98, 0.5, 0.02]:
-                results[f"{mask_name}_D_{percent}%"] = dose_at_volume_percent(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent) - dose_at_volume_percent(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), percent)
+                results[f"{mask_name}_D_{percent}%"] = dose_at_volume_percent(patient_dose_np, patient.structures[mask_name].cpu().detach().numpy(), percent) - dose_at_volume_percent(pred_dose_np, patient.structures[mask_name].cpu().detach().numpy(), percent)
 
         volume_cc = np.prod(patient.resolution) / 1000.0
         for mask_name in patient.structures.keys():
             for cc in [2, 0.5]:
-                results[f"{mask_name}_D_{cc}_cc"] = dose_at_volume_cc(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc) - dose_at_volume_cc(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc)
+                results[f"{mask_name}_D_{cc}_cc"] = dose_at_volume_cc(patient_dose_np, patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc) - dose_at_volume_cc(pred_dose_np, patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc)
 
         for mask_name in patient.structures.keys():
             for vv in [np.round(0.5 * optimization_config.prescription_gy, 2), 
                     np.round(0.36 * optimization_config.prescription_gy, 2), 
                     np.round(0.4 * optimization_config.prescription_gy)]:
-                results[f"{mask_name}_V_{vv}_%"] = volume_at_dose(patient.dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), vv) - volume_at_dose(pred_dose.cpu().detach().numpy(), patient.structures[mask_name].cpu().detach().numpy(), vv)
+                results[f"{mask_name}_V_{vv}_%"] = volume_at_dose(patient_dose_np, patient.structures[mask_name].cpu().detach().numpy(), vv) - volume_at_dose(pred_dose_np, patient.structures[mask_name].cpu().detach().numpy(), vv)
 
             
     if compute_gamma:
@@ -252,15 +231,15 @@ def result_validation(patient: Patient,
         )
         
         # Compute dose cutoff value (10% of max dose)
-        gamma_dose_ref = patient.dose.cpu().detach().numpy()
-        gamma_dose_eval = pred_dose.cpu().detach().numpy()
+        gamma_dose_ref = patient_dose_np
+        gamma_dose_eval = pred_dose_np
         dose_cutoff = 10.0
         if global_normalisation is None:
             global_normalisation = gamma_dose_ref.max()
         dose_cutoff_value = dose_cutoff / 100 * global_normalisation
         gamma_mask = gamma_dose_ref > dose_cutoff_value
-        dose_threshold = 3.0
-        distance_threshold = 3.0
+        dose_threshold = gamma_threshold_dose
+        distance_threshold = gamma_threshold_distance
         max_gamma = 2.0
         
         # Create mask for evaluation (only where dose > cutoff)

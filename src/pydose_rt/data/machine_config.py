@@ -10,6 +10,12 @@ class MachineConfig(BaseSettings):
         default=None,
         description="Optional preset name whose values are merged before validation.",
     )
+    tpr_20_10: float = Field(
+        description="The tissue phantom ratio TPR20/10"
+    )
+    number_of_leaf_pairs: int = Field(
+        description="The number of leafs"
+    )
     minimum_leaf_opening: float = Field(
         default=5.0, description="The minimum opening of the leafs, given in mm."
     )
@@ -57,8 +63,9 @@ class MachineConfig(BaseSettings):
         default=None,
         description="Head scatter Gaussian sigma in MLC direction in mm",
     )
-    tpr_20_10: float = Field(
-        description="The tissue phantom ratio TPR20/10"
+    head_scatter_ssd_mm: float = Field(
+        default=50.0,
+        description="Source to scatter-source distance (flattening filter depth) in mm for head scatter model",
     )
     calibration_mu: float = Field(
         default=100,
@@ -70,7 +77,6 @@ class MachineConfig(BaseSettings):
     leaf_widths: Optional[list[float]] = Field(
         default=None, description="A list of the leaf widths" 
     )
-    number_of_leaf_pairs: int = Field(description="The number of leafs")
     profile_corrections: Optional[list[list[float]]] = Field(
         default=None,
         description="Off-axis correction data: [distances_mm, correction_ratios]"
@@ -78,10 +84,6 @@ class MachineConfig(BaseSettings):
     output_factors: Optional[list[list[float]]] = Field(
         default=None,
         description="Off-axis correction data: [distances_mm, correction_ratios]"
-    )
-    head_scatter_ssd_mm: float = Field(
-        default=50.0,
-        description="Source to scatter-source distance (flattening filter depth) in mm for head scatter model",
     )
 
     
@@ -128,54 +130,3 @@ class MachineConfig(BaseSettings):
         # (Env vars will still override later because BaseSettings.)
         merged = {**preset_values, **data}
         return merged
-
-
-    @computed_field(repr=False)
-    @property
-    def fluence_profile(self) -> tuple[np.ndarray, np.ndarray]:
-        return (
-            np.array(
-                [
-                    0.0,
-                    1.0,
-                    2.0,
-                    3.0,
-                    4.0,
-                    5.0,
-                    7.5,
-                    10.0,
-                    12.5,
-                    15.0,
-                    17.5,
-                    20.0,
-                    25.0,
-                    25.25,
-                    25.75,
-                    26.0,
-                    50.0,
-                ],
-                dtype=np.float32,
-            ),
-            np.array(
-                [
-                    1.0,
-                    0.989,
-                    0.949,
-                    0.9,
-                    0.85,
-                    0.795,
-                    0.685,
-                    0.598,
-                    0.522,
-                    0.465,
-                    0.415,
-                    0.372,
-                    0.294,
-                    0.22,
-                    0.1,
-                    0.03,
-                    0.03,
-                ],
-                dtype=np.float32,
-            ),
-        )

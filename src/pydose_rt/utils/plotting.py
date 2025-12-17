@@ -280,7 +280,6 @@ def print_comparison_plot(
     treatment: object,
     patient: object,
     dose_pred: torch.Tensor,
-    dose_scaling: float,
     out_path=None,
     isodose_percent_levels=(20, 40, 60, 80, 90, 95, 100, 105, 107, 110),
     cmap_dose="turbo",
@@ -314,7 +313,7 @@ def print_comparison_plot(
     })
 
     # compute a consistent dose max across predicted and reference dose
-    dose_max = dose_scaling * float(max(patient.dose.max(), dose_pred.max()).item())
+    dose_max = treatment.prescription_gy
 
     def _hide_ticks(ax):
         ax.set_xticks([])
@@ -363,7 +362,7 @@ def print_comparison_plot(
     ax_axial = fig.add_subplot(gs[0])
     ax_axial.set_aspect('equal')
     ct_axial = _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
-    dose_axial = _dose_slice_axial(dose_scaling*dose_pred.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+    dose_axial = _dose_slice_axial(patient.number_of_fractions * dose_pred.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
 
     _imshow_fullwidth(ax_axial, ct_axial, cmap='gray')
 
@@ -436,7 +435,7 @@ def print_comparison_plot(
     ax_axial = fig.add_subplot(gs[1])
     ax_axial.set_aspect('equal')
     ct_axial = _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
-    dose_axial = _dose_slice_axial(dose_scaling*patient.dose.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+    dose_axial = _dose_slice_axial(patient.number_of_fractions * patient.dose.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
 
     _imshow_fullwidth(ax_axial, ct_axial, cmap='gray')
 
@@ -515,16 +514,16 @@ def print_comparison_plot(
     y_slice = axial_ystart + (axial_yend - axial_ystart) // 2
     x_slice = axial_xstart + (axial_xend - axial_xstart) // 2
     ax_right_top = fig.add_subplot(gs_right[0, 0])
-    ax_right_top.plot(dose_pred.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='solid', color='orange', label="PyDoseRT")
-    ax_right_top.plot(patient.dose.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='dashed', color='blue', label="Reference")
+    ax_right_top.plot(patient.number_of_fractions * dose_pred.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='solid', color='orange', label="PyDoseRT")
+    ax_right_top.plot(patient.number_of_fractions * patient.dose.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='dashed', color='blue', label="Reference")
     ax_right_top.set_title("Anterior–Posterior Dose Profile")
     ax_right_top.set_ylabel("Dose (Gy)")
     ax_right_top.grid(True, linestyle=':', linewidth=0.5)
     ax_right_top.legend(loc="lower left", frameon=False)
     # ax_right_top.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle='solid', label=struct_name, color=color, linewidth=1.25)
     ax_right_bottom = fig.add_subplot(gs_right[1, 0])
-    ax_right_bottom.plot(dose_pred.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='solid', color='orange', label="PyDoseRT")
-    ax_right_bottom.plot(patient.dose.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='dashed', color='blue', label="Reference")
+    ax_right_bottom.plot(patient.number_of_fractions * dose_pred.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='solid', color='orange', label="PyDoseRT")
+    ax_right_bottom.plot(patient.number_of_fractions * patient.dose.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='dashed', color='blue', label="Reference")
     ax_right_bottom.set_title("Lateral Dose Profile")
     ax_right_bottom.set_ylabel("Dose (Gy)")
     ax_right_bottom.grid(True, linestyle=':', linewidth=0.5)
@@ -548,7 +547,7 @@ def print_results(
     preset="umea",
     out_path=None
 ):
-    dose_max = max(patient.dose.max(), dose_pred.max()).item()
+    dose_max = patient.number_of_fractions * max(patient.dose.max(), dose_pred.max()).item()
     def _hide_ticks(ax):
         ax.set_xticks([])
         ax.set_yticks([])
@@ -687,7 +686,7 @@ def print_results(
 
     # --- 6) Dose distribution (pred, axial)
     ax = fig.add_subplot(gs[5])
-    _imshow_fullwidth(ax, _dose_slice_axial(dose_pred.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max)
+    _imshow_fullwidth(ax, _dose_slice_axial(patient.number_of_fractions * dose_pred.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, axial)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
@@ -698,7 +697,7 @@ def print_results(
 
     # --- 7) Dose distribution (pred, sagittal)
     ax = fig.add_subplot(gs[6])
-    _imshow_fullwidth(ax, _dose_slice_coronal(dose_pred.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max)
+    _imshow_fullwidth(ax, _dose_slice_coronal(patient.number_of_fractions * dose_pred.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (pred, coronal)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
@@ -711,7 +710,7 @@ def print_results(
     ax = fig.add_subplot(gs[7])
     if plot_ct:
         _imshow_fullwidth(ax, _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='gray')
-    _imshow_fullwidth(ax, _dose_slice_axial(patient.dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
+    _imshow_fullwidth(ax, _dose_slice_axial(patient.number_of_fractions * patient.dose.cpu().detach().numpy(), z=axial_z, x_start=axial_xstart, x_end=axial_xend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, axial)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
@@ -723,8 +722,8 @@ def print_results(
     # --- 9) Dose distribution (gt, sagittal)
     ax = fig.add_subplot(gs[8])
     if plot_ct:
-        _imshow_fullwidth(ax, _dose_slice_coronal(patient.dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='gray')
-    _imshow_fullwidth(ax, _dose_slice_coronal(patient.dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
+        _imshow_fullwidth(ax, _dose_slice_coronal(patient.number_of_fractions * patient.dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='gray')
+    _imshow_fullwidth(ax, _dose_slice_coronal(patient.number_of_fractions * patient.dose.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend), cmap='jet', vmin=0.0, vmax=dose_max, alpha=dose_alpha)
     _hide_ticks(ax)
     ax.set_title('Dose distribution (gt, coronal)')
     for idx, color in enumerate([struct["color"] for struct_name, struct in treatment.structures.items()][:-1]):
@@ -737,7 +736,7 @@ def print_results(
         if len(patient.structures) <= idx:
             continue
         roi = list(patient.structures.values())[idx]
-        dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
+        dose_values = patient.number_of_fractions * dose_pred[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
             continue
         bins = np.linspace(0, dose_max, 1000)
@@ -750,7 +749,7 @@ def print_results(
         if len(patient.structures) <= idx:
             continue
         roi = list(patient.structures.values())[idx]
-        dose_values = patient.dose[roi > 0.0].cpu().detach().numpy()
+        dose_values = patient.number_of_fractions * patient.dose[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
             continue
         bins = np.linspace(0, dose_max, 1000)
@@ -920,10 +919,10 @@ def make_animation(experiment,
 
 
 def quick_plot(patient, dose_pred, title, show_ct: bool = False, out_path = None):
-    dose_max = max(patient.dose.max(), dose_pred.max()).item()
-    dose_volume = patient.dose.cpu().detach().numpy()
+    dose_max = patient.number_of_fractions * max(patient.dose.max(), dose_pred.max()).item()
+    dose_volume = patient.number_of_fractions * patient.dose.cpu().detach().numpy()
     ct_volume = patient._ct_tensor.cpu().detach().numpy()
-    dose_pred = dose_pred.cpu().detach().numpy()
+    dose_pred = patient.number_of_fractions * dose_pred.cpu().detach().numpy()
     mae_max = 0.1 * dose_max
     alpha = 0.6 if show_ct else 1.0
     CoM = np.array(ndimage.measurements.center_of_mass(list(patient.structures.values())[0].cpu().detach().numpy()), dtype=np.int32)
