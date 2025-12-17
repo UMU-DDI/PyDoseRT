@@ -125,6 +125,7 @@ def load_dicom(
         structures=resampled_structures_torch,
         dose=dose_tensor,
         resolution=resolution,
+        number_of_fractions=num_fractions
     )
     
 
