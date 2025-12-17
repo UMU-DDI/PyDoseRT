@@ -15,10 +15,19 @@ PyDoseRT implements a physics-based **pencil beam convolution model** with full 
 - **Fully Differentiable**: All operations support automatic differentiation for gradient-based optimization
 - **Physics-Based Modeling**: Pencil beam convolution with tissue heterogeneity, scatter, and penumbra effects
 - **DICOM Integration**: Native support for CT, RTDOSE, RTPLAN, and RTSTRUCT files
+  - Load existing treatment plans from TPS systems
+  - Import patient CT scans and structure sets
+  - Validate calculated dose against reference RTDOSE
 - **GPU Accelerated**: CUDA-optimized computations for fast dose calculations
-- **Treatment Modalities**: Support for VMAT (Volumetric Modulated Arc Therapy) and other techniques
-- **Clinical Constraints**: DVH (Dose-Volume Histogram) analysis and constraint evaluation
-- **Flexible API**: Easy integration with PyTorch optimization workflows
+  - Sequential processing mode for memory-efficient computation
+  - Parallel processing for maximum speed
+- **Treatment Modalities**: Support for VMAT (Volumetric Modulated Arc Therapy), IMRT, and static fields
+- **Clinical Validation**:
+  - Gamma index analysis (2%/2mm, 3%/3mm)
+  - DVH constraint evaluation
+  - Comparison with TPS dose distributions
+- **Gradient-Based Optimization**: Optimize MLC leaf positions and monitor units directly
+- **Calibration System**: Ensures accurate absolute dose at reference conditions
 
 ## Installation
 
@@ -30,17 +39,21 @@ PyDoseRT implements a physics-based **pencil beam convolution model** with full 
 
 ### Install from Source
 
+PyDoseRT is currently under active development. Install in editable mode to get the latest updates:
+
 ```bash
 # Clone the repository
 git clone https://github.com/UMU-DDI/PyDoseRT.git
 cd PyDoseRT
 
-# Install in development mode
+# Install in editable/development mode (recommended)
 pip install -e .
 
 # Or install with test dependencies
 pip install -e ".[test]"
 ```
+
+The `-e` flag installs the package in editable mode, which means changes to the source code are immediately reflected without reinstalling. This is recommended for development and staying up-to-date with the latest improvements.
 
 ### Dependencies
 
@@ -56,134 +69,230 @@ See `pyproject.toml` for the complete dependency list.
 
 ## Quick Start
 
-### Basic Dose Calculation
+### Basic Dose Calculation from DICOM Data
 
 ```python
 import torch
 from pydose_rt import DoseEngine
-from pydose_rt.data import MachineConfig, Phantom, Beam
+from pydose_rt.data import MachineConfig, loaders
+from pydose_rt.data.beam import BeamSequence
 
 # Setup device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+dtype = torch.float32
 
 # Load machine configuration (linear accelerator parameters)
 machine_config = MachineConfig(
-    preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
-    number_of_leaf_pairs=60,
-    tpr_20_10=0.72
+    preset="src/pydose_rt/data/machine_presets/umea_10MV.json"
 )
 
-# Create a water phantom for testing
-phantom = Phantom.from_uniform_water(
-    shape=(185, 167, 167),
-    spacing=(3.0, 3.0, 3.0)  # mm
-)
-
-# Define a beam
-beam = Beam.create(
-    gantry_angle_deg=0,
-    number_of_leaf_pairs=60,
-    field_size=(100, 100)  # mm
-)
-
-# Initialize dose engine
-dose_engine = DoseEngine(
-    ct_array_shape=phantom.ct_array.shape,
-    resolution=(3.0, 3.0, 3.0),
-    machine_config=machine_config,
-    beam_input=beam,
-    device=device,
-    dtype=torch.float32
-)
-
-# Calculate dose
-dose = dose_engine.compute_single_beam(beam, ct_image=phantom.ct_array)
-
-# Visualize
-from pydose_rt.utils.plotting import plot_dose_distribution
-plot_dose_distribution(dose, phantom.ct_array)
-```
-
-### Working with DICOM Data
-
-```python
-from pydose_rt.data import loaders
-
-# Load patient data from DICOM files
+# Load patient DICOM data (CT, RTPLAN, RTDOSE, RTSTRUCT)
 patient, beam_sequences = loaders.load_dicom(
     ct_folder="path/to/ct_series/",
     dose_path="path/to/rtdose.dcm",
     plan_path="path/to/rtplan.dcm",
-    struct_path="path/to/rtstruct.dcm"
+    struct_path="path/to/rtstruct.dcm",
+    struct_names=["CTV", "PTV", "Bladder", "Rectum", "External"],
+    use_delivery=True  # Use actual delivery MUs from plan
 )
 
-# Calculate dose for existing treatment plan
-dose = dose_engine.compute_beam_sequence(
-    beam_sequences[0],
-    patient.ct_array
+# Combine beam sequences if multiple arcs
+beam_sequence = BeamSequence.from_beams(
+    [beam for bs in beam_sequences for beam in bs]
 )
 
-# Compare with reference dose
-difference = dose - patient.dose_array
+# Move data to device
+patient = patient.to(device).to(dtype)
+beam_sequence = beam_sequence.to(device).to(dtype)
+
+# Get density image (masked by external contour)
+density_image = torch.where(
+    patient.structures["External"],
+    patient.density_image,
+    0.0
+)
+
+# Initialize dose engine
+dose_engine = DoseEngine(
+    kernel_size=251,  # Size of pencil beam kernel (larger = more accurate, slower)
+    dose_grid_spacing=patient.resolution,  # Voxel spacing (mm)
+    dose_grid_shape=density_image.shape,  # Grid dimensions
+    machine_config=machine_config,
+    beam_template=beam_sequence,
+    device=device,
+    dtype=dtype
+)
+
+# Calibrate dose engine to match machine output
+dose_engine.calibrate(
+    calibration_mu=machine_config.calibration_mu,
+    original_beam_template=beam_sequence
+)
+
+# Calculate dose
+dose_pred = dose_engine.compute_dose_sequential(
+    beam_sequence,
+    density_image=density_image
+)
+
+# Mask dose to external contour
+dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
+
+# Visualize
+from pydose_rt.utils.plotting import quick_plot
+quick_plot(patient, dose_pred, title="Predicted Dose Distribution")
+```
+
+### Dose Validation and Metrics
+
+```python
+from pydose_rt.objectives.metrics import result_validation
+from pydose_rt.data import OptimizationConfig
+
+# Load clinical objectives from preset
+optimization = OptimizationConfig.from_json(
+    "src/pydose_rt/data/optimization_presets/gold-atlas.json"
+)
+
+# Validate calculated dose against reference
+results = result_validation(
+    patient,
+    machine_config,
+    beam_sequence,
+    dose_pred,
+    optimization,
+    compute_gamma=True,  # Gamma index analysis
+    compute_clinical_criteria=True,  # DVH constraint checking
+    gamma_threshold_distance=2.0,  # mm
+    gamma_threshold_dose=2.0  # %
+)
+
+# Print results
+if "gamma_pass_rate" in results:
+    print(f"Gamma pass rate (2%/2mm): {results['gamma_pass_rate']:.2%}")
+
+if "clinical_criteria" in results:
+    print(f"Clinical criteria passed: {results['clinical_criteria']['passed_test']:.1%}")
+
+# Compare with TPS dose
+import torch
+mae = torch.abs(dose_pred - patient.dose).mean()
+print(f"Mean Absolute Error: {mae:.3f} Gy")
 ```
 
 ### Treatment Plan Optimization
 
 ```python
+import torch
 from pydose_rt.data import BeamSequence, OptimizationConfig
-from pydose_rt.objectives import compute_loss
+from pydose_rt.objectives.losses import compute_dvh_loss, scale_loss
 
-# Create optimizable beam sequence
-beam_sequence = BeamSequence.create(
-    gantry_angles=[0, 90, 180, 270],
-    number_of_leaf_pairs=60,
-    field_size=(200, 200),
-    requires_grad=True  # Enable gradient tracking
+# Load optimization objectives
+optimization = OptimizationConfig.from_json(
+    "src/pydose_rt/data/optimization_presets/gold-atlas.json"
 )
 
-# Define clinical constraints
-opt_config = OptimizationConfig(
-    structures={
-        "PTV": {"min_dose": 60.0, "max_dose": 66.0},
-        "OAR": {"max_dose": 30.0, "type": "organ_at_risk"}
-    }
+# Create optimizable beam sequence with gradient tracking
+beam_sequence = BeamSequence.create(
+    gantry_angles_deg=[0, 51, 102, 153, 204, 255, 306],  # 7 beams
+    number_of_leaf_pairs=60,
+    field_size=(400.0, 400.0),  # mm
+    iso_center=(0.0, 0.0, 0.0),
+    collimator_angles_deg=[0.0] * 7,
+    sid=1000.0,  # mm
+    open_field_size=100.0,  # Initial aperture
+    device=device,
+    dtype=dtype,
+    requires_grad=True  # Enable gradient tracking for MLC leaves and MUs
+)
+
+# Initialize optimizer (AdamW works well for fluence optimization)
+optimizer = torch.optim.AdamW(
+    beam_sequence.parameters(),
+    lr=1.0,
+    weight_decay=1e-4
 )
 
 # Optimization loop
-optimizer = torch.optim.Adam(beam_sequence.parameters(), lr=0.01)
-
-for iteration in range(100):
+max_iterations = 100
+for iteration in range(max_iterations):
     optimizer.zero_grad()
 
-    # Forward pass: calculate dose
-    dose = dose_engine.compute_beam_sequence(beam_sequence, patient.ct_array)
+    # Forward pass: calculate dose with current beam parameters
+    dose_pred = dose_engine.compute_dose(
+        beam_sequence.to_delivery(),
+        density_image=patient.density_image.unsqueeze(0)
+    )
 
-    # Evaluate loss based on clinical constraints
-    loss = compute_loss(dose, patient, opt_config)
+    # Compute loss based on clinical constraints
+    losses = []
 
-    # Backward pass: compute gradients
-    loss.backward()
+    # PTV prescription (e.g., 60 Gy)
+    if "PTV" in patient.structures:
+        ptv_loss = torch.mean(
+            torch.abs(dose_pred[0][patient.structures["PTV"]] - 60.0)
+        )
+        losses.append(scale_loss(ptv_loss, optimization.structures["PTV"]["weight"]))
 
-    # Update beam parameters
+    # OAR sparing (minimize dose to organs at risk)
+    for oar_name in ["Bladder", "Rectum", "FemoralHead_L", "FemoralHead_R"]:
+        if oar_name in patient.structures:
+            oar_loss = torch.mean(
+                torch.abs(dose_pred[0][patient.structures[oar_name]])
+            )
+            losses.append(scale_loss(oar_loss, optimization.structures[oar_name]["weight"]))
+
+    # Total loss
+    total_loss = torch.stack(losses).sum()
+
+    # Backward pass and optimization step
+    total_loss.backward()
     optimizer.step()
 
     if iteration % 10 == 0:
-        print(f"Iteration {iteration}: Loss = {loss.item():.4f}")
+        print(f"Iteration {iteration}: Loss = {total_loss.item():.4f}")
 ```
 
 ## Architecture
 
 ### Dose Calculation Pipeline
 
-PyDoseRT implements dose calculation as a series of differentiable layers:
+PyDoseRT implements dose calculation as a series of differentiable PyTorch layers that process each beam's contribution:
 
-1. **Fluence Map Layer** - Converts MLC/jaw positions to 2D fluence maps
-2. **Fluence Volume Layer** - Projects fluence to 3D with divergent beam geometry
-3. **Radiological Depth Layer** - Converts CT to radiological depth maps
-4. **Pencil Beam Kernel Layer** - Generates depth-dependent dose kernels
-5. **Beam-wise Convolution Layer** - Applies kernels via 3D convolution
-6. **CP Rotation Layer** - Transforms dose to patient coordinates
-7. **Accumulation** - Sums contributions from all control points
+1. **Beam Validation Layer** - Validates beam geometry and MLC positions
+2. **Fluence Map Layer** - Converts MLC leaf positions and jaw settings to 2D fluence maps, accounting for:
+   - Leaf transmission
+   - Source penumbra (finite source size)
+   - Head scatter from collimators
+
+3. **Fluence Volume Layer** - Projects 2D fluence maps into 3D volumes using divergent beam geometry
+
+4. **Radiological Depth Layer** - Converts CT Hounsfield Units to radiological depth:
+   - HU-to-density conversion using calibrated lookup tables
+   - Ray-tracing through divergent beam geometry
+   - Effective depth calculation for tissue heterogeneity correction
+
+5. **Pencil Beam Kernel Layer** - Generates depth-dependent dose deposition kernels:
+   - Primary photon dose component
+   - Scatter dose with energy spectrum modeling
+   - Lateral scatter based on radiological depth
+   - Energy-dependent beam hardening
+
+6. **Beam-wise Convolution Layer** - Applies pencil beam kernels via 3D FFT convolution
+
+7. **Beam Rotation Layer** - Rotates dose distribution from beam's-eye-view to patient coordinates using trilinear interpolation
+
+8. **Accumulation** - Sums dose contributions from all control points/beams
+
+### Key Methods
+
+The `DoseEngine` class provides several computation methods:
+
+- **`compute_dose(beam_sequence, density_image)`** - Computes dose for a beam sequence in parallel (GPU memory intensive)
+- **`compute_dose_sequential(beam_sequence, density_image)`** - Processes beams sequentially to reduce memory usage
+- **`calibrate(calibration_mu, original_beam_template)`** - Calibrates the engine to match expected dose output at reference conditions
+
+After initialization, the engine must be calibrated using a reference beam configuration to ensure accurate absolute dose values.
 
 ### Repository Structure
 
@@ -223,9 +332,17 @@ You can create custom machine configurations by providing:
 
 ### Pencil Beam Convolution
 
-The dose calculation uses a convolution/superposition method based on Nyholm et. al. 2006.
+The dose calculation uses a parameterized convolution method based on Nyholm et. al. 2006.
 
-TODO: Add more info
+```bibtex
+@article{Nyholm2006,
+   title = {Photon pencil kernel parameterisation based on beam quality index},
+   author = {Tufve Nyholm and Jörgen Olofsson and Anders Ahnesjö and Mikael Karlsson},
+   doi = {10.1016/j.radonc.2006.02.002},
+   journal = {Radiotherapy and Oncology},
+   year = {2006}
+}
+```
 
 For a deeper understanding of the kernel computations, run `examples/kernel.ipynb`.
 
@@ -245,17 +362,15 @@ CT Hounsfield Units (HU) are converted to radiological depth using:
 
 ## Examples
 
-Explore the `examples/` directory for Jupyter notebooks demonstrating:
+### Jupyter Notebooks
 
-- **phantom.ipynb** - Basic dose calculations on a simple water phantom
-- **direct_optimization.ipynb** - Treatment plan optimization workflows
-- **rtplan_test.ipynb** - DICOM plan import and validation
+Explore the `examples/` directory for interactive tutorials:
 
-Run scripts from the `scripts/` directory:
+- **`phantom.ipynb`** - Basic dose calculations on water phantoms and simple geometries
+- **`direct_optimization.ipynb`** - Treatment plan optimization workflows with gradient descent
+- **`kernels.ipynb`** - Understanding pencil beam kernel computation and physics models
+- **`rtplan_test_1arc.ipynb`** - Loading and validating DICOM RT plans (VMAT example)
 
-```bash
-TODO: Fill up with meaningful scripts
-```
 
 ## Testing
 
@@ -280,7 +395,13 @@ pytest tests/benchmarks/ --benchmark-only
 - **Batch Processing**: Multiple patients/beams in parallel
 
 Typical performance (NVIDIA A100):
-TODO: Fill in Inference times
+
+| Operation                                   | Time [s] |
+| ------------------------------------------- | -------- |
+| Single beam dose calculation                | 0.221    |
+| VMAT prediction step (forward)              | 2.051    |
+| VMAT optimization step (forward + backward) | 5.102    |
+
 
 ## Limitations
 
@@ -299,6 +420,8 @@ TODO: Fill in arxiv article
 }
 ```
 
+PyDoseRT was developed in collaboration between Umeå University (Department of Diagnostics and Intervention) and the Medical University of Vienna (Department of Radiation Oncology).
+
 ## Contributing
 
 Contributions are welcome! Please:
@@ -311,12 +434,6 @@ Contributions are welcome! Please:
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 
-## Authors
-
-TODO: Come up with author list
-
-**Institution**: Umeå University - Department of Diagnostics and Intervention
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -325,7 +442,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For questions, issues, or feature requests:
 - Open an issue on [GitHub](https://github.com/UMU-DDI/PyDoseRT/issues)
-- Contact the authors via email
+- Contact the authors via [email](attila.simko@umu.se)
 
 ---
 
