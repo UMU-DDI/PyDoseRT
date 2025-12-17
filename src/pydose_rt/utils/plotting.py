@@ -420,8 +420,8 @@ def print_comparison_plot(
         colors='white'
     )
 
-    ax_axial.set_title('PyDoseRT Optimized — axial')
-    ax_axial.legend(
+    ax_axial.set_title('Reference TPS dose — axial')
+    leg = ax_axial.legend(
         handles=isodose_handles,
         title="Isodose levels",
         loc="lower left",
@@ -429,6 +429,8 @@ def print_comparison_plot(
         fontsize=9,
         title_fontsize=10
     )
+    for text in leg.get_texts():
+        text.set_color("white")
     # coronal / sagittal panel
 
     ax_axial = fig.add_subplot(gs[1])
@@ -491,8 +493,8 @@ def print_comparison_plot(
         colors='white'
     )
 
-    ax_axial.set_title('PyDoseRT Optimized — axial')
-    ax_axial.legend(
+    ax_axial.set_title('PyDoseRT result — axial')
+    leg = ax_axial.legend(
         handles=isodose_handles,
         title="Isodose levels",
         loc="lower left",
@@ -500,6 +502,8 @@ def print_comparison_plot(
         fontsize=9,
         title_fontsize=10
     )
+    for text in leg.get_texts():
+        text.set_color("white")
 
     gs_right = gridspec.GridSpecFromSubplotSpec(
         2, 1,
@@ -508,17 +512,21 @@ def print_comparison_plot(
         hspace=0.25
     )
 
+    y_slice = axial_ystart + (axial_yend - axial_ystart) // 2
+    x_slice = axial_xstart + (axial_xend - axial_xstart) // 2
     ax_right_top = fig.add_subplot(gs_right[0, 0])
-    ax_right_top.set_xlabel("Dose (Gy)")
-    ax_right_top.set_ylabel("Volume Fraction")
-    ax_right_top.set_title("Dose Volume Histogram (DVH)")
+    ax_right_top.plot(dose_pred.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='solid', color='orange', label="PyDoseRT")
+    ax_right_top.plot(patient.dose.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='dashed', color='blue', label="Reference")
+    ax_right_top.set_title("Anterior–Posterior Dose Profile")
+    ax_right_top.set_ylabel("Dose (Gy)")
     ax_right_top.grid(True, linestyle=':', linewidth=0.5)
     ax_right_top.legend(loc="lower left", frameon=False)
     # ax_right_top.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle='solid', label=struct_name, color=color, linewidth=1.25)
     ax_right_bottom = fig.add_subplot(gs_right[1, 0])
-    ax_right_bottom.set_xlabel("Dose (Gy)")
-    ax_right_bottom.set_ylabel("Volume Fraction")
-    ax_right_bottom.set_title("Dose Volume Histogram (DVH)")
+    ax_right_bottom.plot(dose_pred.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='solid', color='orange', label="PyDoseRT")
+    ax_right_bottom.plot(patient.dose.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='dashed', color='blue', label="Reference")
+    ax_right_bottom.set_title("Lateral Dose Profile")
+    ax_right_bottom.set_ylabel("Dose (Gy)")
     ax_right_bottom.grid(True, linestyle=':', linewidth=0.5)
     ax_right_bottom.legend(loc="lower left", frameon=False)
 
