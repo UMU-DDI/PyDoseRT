@@ -362,7 +362,7 @@ def print_comparison_plot(
     ax_axial = fig.add_subplot(gs[0])
     ax_axial.set_aspect('equal')
     ct_axial = _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
-    dose_axial = _dose_slice_axial(patient.number_of_fractions * dose_pred.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+    dose_axial = _dose_slice_axial(patient.number_of_fractions * patient.dose.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
 
     _imshow_fullwidth(ax_axial, ct_axial, cmap='gray')
 
@@ -435,7 +435,7 @@ def print_comparison_plot(
     ax_axial = fig.add_subplot(gs[1])
     ax_axial.set_aspect('equal')
     ct_axial = _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
-    dose_axial = _dose_slice_axial(patient.number_of_fractions * patient.dose.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+    dose_axial = _dose_slice_axial(patient.number_of_fractions * dose_pred.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
 
     _imshow_fullwidth(ax_axial, ct_axial, cmap='gray')
 
@@ -516,7 +516,7 @@ def print_comparison_plot(
     ax_right_top = fig.add_subplot(gs_right[0, 0])
     ax_right_top.plot(patient.number_of_fractions * dose_pred.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='solid', color='orange', label="PyDoseRT")
     ax_right_top.plot(patient.number_of_fractions * patient.dose.cpu().detach().numpy()[axial_z, y_slice, :], linestyle='dashed', color='blue', label="Reference")
-    ax_right_top.set_title("Anterior–Posterior Dose Profile")
+    ax_right_top.set_title("Lateral Dose Profile")
     ax_right_top.set_ylabel("Dose (Gy)")
     ax_right_top.grid(True, linestyle=':', linewidth=0.5)
     ax_right_top.legend(loc="lower left", frameon=False)
@@ -524,7 +524,7 @@ def print_comparison_plot(
     ax_right_bottom = fig.add_subplot(gs_right[1, 0])
     ax_right_bottom.plot(patient.number_of_fractions * dose_pred.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='solid', color='orange', label="PyDoseRT")
     ax_right_bottom.plot(patient.number_of_fractions * patient.dose.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='dashed', color='blue', label="Reference")
-    ax_right_bottom.set_title("Lateral Dose Profile")
+    ax_right_bottom.set_title("Anterior–Posterior Dose Profile")
     ax_right_bottom.set_ylabel("Dose (Gy)")
     ax_right_bottom.grid(True, linestyle=':', linewidth=0.5)
     ax_right_bottom.legend(loc="lower left", frameon=False)
