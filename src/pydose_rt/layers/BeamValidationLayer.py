@@ -25,15 +25,34 @@ import torch.nn as nn
 from typing import Tuple
 from pydose_rt.data import MachineConfig
 
+def proj_ste(x, lo=None, hi=None):
+    """
+    Straight-through projection to [lo, hi]:
+    forward uses clamped value; backward passes gradient as if identity.
+    """
+    x_proj = torch.clamp(x, min=lo, max=hi)
+    return x + (x_proj - x).detach()
+
 def adjust_mask(pos_a, pos_b, min_overlap, field_size):
     centers = (pos_a + pos_b) / 2
     widths  = (pos_b - pos_a)
-    widths = torch.clamp(widths, min=min_overlap)
-    centers = torch.clamp(centers, min=-field_size, max=field_size)
+    widths = proj_ste(widths, lo=min_overlap)
+    centers = proj_ste(centers, -field_size, field_size)
     adjusted_positions = torch.stack([centers - (widths / 2), centers + (widths / 2)], dim=-1)
-    adjusted_positions = torch.clamp(adjusted_positions, min=-field_size, max=field_size)
+    adjusted_positions = proj_ste(adjusted_positions, -field_size, field_size)
 
     return adjusted_positions
+
+
+# def adjust_mask(pos_a, pos_b, min_overlap, field_size):
+#     centers = (pos_a + pos_b) / 2
+#     widths  = (pos_b - pos_a)
+#     widths = torch.clamp(widths, min=min_overlap)
+#     centers = torch.clamp(centers, min=-field_size, max=field_size)
+#     adjusted_positions = torch.stack([centers - (widths / 2), centers + (widths / 2)], dim=-1)
+#     adjusted_positions = torch.clamp(adjusted_positions, min=-field_size, max=field_size)
+
+#     return adjusted_positions
 
 class BeamValidationLayer(nn.Module):
     """
@@ -95,7 +114,7 @@ class BeamValidationLayer(nn.Module):
             Tuple[torch.Tensor, torch.Tensor]: Validated and scaled leaf positions and MUs.
         """
 
-        mus = torch.clamp(mus, min=0.1)
+        mus = proj_ste(mus, lo=0.1)
 
         mlc_positions = adjust_mask(leaf_positions[..., 0], leaf_positions[..., 1], self.min_leaf_opening, self.half_field_width)
 
