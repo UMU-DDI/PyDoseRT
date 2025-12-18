@@ -215,7 +215,7 @@ def result_validation(patient: Patient,
         volume_cc = np.prod(patient.resolution) / 1000.0
         for mask_name in patient.structures.keys():
             for cc in [2, 0.5]:
-                results[f"{mask_name}_D_{cc}_cc"] = dose_at_volume_cc(patient_dose_np, patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc) - dose_at_volume_cc(pred_dose_np, patient.structures[mask_name].cpu().detach().numpy(), volume_cc, cc)
+                results[f"{mask_name}_D_{cc}_cc"] = dose_at_volume_cc(patient_dose_np, patient.structures[mask_name].cpu().detach().numpy(), cc,  volume_cc) - dose_at_volume_cc(pred_dose_np, patient.structures[mask_name].cpu().detach().numpy(), cc, volume_cc)
 
         for mask_name in patient.structures.keys():
             for vv in [np.round(0.5 * optimization_config.prescription_gy, 2), 
