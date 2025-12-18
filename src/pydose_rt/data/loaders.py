@@ -75,7 +75,7 @@ def load_dicom(
         interpolator=sitk.sitkLinear,
     )
     
-    # ct_resampled = center_crop_axial(ct_resampled, max_size_cm=40.0)
+    ct_resampled = center_crop_axial(ct_resampled, max_size_cm=40.0)
 
     # 2. Resample all structures to the CT grid (use nearest-neighbor!)
     resampled_structures_torch = {}
