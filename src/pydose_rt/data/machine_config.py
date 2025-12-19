@@ -41,11 +41,11 @@ class MachineConfig(BaseSettings):
         default=0.75, description="The maximum gantry angle speed defined in deg/s."
     )
     minimum_dose_rate: float = Field(
-        default=50.0, description="The minimum dynamic arc dose rate defined in MU/min."
+        default=0.833, description="The minimum dynamic arc dose rate defined in MU/s."
     )
     maximum_dose_rate: float = Field(
-        default=600.0,
-        description="The maximum dynamic arc dose rate defined in MU/min.",
+        default=10.0,
+        description="The maximum dynamic arc dose rate defined in MU/s.",
     )
     mlc_transmission: float = Field(
         default=0.0,

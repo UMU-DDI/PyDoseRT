@@ -77,7 +77,7 @@ def mus_loss(mus, config):
         return penalty
 
     dose_rate = (
-        (config.maximum_dose_rate / 60)
+        (config.maximum_dose_rate)
         * (config.gantry_diff_deg / max(config.minimum_gantry_angle_speed, 1e-3))
     )
     mu_rate_loss = mu_rate_reg(mus, dose_rate)
