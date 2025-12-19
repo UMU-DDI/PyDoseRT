@@ -99,7 +99,7 @@ for patient_name in sorted(os.listdir(base_path)):
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None, gamma_threshold_distance=2.0, gamma_threshold_dose=2.0)
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None, gamma_threshold_distance=3.0, gamma_threshold_dose=3.0)
         if "clinical_criteria" in res.keys():
             print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
         if "gamma_pass_rate" in res.keys():

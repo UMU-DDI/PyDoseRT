@@ -37,8 +37,8 @@ patient, beam_sequences = loaders.load_dicom(
 
 
 
-mu_path = '/home/bolo/Documents/PyDoseRT/out/mu_values-200.npy'
-mlc_path = '/home/bolo/Documents/PyDoseRT/out/mlc_positions-200.npy'
+mu_path = '/home/bolo/Documents/PyDoseRT/out/mu_values-150.npy'
+mlc_path = '/home/bolo/Documents/PyDoseRT/out/mlc_positions-150.npy'
 
 with open(mu_path, "r") as f:
     mus = np.array(ast.literal_eval(f.read()))
