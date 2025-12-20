@@ -262,27 +262,30 @@ class DoseEngine(nn.Module):
         B = leaf_positions.shape[0]
         assert leaf_positions.dim() == 4, \
             f"Leaf positions needs 4 dimensions [B, 2, CP, N], got {leaf_positions.dim()}D: {leaf_positions.shape}"
-        assert jaw_positions.dim() == 3, \
-            f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}"
         assert mus.dim() == 2, \
             f"MUs needs 2 dimensions [B, CP], got {mus.dim()}D: {mus.shape}"
 
-        assert leaf_positions.shape[0] == B and mus.shape[0] == B and jaw_positions.shape[0] == B, \
-            f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, jaw_positions={jaw_positions.shape[0]}, mus={mus.shape[0]}"
-
+        assert leaf_positions.shape[0] == B and mus.shape[0] == B, \
+            f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, mus={mus.shape[0]}"
 
         expected_leaf = (B, self.number_of_beams, self.machine_config.number_of_leaf_pairs, 2)
         assert leaf_positions.shape == expected_leaf, \
             f"Leaf positions shape mismatch: expected {expected_leaf}, got {leaf_positions.shape}"
 
-        expected_jaw = (B, self.number_of_beams, 2)
-        assert jaw_positions.shape == expected_jaw, \
-            f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}"
-
         expected_mus = (B, self.number_of_beams)
         assert mus.shape == expected_mus, \
             f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
         
+        if jaw_positions is not None:
+            assert jaw_positions.dim() == 3, \
+                f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}"
+            
+            assert jaw_positions.shape[0] == B, \
+                f"Batch size mismatch: ct={B}, jaw_positions={jaw_positions.shape[0]}"
+            
+            expected_jaw = (B, self.number_of_beams, 2)
+            assert jaw_positions.shape == expected_jaw, \
+                f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}"
         
         if density_image is None:
             raise ValueError("CT image must be provided.")
