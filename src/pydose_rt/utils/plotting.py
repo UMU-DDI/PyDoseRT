@@ -86,7 +86,7 @@ def print_paper_plot(
         return im
 
     # Figure + GridSpec: two narrow image columns and a wider DVH column
-    fig = plt.figure(figsize=(12, 3))
+    fig = plt.figure(figsize=(18, 5))
     gs = gridspec.GridSpec(1, 3, figure=fig, width_ratios=[1, 1, 2], wspace=0.25)
 
     # compute center of mass safely (avoid deprecated measurements namespace)
@@ -338,7 +338,7 @@ def print_comparison_plot(
         return im
 
     # Figure + GridSpec: two narrow image columns and a wider DVH column
-    fig = plt.figure(figsize=(12, 3))
+    fig = plt.figure(figsize=(18, 5))
     gs = gridspec.GridSpec(1, 3, figure=fig, width_ratios=[1, 1, 2], wspace=0.25)
 
     # compute center of mass safely (avoid deprecated measurements namespace)
@@ -519,7 +519,7 @@ def print_comparison_plot(
     ax_right_top.set_title("Lateral Dose Profile")
     ax_right_top.set_ylabel("Dose (Gy)")
     ax_right_top.grid(True, linestyle=':', linewidth=0.5)
-    ax_right_top.legend(loc="lower left", frameon=False)
+    ax_right_top.legend(loc="upper left", frameon=False)
     # ax_right_top.plot(bin_edges[:-1], cumulative_hist_normalized, linestyle='solid', label=struct_name, color=color, linewidth=1.25)
     ax_right_bottom = fig.add_subplot(gs_right[1, 0])
     ax_right_bottom.plot(patient.number_of_fractions * dose_pred.cpu().detach().numpy()[axial_z, :, x_slice], linestyle='solid', color='orange', label="PyDoseRT")
@@ -527,7 +527,7 @@ def print_comparison_plot(
     ax_right_bottom.set_title("Anterior–Posterior Dose Profile")
     ax_right_bottom.set_ylabel("Dose (Gy)")
     ax_right_bottom.grid(True, linestyle=':', linewidth=0.5)
-    ax_right_bottom.legend(loc="lower left", frameon=False)
+    ax_right_bottom.legend(loc="upper left", frameon=False)
 
     # Layout & save
     fig.tight_layout(rect=[0, 0, 1, 0.98])
