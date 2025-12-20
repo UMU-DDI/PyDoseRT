@@ -86,7 +86,7 @@ def print_paper_plot(
         return im
 
     # Figure + GridSpec: two narrow image columns and a wider DVH column
-    fig = plt.figure(figsize=(24, 6))
+    fig = plt.figure(figsize=(12, 3))
     gs = gridspec.GridSpec(1, 3, figure=fig, width_ratios=[1, 1, 2], wspace=0.25)
 
     # compute center of mass safely (avoid deprecated measurements namespace)
@@ -338,7 +338,7 @@ def print_comparison_plot(
         return im
 
     # Figure + GridSpec: two narrow image columns and a wider DVH column
-    fig = plt.figure(figsize=(24, 6))
+    fig = plt.figure(figsize=(12, 3))
     gs = gridspec.GridSpec(1, 3, figure=fig, width_ratios=[1, 1, 2], wspace=0.25)
 
     # compute center of mass safely (avoid deprecated measurements namespace)

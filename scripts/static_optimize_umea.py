@@ -106,7 +106,7 @@ field_size = beam_sequence.field_size
 iso_center = beam_sequence.iso_center
 collimator_angles = torch.rad2deg(beam_sequence.collimator_angles)
 sid = beam_sequence.sid
-open_field_size = 100.0
+open_field_size = 10.0  # np.random.uniform(10.0, 200.0)
 
 print_stuff = 0
 loss_plot = 1.0
@@ -124,13 +124,13 @@ for test_i in range(n_tests):
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
         optimization.structures['CTVT']["weight"] = 0.0
         optimization.structures['SeminalVesicles']["weight"] = 0.0
-        optimization.structures[ptv_struct_name]["weight"] = np.random.choice([100.0])
+        optimization.structures[ptv_struct_name]["weight"] = 100.0
         optimization.structures['PenileBulb']["weight"] = 0.0
-        optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.0, 0.1, 1.0, 10.0])
-        optimization.structures['FemoralHead_R']["weight"] = optimization.structures['FemoralHead_L']["weight"] 
-        optimization.structures['Bladder']["weight"] = np.random.choice([0.1, 1.0, 5.0, 10.0, 25.0])
-        optimization.structures['Rectum']["weight"] = np.random.choice([0.1, 1.0, 5.0, 10.0, 25.0])
-        optimization.structures['External']["weight"] = np.random.choice([1.0, 10.0, 25.0])
+        optimization.structures['FemoralHead_L']["weight"] = 0.1
+        optimization.structures['FemoralHead_R']["weight"] = 0.1
+        optimization.structures['Bladder']["weight"] = np.random.choice([0.1, 1.0, 10.0])
+        optimization.structures['Rectum']["weight"] = np.random.choice([0.1, 1.0, 10.0])
+        optimization.structures['External']["weight"] = np.random.choice([0.1, 1.0, 10.0])
 
 
         beam_sequence = BeamSequence.create(
