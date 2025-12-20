@@ -471,7 +471,8 @@ class DoseEngine(nn.Module):
 
     def calibrate(self, 
                   calibration_mu: float = None,
-                  original_beam_template: BeamSequence | None = None) -> None: # Keep in dose engine
+                  original_beam_template: BeamSequence | None = None,
+                  verbose: bool = True) -> None: # Keep in dose engine
         if not self.layers_initialized:
             raise Exception("Layers must be fully initialized for calibration.")
 
@@ -502,7 +503,7 @@ class DoseEngine(nn.Module):
         # This gives the factor to normalize to 1 Gy per MU at reference conditions
         calibration_factor = self.machine_config.mean_photon_energy_MeV / center_dose
 
-        if (abs(center_dose - 1.0) > 0.001):
+        if verbose & (abs(center_dose - 1.0) > 0.001):
             print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
 
