@@ -124,12 +124,12 @@ for test_i in range(n_tests):
         latest = {"raw_losses": None, "loss_val": None, "dose_pred": None, "pred_mlc": None, "pred_mus": None, "pred_jaws": None}
         optimization.structures['CTVT']["weight"] = 0.0
         optimization.structures['SeminalVesicles']["weight"] = 0.0
-        optimization.structures[ptv_struct_name]["weight"] = np.random.choice([100.0, 1000.0])
-        optimization.structures['PenileBulb']["weight"] = np.random.choice([0.0, 0.1, 1.0])
+        optimization.structures[ptv_struct_name]["weight"] = np.random.choice([100.0])
+        optimization.structures['PenileBulb']["weight"] = 0.0
         optimization.structures['FemoralHead_L']["weight"] = np.random.choice([0.0, 0.1, 1.0, 10.0])
         optimization.structures['FemoralHead_R']["weight"] = optimization.structures['FemoralHead_L']["weight"] 
-        optimization.structures['Bladder']["weight"] = np.random.choice([1.0, 5.0, 10.0, 25.0])
-        optimization.structures['Rectum']["weight"] = np.random.choice([1.0, 5.0, 10.0, 25.0])
+        optimization.structures['Bladder']["weight"] = np.random.choice([0.1, 1.0, 5.0, 10.0, 25.0])
+        optimization.structures['Rectum']["weight"] = np.random.choice([0.1, 1.0, 5.0, 10.0, 25.0])
         optimization.structures['External']["weight"] = np.random.choice([1.0, 10.0, 25.0])
 
 
