@@ -286,6 +286,8 @@ for test_i in range(n_tests):
                     print("Best result for this test:", current_res)
                     break
 
+            proxy_pred = (7*dose_pred).cpu().detach().numpy() > optimization.prescription_gy
+            proxy_dice = 2 * np.sum(proxy_pred * patient.structures["PTV"].cpu().detach().numpy()) / (np.sum(proxy_pred) + np.sum(patient.structures["PTV"].cpu().detach().numpy()))
             lr_now = lr # scheduler.get_last_lr()[0]
             experiment.log_metrics(
                 {
@@ -293,6 +295,7 @@ for test_i in range(n_tests):
                     "dose_mae": mae_loss,
                     "lr": lr_now,
                     "mae_loss": mae_loss,
+                    "proxy_dice": proxy_dice,
                     "Rectum_D_mean": 7*dose_pred[0, patient.structures["Rectum"]].mean().item(),
                     "Bladder_D_mean": 7*dose_pred[0, patient.structures["Bladder"]].mean().item(),
                     "PTV_D_95": 7*dose_at_volume_percent(dose_pred[0].cpu().detach().numpy(), patient.structures[ptv_struct_name].cpu().detach().numpy(), 95) if ptv_struct_name in patient.structures.keys() else 0.0,
