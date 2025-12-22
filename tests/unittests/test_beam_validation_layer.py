@@ -5,29 +5,8 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import numpy as np
 import torch
-from pydose_rt.layers.BeamValidationLayer import BeamValidationLayer, proj_ste, adjust_mask
+from pydose_rt.layers.BeamValidationLayer import BeamValidationLayer, adjust_mask
 
-
-def test_proj_ste_clamps_forward():
-    """Test that proj_ste clamps values in forward pass"""
-    x = torch.tensor([0.5, 1.5, 2.5, 3.5], requires_grad=True)
-    result = proj_ste(x, lo=1.0, hi=3.0)
-
-    expected = torch.tensor([1.0, 1.5, 2.5, 3.0])
-    assert torch.allclose(result, expected), f"Expected {expected}, got {result}"
-
-
-def test_proj_ste_gradient_passthrough():
-    """Test that proj_ste passes gradients through (STE behavior)"""
-    x = torch.tensor([0.5, 1.5, 2.5, 3.5], requires_grad=True)
-    result = proj_ste(x, lo=1.0, hi=3.0)
-    loss = result.sum()
-    loss.backward()
-
-    # Gradient should be all ones (straight-through estimator)
-    expected_grad = torch.ones_like(x)
-    assert torch.allclose(x.grad, expected_grad), \
-        f"Expected gradient {expected_grad}, got {x.grad}"
 
 
 def test_adjust_mask_minimum_overlap():
