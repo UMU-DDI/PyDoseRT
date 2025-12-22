@@ -348,11 +348,6 @@ def print_comparison_plot(
     axial_xend = CoM[2] + 64
     axial_ystart = max(CoM[1] - 64, 0)
     axial_yend = CoM[1] + 64
-    coronal_x = CoM[2]
-    coronal_zstart = max(CoM[0] - 40, 0)
-    coronal_zend = CoM[0] + 40
-    coronal_ystart = max(CoM[1] - 40, 0)
-    coronal_yend = CoM[1] + 40
 
     def _dose_slice_axial(arr, z=44, y_start=0, y_end=256, x_start=0, x_end=256):
         return arr[z, y_start:y_end, x_start:x_end]

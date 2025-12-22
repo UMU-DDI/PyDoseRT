@@ -19,6 +19,7 @@ def load_dicom(
     struct_names: List[str] | None = None,
     use_delivery: bool = False,
     new_spacing: tuple[float, float, float] = (2.0, 2.0, 2.0),
+    crop_volume: bool = True,
     device: torch.device | str = 'cuda',
     dtype: torch.dtype = torch.float32,
 ) -> tuple['Patient', 'BeamSequence']:
@@ -74,8 +75,9 @@ def load_dicom(
         new_spacing=new_spacing,
         interpolator=sitk.sitkLinear,
     )
-    
-    ct_resampled = center_crop_axial(ct_resampled, max_size_cm=40.0)
+
+    if (crop_volume):
+        ct_resampled = center_crop_axial(ct_resampled, max_size_cm=40.0)
 
     # 2. Resample all structures to the CT grid (use nearest-neighbor!)
     resampled_structures_torch = {}

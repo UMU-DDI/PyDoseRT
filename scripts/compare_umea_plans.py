@@ -22,20 +22,21 @@ if do_plot:
     cols = 1
     rows = 1
 
-    fig = plt.figure(figsize=(15, 10))
+    fig = plt.figure(figsize=(9, 6))
     # axes = axes.flatten()
 for field_size in field_sizes:
     exp_name = f"{field_size}"
 
     measurements = raw_measurements.copy()
     measurements = [measurement for measurement in measurements if measurement["header_dict"]["FSZ"] == [str(field_size), str(field_size)]]
-    # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == measurement["header_dict"]["STS"][2]]
-    # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == str(100.0)]
-    # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][1] == str(0.0)]
-
-
+    
+    measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == measurement["header_dict"]["STS"][2]]
+    measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][2] == str(100.0)]
     measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][1] == str(0.0)]
-    measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][0] == str(0.0)]
+
+
+    # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][1] == str(0.0)]
+    # measurements = [measurement for measurement in measurements if measurement["header_dict"]["EDS"][0] == str(0.0)]
 
 
     # measurements = [measurement for measurement in measurements if (float(measurement["header_dict"]["STS"][1]) == 0.0) and (float(measurement["header_dict"]["EDS"][2]) != 200.0) and (float(measurement["header_dict"]["EDS"][0]) != 0.0)]

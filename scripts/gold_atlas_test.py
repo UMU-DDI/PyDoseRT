@@ -103,31 +103,31 @@ for patient_name in sorted(os.listdir(base_path))[0:5]:
         leafs = beam_sequence.leaf_positions.unsqueeze(0)
         mus = beam_sequence.mus.unsqueeze(0)
         jaws = beam_sequence.jaw_positions.unsqueeze(0)
-        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=True, compute_clinical_criteria=True, global_normalisation=None, gamma_threshold_distance=2.0, gamma_threshold_dose=2.0)
+        res = result_validation(patient, machine_config, beam_sequence, dose_pred, optimization, compute_gamma=False, compute_clinical_criteria=True, global_normalisation=None, gamma_threshold_distance=2.0, gamma_threshold_dose=2.0)
         # if "clinical_criteria" in res.keys():
         #     print(f"Passed {int(100*res['clinical_criteria']['passed_test'])}% of clinical criteria.")
         if "gamma_pass_rate" in res.keys():
             res_string += f" Gamma pass rate {str(np.round(res['gamma_pass_rate'], 2))}"
-        print(f"{mae_loss}\t{str(np.round(res['gamma_pass_rate'], 2))}\t{time_elapsed}")
+        # print(f"{mae_loss}\t{str(np.round(res['gamma_pass_rate'], 2))}\t{time_elapsed}")
         # print(res_string)
-        # quick_plot(patient, dose_pred, title=res_string, out_path=f"out/quick_{patient_name}.png")
+        quick_plot(patient, dose_pred, title=res_string, out_path=f"out/quick_{patient_name}.png")
 
         # row = {"patient_name": patient_name}
         # row.update(res)        # Adds all scalar keys from res
         # all_results.append(row)
 
-        # title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [mae_loss]]}"
-        # print_results(
-        #     None, 
-        #     optimization, 
-        #     patient, 
-        #     beam_sequence, 
-        #     dose_pred, 
-        #     title=title, 
-        #     preset="gold-atlas", 
-        #     out_path=f"out/final_{patient_name}.png"
-        #     )
-        # print_comparison_plot(optimization, patient, dose_pred, out_path=f"out/comparison_{patient_name}.png")
+        title = f"MAE - {str(mae_loss)} Gy\nTest #{len([0])}: {[str(np.round(v, 4)) for v in [mae_loss]]}"
+        print_results(
+            None, 
+            optimization, 
+            patient, 
+            beam_sequence, 
+            dose_pred, 
+            title=title, 
+            preset="gold-atlas", 
+            out_path=f"out/final_{patient_name}.png"
+            )
+        print_comparison_plot(optimization, patient, dose_pred, out_path=f"out/comparison_{patient_name}.png")
 
         # make_animation(
         #     None, 
