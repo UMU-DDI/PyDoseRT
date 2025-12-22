@@ -105,7 +105,7 @@ def test_beam_validation_layer_gradients(beam_validation_layer, default_machine_
     """Test that gradients flow through beam validation layer (STE behavior)"""
     leaf_positions = torch.randn(1, default_machine_config.number_of_leaf_pairs, 2, device=default_device, dtype=default_dtype, requires_grad=True)
     jaw_positions = torch.randn(1, 2, device=default_device, dtype=default_dtype, requires_grad=True)
-    mus = torch.randn(1, device=default_device, dtype=default_dtype, requires_grad=True)
+    mus = torch.randn(100, device=default_device, dtype=default_dtype, requires_grad=True)
 
     mlc_out, jaw_out, mus_out = beam_validation_layer(leaf_positions, mus, jaw_positions)
 
