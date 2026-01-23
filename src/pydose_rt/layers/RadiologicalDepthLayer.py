@@ -12,7 +12,7 @@ Typical usage example::
     machine_config = MachineConfig(...)
     layer = RadiologicalDepthLayer(
         machine_config, device, dtype, resolution,
-        ct_array_shape, gantry_angles, downsampling_factor, lookup_table
+        ct_array_shape, gantry_angles, lookup_table
     )
 
 Classes:
@@ -48,7 +48,6 @@ class RadiologicalDepthLayer(nn.Module):
                  ct_array_shape: tuple[float, float, float],
                  gantry_angles: list[float],
                  iso_center: tuple[float, float, float],
-                 downsampling_factor: tuple[int, int, int] = (1, 1, 1),
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
                  verbose: bool = False) -> 'RadiologicalDepthLayer':
@@ -60,7 +59,6 @@ class RadiologicalDepthLayer(nn.Module):
             resolution (tuple[float, float, float]): Voxel spacing in mm.
             ct_array_shape (tuple[float, float, float]): Shape of the CT array.
             gantry_angles (list[float]): List of gantry angles in radians.
-            downsampling_factor (tuple[int, int, int]): Downsampling factor for CT.
             device (torch.device): Device for computation (CPU or CUDA).
             dtype (type): Data type for tensors.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
@@ -76,12 +74,8 @@ class RadiologicalDepthLayer(nn.Module):
         self.dtype=dtype
         self.machine_config = machine_config
         self.verbose = verbose
-        self.downsampling_factor = downsampling_factor
 
-        # Determine if we should use full-sized CT for depth extraction
-        self.downsample_depths = self.downsampling_factor != (1, 1, 1)
-
-        # Store the target (downsampled) CT shape
+        # Store the target CT shape
         self.ct_array_shape = ct_array_shape
         self.target_ct_shape = self.ct_array_shape
         self.resolution = resolution
@@ -102,11 +96,10 @@ class RadiologicalDepthLayer(nn.Module):
 
         Args:
             ct_stack (torch.Tensor): CT volume tensor of shape [B, H, D, W].
-                                    Can be full-sized or downsampled based on initialization.
 
         Returns:
             torch.Tensor: Radiological depth profiles of shape [B*G, P_target, 1], where
-            P_target is the number of points in the downsampled depth profile.
+            P_target is the number of points in the depth profile.
         """
         with torch.no_grad():
             B, H, D, W = ct_stack.shape
@@ -199,26 +192,8 @@ class RadiologicalDepthLayer(nn.Module):
             # For dose calculation at voxel CENTER, we need: sum(density[0:i]) * step + density[i] * step/2
             # This equals: cumsum[i] - density[i] * step/2
             cumsum = torch.cumsum(density, dim=-1) * step_sizes  # shape: [B, G, P]
-            cumsum = cumsum + density * step_sizes * 0.5 # Adjust to voxel center
+            cumsum = cumsum - density * step_sizes * 0.5 # Adjust to voxel center
 
-            # If we extracted from full-sized CT, downsample the radiological depths
-            if self.downsample_depths:
-                # Reshape for interpolation: [B, G, P] -> [B*G, 1, P]
-                cumsum = cumsum.view(B * G, 1, P)
-
-                # Calculate target size based on downsampling factor
-                downsample_factor = max(self.downsampling_factor)
-                P_target = P // downsample_factor
-
-                # Downsample using linear interpolation
-                cumsum = F.interpolate(
-                    cumsum, size=P_target, mode='linear', align_corners=False
-                )
-
-                # Reshape to [B*G, P_target, 1]
-                cumsum = cumsum.view(B * G, P_target, 1)
-            else:
-                # No downsampling needed, just reshape to [B*G, P, 1]
-                cumsum = cumsum.view(B * G, P, 1)
+            cumsum = cumsum.view(B * G, P, 1)
 
             return cumsum
