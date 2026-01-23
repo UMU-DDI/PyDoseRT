@@ -241,7 +241,7 @@ class DoseEngine(nn.Module):
         sx, sy, sz = self.dose_grid_shape
         rx, ry, rz = self.dose_grid_spacing
         X, Y, Z = self.iso_center  # physical coords, origin at isocenter corner
-        X_center, Y_center, Z_center = (X - rx / 2, Y - ry / 2, Z - rz / 2)
+        X_center, Y_center, Z_center = (X, Y, Z)
 
         # Convert physical coords to voxel indices and round to nearest voxel
         ix = int(X_center / rx)
@@ -479,7 +479,7 @@ class DoseEngine(nn.Module):
         if not self.layers_initialized:
             raise Exception("Layers must be fully initialized for calibration.")
 
-        center_x, _, center_z = torch.tensor(self.dose_grid_spacing) * (torch.tensor(self.dose_grid_shape) + 1) / 2
+        center_x, _, center_z = torch.tensor(self.dose_grid_spacing) * (torch.tensor(self.dose_grid_shape)) / 2
         iso_center = (center_x.item(), 100.0, center_z.item())
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
         if calibration_mu is None:
