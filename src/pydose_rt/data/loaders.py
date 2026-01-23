@@ -66,13 +66,13 @@ def load_dicom(
     if plan_path is not None:
         plans = fetch_plan_data(plan_path[0])
     
-
+    new_spacing_sitk = (new_spacing[2], new_spacing[1], new_spacing[0])  # sitk uses (x,y,z)
     dose_ref = list(doses.keys())[0]
     dose = doses[dose_ref]
     _, num_fractions = list(plans.values())[0]
     ct_resampled = resample_image_to_spacing(
         ct_series,
-        new_spacing=new_spacing,
+        new_spacing=new_spacing_sitk,
         interpolator=sitk.sitkLinear,
     )
 
@@ -112,11 +112,9 @@ def load_dicom(
 
     # 5. Compute resolution and origin in your preferred order (z, x, y) or (z, y, x)
     # SimpleITK: spacing/origin are always (x, y, z)
-    spacing_xyz = ct_resampled.GetSpacing()
     origin_xyz = ct_resampled.GetOrigin()
 
     # If your tensors are (z, y, x), you usually want spacing/origin in (z, y, x) too:
-    resolution = (spacing_xyz[2], spacing_xyz[1], spacing_xyz[0])
     origin = [origin_xyz[2], origin_xyz[1], origin_xyz[0]]
 
     # If you *really* wanted (z, x, y) for some reason, you can change the index order above.
@@ -126,7 +124,7 @@ def load_dicom(
         ct_tensor=CT,
         structures=resampled_structures_torch,
         dose=dose_tensor,
-        resolution=resolution,
+        resolution=new_spacing,
         number_of_fractions=num_fractions
     )
     
