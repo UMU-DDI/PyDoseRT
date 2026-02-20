@@ -277,6 +277,135 @@ class CommissioningToolkit:
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
+    def export_pydosert_config(
+        self,
+        input_path: str,
+        *,
+        output_dir: str | None = None,
+        output_prefix: str = "pydosert",
+    ) -> Dict[str, str]:
+        """Convert a commissioning JSON to per-energy PyDoseRT-compatible flat JSONs.
+
+        The commissioning format is a nested, multi-energy document.  PyDoseRT's
+        ``MachineConfig`` expects a flat, single-energy JSON.  This method performs
+        the conversion for every energy present in the commissioning file and writes
+        one output file per energy.
+
+        Field mapping
+        -------------
+        * ``tpr20_10``                        → ``tpr_20_10`` (direct)
+        * ``mlc.leaf_boundaries``             → ``leaf_widths`` (differences) +
+                                               ``number_of_leaf_pairs`` (count)
+        * ``mlc.transmission``               → ``mlc_transmission`` (direct)
+        * ``source.geometric_penumbra_mm``   → ``penumbra_fwhm``
+          Commissioning stores Gaussian sigma (mm); PyDoseRT expects FWHM (mm at
+          1 mm/px resolution), so each value is multiplied by 2.355.
+        * ``source.head_scatter_magnitude``  → ``head_scatter_amplitude``
+          PyDoseRT uses ``[amplitude, 1.0]`` so that the FluenceMapLayer formula
+          ``(1 - amp_mlc)*fluence + amp_mlc*scatter/amp_jaw`` reduces to the
+          commissioning blending ``(1-w)*fluence + w*scatter``.
+        * ``source.head_scatter_sigma_mm``   → ``head_scatter_sigma`` (÷ 10, mm→cm)
+        * ``reference_mu``                   → ``calibration_mu`` (direct)
+        * ``profile.curve``                  → ``profile_corrections``
+          Pairs ``[[r, ratio], …]`` → two lists ``[[r, …], [ratio, …]]``.
+        * ``output_factors.curve``           → ``output_factors``
+          Same transposition as profile corrections.
+
+        Parameters
+        ----------
+        input_path:
+            Path to the commissioning JSON (e.g. ``machine_config_complete.json``).
+        output_dir:
+            Directory to write the per-energy files.  Defaults to the same
+            directory as *input_path*.
+        output_prefix:
+            Filename stem prefix; files are named ``{prefix}_{energy}.json``.
+
+        Returns
+        -------
+        dict
+            Mapping of energy key → output file path.
+        """
+        data = self.load_json(input_path)
+
+        # ---- MLC geometry (shared across energies) ---------------------------
+        mlc = data.get("mlc", {})
+        leaf_boundaries: List[float] = mlc.get("leaf_boundaries", [])
+        leaf_widths = [
+            round(float(leaf_boundaries[i + 1]) - float(leaf_boundaries[i]), 4)
+            for i in range(len(leaf_boundaries) - 1)
+        ]
+        number_of_leaf_pairs = len(leaf_widths)
+        mlc_transmission = float(mlc.get("transmission", 0.0))
+
+        # ---- Per-energy export -----------------------------------------------
+        if output_dir is None:
+            output_dir = os.path.dirname(os.path.abspath(input_path))
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_paths: Dict[str, str] = {}
+        for energy_key, e_data in (data.get("energies") or {}).items():
+            src = e_data.get("source", {})
+
+            # Penumbra: sigma (mm) → FWHM (px at 1 mm/px)
+            geo_pen = src.get("geometric_penumbra_mm", [0.0, 0.0])
+            penumbra_fwhm = [round(float(v) * 2.355, 4) for v in geo_pen]
+
+            # Head scatter amplitude: scalar → [amp, 1.0]
+            hs_magnitude = float(src.get("head_scatter_magnitude", 0.0))
+            head_scatter_amplitude = [round(hs_magnitude, 6), 1.0]
+
+            # Head scatter sigma: mm (at iso) → cm
+            hs_sigma_mm = src.get("head_scatter_sigma_mm", [0.0, 0.0])
+            head_scatter_sigma = [round(float(v) / 10.0, 5) for v in hs_sigma_mm]
+
+            # Profile corrections: [[r, ratio], …] → [[r, …], [ratio, …]]
+            profile_curve = (e_data.get("profile") or {}).get("curve") or []
+            profile_corrections: List[List[float]] | None = None
+            if profile_curve:
+                profile_corrections = [
+                    [float(p[0]) for p in profile_curve],
+                    [float(p[1]) for p in profile_curve],
+                ]
+
+            # Output factors: [[s, OF], …] → [[s, …], [OF, …]]
+            of_curve = (e_data.get("output_factors") or {}).get("curve") or []
+            output_factors: List[List[float]] | None = None
+            if of_curve:
+                output_factors = [
+                    [float(p[0]) for p in of_curve],
+                    [float(p[1]) for p in of_curve],
+                ]
+
+            # Mean photon energy: derive from energy key (e.g. "10MV" → 10.0)
+            import re as _re
+            _match = _re.search(r"(\d+(?:\.\d+)?)", energy_key)
+            mean_photon_energy_MeV = float(_match.group(1)) if _match else 10.0
+
+            pydosert_cfg: Dict[str, Any] = {
+                "tpr_20_10": float(e_data.get("tpr20_10", 0.7)),
+                "number_of_leaf_pairs": number_of_leaf_pairs,
+                "mlc_transmission": mlc_transmission,
+                "calibration_mu": float(e_data.get("reference_mu", 100.0)),
+                "mean_photon_energy_MeV": mean_photon_energy_MeV,
+                "leaf_widths": leaf_widths,
+                "penumbra_fwhm": penumbra_fwhm,
+                "head_scatter_amplitude": head_scatter_amplitude,
+                "head_scatter_sigma": head_scatter_sigma,
+                "head_scatter_ssd_mm": 50.0,
+            }
+            if profile_corrections is not None:
+                pydosert_cfg["profile_corrections"] = profile_corrections
+            if output_factors is not None:
+                pydosert_cfg["output_factors"] = output_factors
+
+            out_path = os.path.join(output_dir, f"{output_prefix}_{energy_key}.json")
+            self.save_json_compact(out_path, pydosert_cfg)
+            output_paths[energy_key] = out_path
+            self._log(f"Exported PyDoseRT config ({energy_key}): {out_path}")
+
+        return output_paths
+
     def finalize_config(
         self, path: str, *, intermediate_files: List[str] | None = None
     ) -> None:

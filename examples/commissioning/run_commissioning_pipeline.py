@@ -25,6 +25,7 @@ SETTINGS = {
     "step1": "examples/commissioning/machine_config_step1.json",
     "step2": "examples/commissioning/machine_config_step2.json",
     "final": "examples/commissioning/machine_config_complete.json",
+    "pydosert_output_dir": "examples/commissioning",
     "run_step1": True,
     "run_step2": True,
     "run_step3": True,
@@ -171,6 +172,13 @@ def main() -> int:
             )
         else:
             toolkit.finalize_config(SETTINGS["final"], intermediate_files=None)
+
+        pydosert_paths = toolkit.export_pydosert_config(
+            SETTINGS["final"],
+            output_dir=SETTINGS["pydosert_output_dir"],
+        )
+        for energy, path in pydosert_paths.items():
+            toolkit._log(f"PyDoseRT machine config ({energy}): {path}")
 
     if SETTINGS["plots"]:
         import matplotlib.pyplot as plt
