@@ -1,15 +1,25 @@
+"""Commissioning pipeline using the PyDoseRT dose engine.
+
+Run from the repository root:
+
+    python examples/commissioning/run_commissioning_pipeline.py
+
+Each step writes an intermediate JSON config that the next step picks up, so
+you can re-run individual steps by toggling ``run_stepN`` flags in SETTINGS.
+"""
 import os
 
-from HeroDoseCalc.commissioning_parser import MeasurementParser
-from HeroDoseCalc.commissioning_toolkit import CommissioningToolkit
-from HeroDoseCalc.commissioning_plotter import CommissioningPlotter
+from pydose_rt_commissioning.commissioning_parser import MeasurementParser
+from pydose_rt_commissioning.commissioning_toolkit import CommissioningToolkit
+from pydose_rt_commissioning.commissioning_plotter import CommissioningPlotter
 
 
 SETTINGS = {
     "config": "examples/commissioning/machine_config_base.json",
     "profiles": "examples/commissioning/data/measurements_10MV/measurements_10_profiles.asc",
     "diagonals": "examples/commissioning/data/measurements_10MV/measurements_10_diagonals.asc",
-    "output_factors": "examples/commissioning/data/measurements_10MV/measurements_10_of.csv",
+    # JSON file produced by the clinic's OF measurement workflow
+    "output_factors": "examples/commissioning/data/measurements_10MV/measurements_10_of_sp.json",
     "energy": "10MV",
     "report_dir": "examples/commissioning/reports/commissioning",
     "step1": "examples/commissioning/machine_config_step1.json",
@@ -41,7 +51,7 @@ def _parse_field_pairs_cm(values):
     for raw in values:
         parts = raw.lower().split("x")
         if len(parts) != 2:
-            raise ValueError(f"Invalid field size format: {raw}. Use XxY in cm (e.g. 20x20).")
+            raise ValueError(f"Invalid field size format: {raw!r}. Use XxY in cm (e.g. 20x20).")
         pairs.append((float(parts[0]) * 10.0, float(parts[1]) * 10.0))
     return pairs
 
@@ -53,9 +63,10 @@ def _parse_bands_pct(values):
     for raw in values:
         parts = raw.split("-")
         if len(parts) != 2:
-            raise ValueError(f"Invalid band format: {raw}. Use start-end in percent (e.g. 40-90).")
-        start = float(parts[0])
-        end = float(parts[1])
+            raise ValueError(
+                f"Invalid band format: {raw!r}. Use start-end in percent (e.g. 40-90)."
+            )
+        start, end = float(parts[0]), float(parts[1])
         if end < start:
             start, end = end, start
         bands.append((start, end))
@@ -65,6 +76,14 @@ def _parse_bands_pct(values):
 def main() -> int:
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+    meas = MeasurementParser()
+    plotter = CommissioningPlotter(show=SETTINGS["plots"])
+    toolkit = CommissioningToolkit(
+        SETTINGS["config"],
+        verbose=SETTINGS["verbose"],
+        log_callback=plotter.log if SETTINGS["plots"] else None,
+    )
 
     def log_section(title: str) -> None:
         line = "*" * 34
@@ -76,15 +95,7 @@ def main() -> int:
             plotter.log(title)
             plotter.log(line)
 
-    meas = MeasurementParser()
-    plotter = CommissioningPlotter(show=SETTINGS["plots"])
-    toolkit = CommissioningToolkit(
-        SETTINGS["config"],
-        verbose=SETTINGS["verbose"],
-        log_callback=plotter.log if SETTINGS["plots"] else None,
-    )
-
-    # Settings print suppressed; keep console focused on iteration logs.
+    # ── Step 1: geometric penumbra ────────────────────────────────────────────
     if SETTINGS["run_step1"]:
         log_section("Tuning geometric penumbra")
         profiles = meas.parse_rfa300(SETTINGS["profiles"])
@@ -95,13 +106,13 @@ def main() -> int:
             output_json=SETTINGS["step1"],
             plotter=plotter if SETTINGS["plots"] else None,
         )
-        if SETTINGS["verbose"]:
-            toolkit._log(
-                f"Penumbra final: [{pen_res.geometric_penumbra_mm[0]:.2f}, "
-                f"{pen_res.geometric_penumbra_mm[1]:.2f}]"
-            )
+        toolkit._log(
+            f"Penumbra final: [{pen_res.geometric_penumbra_mm[0]:.2f}, "
+            f"{pen_res.geometric_penumbra_mm[1]:.2f}]"
+        )
         toolkit.config_path = SETTINGS["step1"]
 
+    # ── Step 2: off-axis profile correction ───────────────────────────────────
     if SETTINGS["run_step2"]:
         log_section("Tuning profile correction")
         diagonals = meas.parse_rfa300(SETTINGS["diagonals"])
@@ -110,18 +121,22 @@ def main() -> int:
             output_json=SETTINGS["step2"],
             plotter=plotter if SETTINGS["plots"] else None,
         )
-        if SETTINGS["verbose"]:
-            toolkit._log(f"Profile correction curve points: {len(pc_res.profile_curve)}")
+        toolkit._log(f"Profile correction curve points: {len(pc_res.profile_curve)}")
         toolkit.config_path = SETTINGS["step2"]
 
+    # ── Step 3: head scatter / output factors ─────────────────────────────────
     if SETTINGS["run_step3"]:
         log_section("Tuning head scatter")
         toolkit.config_path = SETTINGS["step2"]
-        of_meas = meas.parse_output_factors_csv(SETTINGS["output_factors"])
-        tail_profile_paths = [SETTINGS["profiles"]]
-        tail_profiles = []
-        for path in tail_profile_paths:
-            tail_profiles.extend(meas.parse_rfa300(path))
+
+        # Accept both JSON and CSV output-factor files automatically.
+        of_path = SETTINGS["output_factors"]
+        if of_path.endswith(".json"):
+            of_meas = meas.parse_output_factors_json(of_path)
+        else:
+            of_meas = meas.parse_output_factors_csv(of_path)
+
+        tail_profiles = meas.parse_rfa300(SETTINGS["profiles"])
 
         of_res = toolkit.fit_output_factors(
             of_meas,
@@ -140,15 +155,14 @@ def main() -> int:
             jitter_sigma_mm=SETTINGS["hs_jitter_sigma_mm"],
             plotter=plotter if SETTINGS["plots"] else None,
         )
-        if SETTINGS["verbose"]:
-            toolkit._log(
-                f"HS final: Amplitude: {of_res.head_scatter_magnitude:.4f}, "
-                f"Sigma@iso:[{of_res.head_scatter_sigma_mm[0]:.2f}, "
-                f"{of_res.head_scatter_sigma_mm[1]:.2f}]"
-            )
+        toolkit._log(
+            f"HS final: Amplitude: {of_res.head_scatter_magnitude:.4f}, "
+            f"Sigma@iso: [{of_res.head_scatter_sigma_mm[0]:.2f}, "
+            f"{of_res.head_scatter_sigma_mm[1]:.2f}]"
+        )
 
+        toolkit.config_path = SETTINGS["final"]
         if SETTINGS["run_report"]:
-            toolkit.config_path = SETTINGS["final"]
             toolkit.finalize_config(SETTINGS["final"], intermediate_files=None)
             plotter.generate_report(
                 toolkit=toolkit,
@@ -160,6 +174,7 @@ def main() -> int:
 
     if SETTINGS["plots"]:
         import matplotlib.pyplot as plt
+
         plt.ioff()
         plt.show()
 
