@@ -61,7 +61,7 @@ def print_paper_plot(
     })
 
     # compute a consistent dose max across predicted and reference dose
-    dose_max = float(max(patient.dose.max(), dose_pred.max()).item())
+    dose_max = patient.number_of_fractions * float(max(patient.dose.max(), dose_pred.max()).item())
 
     def _hide_ticks(ax):
         ax.set_xticks([])
@@ -112,7 +112,7 @@ def print_paper_plot(
     ax_axial = fig.add_subplot(gs[0])
     ax_axial.set_aspect('equal')
     ct_axial = _dose_slice_axial(patient._ct_tensor.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
-    dose_axial = _dose_slice_axial(dose_pred.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
+    dose_axial = _dose_slice_axial(patient.number_of_fractions * dose_pred.cpu().detach().numpy(), z=axial_z, y_start=axial_ystart, y_end=axial_yend, x_start=axial_xstart, x_end=axial_xend)
 
     _imshow_fullwidth(ax_axial, ct_axial, cmap='gray')
 
@@ -182,7 +182,7 @@ def print_paper_plot(
     ax_cor = fig.add_subplot(gs[1])
     ax_cor.set_aspect('equal')
     ct_cor = _dose_slice_coronal(patient._ct_tensor.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend)
-    dose_cor = _dose_slice_coronal(dose_pred.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend)
+    dose_cor = _dose_slice_coronal(patient.number_of_fractions * dose_pred.cpu().detach().numpy(), x=coronal_x, y_start=coronal_ystart, y_end=coronal_yend, z_start=coronal_zstart, z_end=coronal_zend)
 
     _imshow_fullwidth(ax_cor, ct_cor, cmap='gray')
 
@@ -244,7 +244,7 @@ def print_paper_plot(
             continue
         color = struct["color"]
         roi = list(patient.structures.values())[idx]
-        dose_values = dose_pred[roi > 0.0].cpu().detach().numpy()
+        dose_values = patient.number_of_fractions * dose_pred[roi > 0.0].cpu().detach().numpy()
         if dose_values.size == 0:
             continue
         bins = np.linspace(0, dose_max, 1000)
@@ -846,7 +846,7 @@ def make_animation(experiment,
         
         # Plot CT slice with dose overlay - already square
         pred_dose = pred_dose.cpu().detach().numpy()[0, slice_idx, :, :]
-        dose_data += pred_dose
+        dose_data += patient_data.number_of_fractions * pred_dose
         
         ax2.imshow(ct_data, cmap='gray', vmin=-1000, vmax=1000, aspect='equal')
         ax2.imshow(dose_data, cmap=jet_alpha, vmin=0.0, vmax=dose_max, aspect='equal')
@@ -915,8 +915,8 @@ def make_animation(experiment,
 
 def quick_plot(patient, dose_pred, title, show_ct: bool = False, out_path = None):
     dose_max = patient.number_of_fractions * max(patient.dose.max(), dose_pred.max()).item()
-    dose_volume = patient.number_of_fractions * patient.dose.cpu().detach().numpy()
     ct_volume = patient._ct_tensor.cpu().detach().numpy()
+    dose_volume = patient.number_of_fractions * patient.dose.cpu().detach().numpy()
     dose_pred = patient.number_of_fractions * dose_pred.cpu().detach().numpy()
     mae_max = 0.1 * dose_max
     alpha = 0.6 if show_ct else 1.0
