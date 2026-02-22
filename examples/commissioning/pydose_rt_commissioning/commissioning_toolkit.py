@@ -32,12 +32,8 @@ from scipy.optimize import minimize
 from scipy.special import erf
 
 from pydose_rt.physics.kernels.pencil_beam_model import PencilBeamModel
-from pydose_rt.physics.fluence.fluence_modeling import (
-    apply_directional_precomputed_kernel,
-    create_radial_correction_map,
-    precompute_directional_source_penumbra_kernels,
-    precompute_head_scatter_kernel,
-)
+from pydose_rt.layers.FluenceMapLayer import FluenceMapLayer
+from pydose_rt.data.machine_config import MachineConfig as PydoseRTMachineConfig
 
 from .commissioning_parser import MeasurementParser
 from .commissioning_types import MeasuredProfile, OutputFactorMeasurement
@@ -447,6 +443,58 @@ class CommissioningToolkit:
     # Core simulation (PyDoseRT engine)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _build_pydosert_config(cfg: MachineConfig) -> PydoseRTMachineConfig:
+        """Convert a commissioning MachineConfig to a PyDoseRT MachineConfig.
+
+        The result is always at 1 mm/px (native FluenceMapLayer resolution).
+        ``output_factors`` is intentionally left as ``None`` so that the Sc +
+        OF-residual logic in ``_simulate_dose_plane_fast`` is applied manually,
+        keeping the commissioning physics model intact.
+        """
+        mlc = cfg.mlc
+        if mlc and mlc.leaf_boundaries:
+            lb = mlc.leaf_boundaries
+            leaf_widths = [float(lb[i + 1]) - float(lb[i]) for i in range(len(lb) - 1)]
+            mlc_transmission = mlc.transmission
+        else:
+            leaf_widths = None
+            mlc_transmission = cfg.mlc_transmission
+        number_of_leaf_pairs = len(leaf_widths) if leaf_widths else 60
+
+        # sigma (mm) → FWHM (px) at 1 mm/px: fwhm_px = sigma_mm * 2.355
+        penumbra_fwhm = [v * 2.355 for v in cfg.geometric_penumbra_mm]
+
+        # head scatter amplitude: scalar → [amp, 1.0]  (matches FluenceMapLayer blend)
+        w = float(cfg.head_scatter_magnitude)
+        head_scatter_amplitude = [w, 1.0] if w > 0.0 else None
+        # head scatter sigma: mm (at iso) → cm for precompute_head_scatter_kernel
+        sc_sig = cfg.head_scatter_sigma_mm
+        head_scatter_sigma = [float(sc_sig[0]) / 10.0, float(sc_sig[1]) / 10.0] if w > 0.0 else None
+
+        # profile corrections: [(r, ratio), …] → [[r, …], [ratio, …]]
+        profile_corrections = None
+        if cfg.profile_curve and len(cfg.profile_curve) >= 2:
+            profile_corrections = [
+                [float(p[0]) for p in cfg.profile_curve],
+                [float(p[1]) for p in cfg.profile_curve],
+            ]
+
+        return PydoseRTMachineConfig(
+            tpr_20_10=cfg.tpr20_10,
+            number_of_leaf_pairs=number_of_leaf_pairs,
+            mlc_transmission=mlc_transmission,
+            calibration_mu=cfg.reference_mu,
+            mean_photon_energy_MeV=10.0,
+            leaf_widths=leaf_widths,
+            penumbra_fwhm=penumbra_fwhm if any(v > 1e-3 for v in penumbra_fwhm) else None,
+            head_scatter_amplitude=head_scatter_amplitude,
+            head_scatter_sigma=head_scatter_sigma,
+            head_scatter_ssd_mm=50.0,
+            profile_corrections=profile_corrections,
+            output_factors=None,  # applied manually in _simulate_dose_plane_fast
+        )
+
     def _simulate_dose_plane_fast(
         self,
         config: MachineConfig,
@@ -456,92 +504,52 @@ class CommissioningToolkit:
         res_mm: float,
         grid_span_mm: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Simulate a 2D dose plane at *depth_mm* using the PyDoseRT engine.
+        """Simulate a 2D dose plane at *depth_mm* using PyDoseRT layers directly.
+
+        The fluence map (aperture, penumbra, profile correction, head scatter) is
+        computed by ``FluenceMapLayer`` at its native 1 mm/px resolution, which
+        matches the standard PyDoseRT treatment-planning setup and is consistent
+        with the parameters exported by ``export_pydosert_config``.
 
         Steps
         -----
-        1. Jaw aperture mask           – fractional sub-pixel overlap
-        2. Penumbra                    – PyDoseRT separable Gaussian kernels
-        3. Radial profile correction   – PyDoseRT ``create_radial_correction_map``
-        4. Head scatter                – PyDoseRT kernel, HeroDoseCalc-style blend
-        5. Sc + OF residual            – analytical formula + lookup table
-        6. Nyholm pencil-beam kernel   – PyDoseRT ``PencilBeamModel`` at exact depth
+        1. FluenceMapLayer (1 mm/px)  – aperture, penumbra, profile, head scatter
+        2. Sc + OF residual            – analytical formula + lookup table
+        3. Nyholm pencil-beam kernel   – PyDoseRT ``PencilBeamModel`` at exact depth
+        4. Downsample to *res_mm*      – bilinear interpolation to target resolution
         """
-        n_pix = int(grid_span_mm / res_mm)
-        if n_pix % 2 == 0:
-            n_pix += 1
-
         device = self.device
         dtype = torch.float32
         fw, fh = float(field_size_mm[0]), float(field_size_mm[1])
 
-        # ---- 1. Jaw aperture -------------------------------------------------
-        u = (torch.arange(n_pix, dtype=dtype, device=device) - n_pix / 2 + 0.5) * res_mm
-        v = (torch.arange(n_pix, dtype=dtype, device=device) - n_pix / 2 + 0.5) * res_mm
-        V, U = torch.meshgrid(v, u, indexing="ij")  # (n_pix, n_pix)
+        # ---- 1. FluenceMapLayer at 1 mm/px -----------------------------------
+        pydosert_cfg = self._build_pydosert_config(config)
+        leaf_widths = pydosert_cfg.leaf_widths
+        n_full = int(sum(leaf_widths)) if leaf_widths else 400
+        if n_full % 2 == 0:
+            n_full += 1
 
-        vox_half = res_mm / 2.0
-        ov_x = torch.clamp(
-            torch.minimum(torch.tensor(fw / 2, device=device, dtype=dtype), U + vox_half)
-            - torch.maximum(torch.tensor(-fw / 2, device=device, dtype=dtype), U - vox_half),
-            min=0.0,
-        ) / res_mm
-        ov_y = torch.clamp(
-            torch.minimum(torch.tensor(fh / 2, device=device, dtype=dtype), V + vox_half)
-            - torch.maximum(torch.tensor(-fh / 2, device=device, dtype=dtype), V - vox_half),
-            min=0.0,
-        ) / res_mm
-        fluence = (ov_x * ov_y).unsqueeze(0).unsqueeze(0)  # [1, 1, n_pix, n_pix]
+        fluence_layer = FluenceMapLayer(
+            pydosert_cfg, field_size=(n_full, n_full), device=device, dtype=dtype
+        )
 
-        # ---- 2. Penumbra (PyDoseRT directional kernels) ----------------------
-        # ``precompute_directional_source_penumbra_kernels`` expects FWHM in
-        # "pixel units".  HeroDoseCalc stores sigma in mm, so convert:
-        #   FWHM_px = sigma_mm * 2.355 / res_mm
-        sig_x = float(config.geometric_penumbra_mm[0])
-        sig_y = float(config.geometric_penumbra_mm[1])
-        if sig_x > 1e-3 or sig_y > 1e-3:
-            fwhm_x_px = sig_x * 2.355 / res_mm   # crossline / MLC direction
-            fwhm_y_px = sig_y * 2.355 / res_mm   # inline  / JAW direction
-            kern_mlc, kern_jaw = precompute_directional_source_penumbra_kernels(
-                fwhm_x_px, fwhm_y_px, device=device, dtype=dtype
-            )
-            fluence = apply_directional_precomputed_kernel(fluence, kern_mlc, kern_jaw)
+        # Leaf/jaw positions in mm = pixels at 1 mm/px
+        N = pydosert_cfg.number_of_leaf_pairs
+        leaf_pos = torch.zeros(1, 1, N, 2, device=device, dtype=dtype)
+        leaf_pos[..., 0] = -fw / 2.0
+        leaf_pos[..., 1] =  fw / 2.0
+        jaw_pos = torch.zeros(1, 1, 2, device=device, dtype=dtype)
+        jaw_pos[..., 0] = -fh / 2.0
+        jaw_pos[..., 1] =  fh / 2.0
 
-        # ---- 3. Radial profile correction (PyDoseRT, resolution-aware) ------
-        if config.profile_curve is not None and len(config.profile_curve) >= 2:
-            pc = sorted(config.profile_curve, key=lambda p: p[0])
-            dist_mm = np.array([p[0] for p in pc], dtype=float)
-            ratios = np.array([p[1] for p in pc], dtype=float)
-            profile_map = (
-                create_radial_correction_map(dist_mm, ratios, (n_pix, n_pix), pixel_size_mm=res_mm)
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .to(device=device, dtype=dtype)
-            )
-            fluence = fluence * profile_map
+        with torch.no_grad():
+            fluence = fluence_layer(leaf_pos, jaw_pos)  # [1, n_full, n_full]
+        fluence = fluence.unsqueeze(0)  # [1, 1, n_full, n_full]
 
-        # ---- 4. Head scatter (PyDoseRT kernel, no normalisation) -------------
+        # ---- 2. Output factor (Sc analytical + OF-residual curve) -----------
         w = float(config.head_scatter_magnitude)
         sc_sig_x = float(config.head_scatter_sigma_mm[0])
         sc_sig_y = float(config.head_scatter_sigma_mm[1])
-        if w > 0.0 and sc_sig_x > 0.0 and sc_sig_y > 0.0:
-            # ``precompute_head_scatter_kernel(sigma_cm, resolution_cm)``
-            kx = (
-                precompute_head_scatter_kernel(sc_sig_x / 10.0, res_mm / 10.0)
-                .to(device=device, dtype=dtype)
-                .view(1, 1, 1, -1)
-            )
-            ky = (
-                precompute_head_scatter_kernel(sc_sig_y / 10.0, res_mm / 10.0)
-                .to(device=device, dtype=dtype)
-                .view(1, 1, -1, 1)
-            )
-            scatter = F.conv2d(fluence, kx, padding=(0, kx.shape[-1] // 2))
-            scatter = F.conv2d(scatter, ky, padding=(ky.shape[-2] // 2, 0))
-            # Blend without normalisation — matches HeroDoseCalc's physics model.
-            fluence = (1.0 - w) * fluence + w * scatter
-
-        # ---- 5. Output factor (Sc analytical + OF-residual curve) -----------
         sc = 1.0
         if w > 0.0 and sc_sig_x > 0.0 and sc_sig_y > 0.0:
             t10_x = erf(100.0 / (2.0 * np.sqrt(2.0) * sc_sig_x))
@@ -561,8 +569,17 @@ class CommissioningToolkit:
 
         fluence = fluence * (sc * of_residual)
 
-        # ---- 6. Nyholm pencil-beam kernel (PyDoseRT PencilBeamModel) ---------
-        pbm = PencilBeamModel((res_mm, res_mm, res_mm), config.tpr20_10, n_pix)
+        # ---- 3. Nyholm pencil-beam kernel at 1 mm/px -------------------------
+        # Extract the central grid_span_mm region before convolution so the
+        # kernel has enough context (from the full fluence) to be accurate.
+        n_roi_1mm = min(int(grid_span_mm), n_full)
+        if n_roi_1mm % 2 == 0:
+            n_roi_1mm += 1
+        c = n_full // 2
+        start = c - n_roi_1mm // 2
+        fluence_roi = fluence[:, :, start : start + n_roi_1mm, start : start + n_roi_1mm]
+
+        pbm = PencilBeamModel((1.0, 1.0, 1.0), config.tpr20_10, n_roi_1mm)
         d_t = torch.tensor([[[[float(depth_mm)]]]], dtype=dtype, device=device)
         with torch.no_grad():
             kernel = pbm.get_pencil_beam(
@@ -571,26 +588,38 @@ class CommissioningToolkit:
 
         kH, kW = pbm.kernel_size_h, pbm.kernel_size_w
         with torch.no_grad():
-            # Use FFT convolution on CPU for large kernels (avoids slow direct conv2d).
             if device.type == "cpu" and kH >= 32:
-                fft_h = n_pix + kH - 1
-                fft_w = n_pix + kW - 1
-                f2d = fluence[0, 0]
+                fft_h = n_roi_1mm + kH - 1
+                fft_w = n_roi_1mm + kW - 1
+                f2d = fluence_roi[0, 0]
                 k2d = torch.flip(kernel[0, 0], dims=(0, 1))
                 conv_full = torch.fft.irfft2(
                     torch.fft.rfft2(f2d, s=(fft_h, fft_w))
                     * torch.fft.rfft2(k2d, s=(fft_h, fft_w)),
                     s=(fft_h, fft_w),
                 )
-                dose_2d = conv_full[kH // 2 : kH // 2 + n_pix, kW // 2 : kW // 2 + n_pix].numpy()
+                dose_1mm = conv_full[kH // 2 : kH // 2 + n_roi_1mm, kW // 2 : kW // 2 + n_roi_1mm]
             else:
-                dose_2d = (
-                    F.conv2d(fluence, kernel.to(device), padding=(kH // 2, kW // 2))[0, 0]
-                    .cpu()
-                    .numpy()
-                )
+                dose_1mm = F.conv2d(
+                    fluence_roi, kernel.to(device), padding=(kH // 2, kW // 2)
+                )[0, 0]
 
-        pos = (np.arange(n_pix) - n_pix / 2 + 0.5) * res_mm
+        # ---- 4. Downsample to target res_mm ----------------------------------
+        n_out = max(1, int(round(grid_span_mm / res_mm)))
+        if n_out % 2 == 0:
+            n_out += 1
+        if abs(res_mm - 1.0) < 1e-6:
+            dose_2d = dose_1mm.cpu().numpy() if isinstance(dose_1mm, torch.Tensor) else dose_1mm
+            n_out = n_roi_1mm
+        else:
+            dose_t = dose_1mm.unsqueeze(0).unsqueeze(0) if isinstance(dose_1mm, torch.Tensor) else torch.from_numpy(dose_1mm).unsqueeze(0).unsqueeze(0)
+            dose_2d = (
+                F.interpolate(dose_t.float(), size=(n_out, n_out), mode="bilinear", align_corners=False)[0, 0]
+                .cpu()
+                .numpy()
+            )
+
+        pos = (np.arange(n_out) - n_out / 2 + 0.5) * res_mm
         return dose_2d, pos
 
     # ------------------------------------------------------------------

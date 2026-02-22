@@ -57,6 +57,7 @@ class FluenceMapLayer(nn.Module):
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         training_sharpness: float = 10.0,
+        pixel_size_mm: float = 1.0,
     ) -> 'FluenceMapLayer':
         """
         Initializes the FluenceMapLayer.
@@ -82,6 +83,7 @@ class FluenceMapLayer(nn.Module):
         self.verbose = verbose
         self.training_sharpness = training_sharpness
         self.field_size = field_size
+        self.pixel_size_mm = pixel_size_mm
         self.training = False
 
         if self.machine_config.leaf_widths is None:
@@ -164,7 +166,7 @@ class FluenceMapLayer(nn.Module):
                 self.machine_config.profile_corrections[0],
                 self.machine_config.profile_corrections[1],
                 self.field_size,
-                1.0
+                self.pixel_size_mm
             ).unsqueeze(0).unsqueeze(0).to(self.device).to(self.dtype).detach()
             self.register_buffer("profile_correction_map", profile_correction_map)
             self.use_profile_correction = True
