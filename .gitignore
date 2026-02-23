@@ -46,3 +46,4 @@ database/optimal_deviation_validation/LBFGS/_t5/static_optimize_deviation_val_LB
 *.npy
 *egg-info
 *.stats
+commissioning/data/*

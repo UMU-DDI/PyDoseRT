@@ -16,14 +16,14 @@ from pydose_rt_commissioning.commissioning_plotter import CommissioningPlotter
 
 
 SETTINGS = {
-    "config": "examples/commissioning/machine_config_base.json",
-    "profiles": "examples/commissioning/data/measurements_10MV/measurements_10_profiles.asc",
-    "diagonals": "examples/commissioning/data/measurements_10MV/measurements_10_diagonals.asc",
+    "config": "commissioning/machine_config_base.json",
+    "profiles": "commissioning/data/measurements_10MV/measurements_10_profiles.asc",
+    "diagonals": "commissioning/data/measurements_10MV/measurements_10_diagonals.asc",
     # JSON file produced by the clinic's OF measurement workflow
-    "output_factors": "examples/commissioning/data/measurements_10MV/measurements_10_of_sp.json",
+    "output_factors": "commissioning/data/measurements_10MV/measurements_10_of_sp.json",
     "energy": "10MV",
-    "report_dir": "examples/commissioning/reports/commissioning",
-    "pydosert_output_dir": "examples/commissioning",
+    "report_dir": "commissioning/reports/commissioning",
+    "pydosert_output_dir": "commissioning",
     "run_step1": True,
     "run_step2": True,
     "run_step3": True,
