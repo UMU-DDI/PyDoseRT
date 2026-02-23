@@ -1,18 +1,16 @@
 """Commissioning toolkit using the PyDoseRT dose engine.
 
-Identical optimisation logic, plots, and fitting steps as the HeroDoseCalc
-version.  The only change is how dose planes are simulated:
+Fitting steps: geometric penumbra → off-axis profile correction → head scatter
+and output factors.  Configuration state is held in memory (``self._config_data``)
+throughout the pipeline; the final results are exported as PyDoseRT-format JSON
+files via ``export_pydosert_config``.
 
-  * Jaw aperture   – computed directly in PyTorch (same sub-pixel overlap
-                     formula as before).
-  * Penumbra       – PyDoseRT ``precompute_directional_source_penumbra_kernels``
-                     + ``apply_directional_precomputed_kernel``.
-  * Profile map    – PyDoseRT ``create_radial_correction_map`` (resolution-aware).
-  * Head scatter   – PyDoseRT ``precompute_head_scatter_kernel`` for the kernel,
-                     applied without the normalisation used in FluenceMapLayer so
-                     the physics stays consistent with the original model.
-  * Nyholm kernel  – PyDoseRT ``PencilBeamModel``, evaluated at the exact target
-                     depth instead of interpolating between pre-computed slabs.
+Dose planes are simulated using PyDoseRT layers directly:
+
+  * Aperture + penumbra + profile + head scatter – ``FluenceMapLayer`` at
+    1 mm/px native resolution.
+  * Nyholm pencil-beam kernel – ``PencilBeamModel`` evaluated at the exact
+    target depth.
 """
 from __future__ import annotations
 
@@ -154,6 +152,7 @@ class CommissioningToolkit:
         log_callback: Callable[[str], None] | None = None,
     ):
         self.config_path = config_path
+        self._config_data: Dict[str, Any] = self.load_json(config_path)
         self.device = device
         self.verbose = verbose
         self.log_callback = log_callback
@@ -219,8 +218,8 @@ class CommissioningToolkit:
             return json.load(f)
 
     def _hs_config_for_energy(self, energy: str) -> MachineConfig:
-        """Load config and blank out the OF residual curve (used during HS fitting)."""
-        cfg = MachineConfig.load_from_json(self.config_path, energy=energy)
+        """Build config from in-memory state and blank out the OF residual curve (used during HS fitting)."""
+        cfg = MachineConfig._from_dict(self._config_data, energy=energy)
         cfg.output_factor_curve = [(0.0, 1.0), (500.0, 1.0)]
         return cfg
 
@@ -275,16 +274,15 @@ class CommissioningToolkit:
 
     def export_pydosert_config(
         self,
-        input_path: str,
         *,
         output_dir: str | None = None,
         output_prefix: str = "pydosert",
     ) -> Dict[str, str]:
-        """Convert a commissioning JSON to per-energy PyDoseRT-compatible flat JSONs.
+        """Convert the in-memory commissioning config to per-energy PyDoseRT-compatible flat JSONs.
 
         The commissioning format is a nested, multi-energy document.  PyDoseRT's
         ``MachineConfig`` expects a flat, single-energy JSON.  This method performs
-        the conversion for every energy present in the commissioning file and writes
+        the conversion for every energy present in ``self._config_data`` and writes
         one output file per energy.
 
         Field mapping
@@ -309,11 +307,8 @@ class CommissioningToolkit:
 
         Parameters
         ----------
-        input_path:
-            Path to the commissioning JSON (e.g. ``machine_config_complete.json``).
         output_dir:
-            Directory to write the per-energy files.  Defaults to the same
-            directory as *input_path*.
+            Directory to write the per-energy files.  Defaults to current directory.
         output_prefix:
             Filename stem prefix; files are named ``{prefix}_{energy}.json``.
 
@@ -322,7 +317,7 @@ class CommissioningToolkit:
         dict
             Mapping of energy key → output file path.
         """
-        data = self.load_json(input_path)
+        data = self._config_data
 
         # ---- MLC geometry (shared across energies) ---------------------------
         mlc = data.get("mlc", {})
@@ -336,7 +331,7 @@ class CommissioningToolkit:
 
         # ---- Per-energy export -----------------------------------------------
         if output_dir is None:
-            output_dir = os.path.dirname(os.path.abspath(input_path))
+            output_dir = "."
         os.makedirs(output_dir, exist_ok=True)
 
         output_paths: Dict[str, str] = {}
@@ -402,10 +397,9 @@ class CommissioningToolkit:
 
         return output_paths
 
-    def finalize_config(
-        self, path: str, *, intermediate_files: List[str] | None = None
-    ) -> None:
-        data = self.load_json(path)
+    def finalize_config(self) -> None:
+        """Clean up numerical precision in ``self._config_data`` in-place."""
+        data = self._config_data
         for _, e_data in (data.get("energies") or {}).items():
             prof = (e_data.get("profile") or {}).get("curve")
             if isinstance(prof, list) and prof:
@@ -432,12 +426,6 @@ class CommissioningToolkit:
                         src[key] = [round(float(x), 4) for x in src[key]]
                 if "head_scatter_magnitude" in src:
                     src["head_scatter_magnitude"] = round(float(src["head_scatter_magnitude"]), 5)
-
-        self.save_json_compact(path, data, indent=4)
-        if intermediate_files:
-            for fp in intermediate_files:
-                if fp and os.path.exists(fp):
-                    os.remove(fp)
 
     # ------------------------------------------------------------------
     # Core simulation (PyDoseRT engine)
@@ -710,7 +698,7 @@ class CommissioningToolkit:
             energy = profiles_group[0].energy
             config = config_cache.get(energy)
             if config is None:
-                config = MachineConfig.load_from_json(self.config_path, energy=energy)
+                config = MachineConfig._from_dict(self._config_data, energy=energy)
                 config_cache[energy] = config
             sims = self._simulate_plane_and_extract_profiles(
                 config, profiles_group, res_mm=res_mm
@@ -738,7 +726,6 @@ class CommissioningToolkit:
         *,
         target_field_mm: Tuple[float, float] = (100.0, 100.0),
         target_depth_mm: float = 100.0,
-        output_json: str = "machine_config_step1.json",
         plotter: Any | None = None,
     ) -> PenumbraFitResult:
         prof_x = MeasurementParser.find_profile(
@@ -750,9 +737,8 @@ class CommissioningToolkit:
         if not prof_x or not prof_y:
             raise ValueError("Could not find Crossline/Inline profiles for penumbra fitting")
 
-        raw_config = self.load_json(self.config_path)
         energy_key = prof_x.energy.replace(" ", "")
-        sim_config = MachineConfig.load_from_json(self.config_path, energy=prof_x.energy)
+        sim_config = MachineConfig._from_dict(self._config_data, energy=prof_x.energy)
 
         final_values = [
             float(sim_config.geometric_penumbra_mm[0]),
@@ -849,8 +835,7 @@ class CommissioningToolkit:
         else:
             self._log(f"Penumbra fit failed: {res.message}")
 
-        raw_config["energies"][energy_key]["source"]["geometric_penumbra_mm"] = final_values
-        self.save_json_compact(output_json, raw_config, indent=4)
+        self._config_data["energies"][energy_key]["source"]["geometric_penumbra_mm"] = final_values
 
         tuned_x, tuned_y = self._simulate_plane_and_extract_profiles(
             sim_config, [prof_x, prof_y], res_mm=penumbra_res_mm
@@ -882,7 +867,6 @@ class CommissioningToolkit:
         self,
         profiles: List[MeasuredProfile],
         *,
-        output_json: str = "machine_config_complete.json",
         iterations: int = 2,
         sim_res_mm: float = 3.0,
         plotter: Any | None = None,
@@ -896,7 +880,7 @@ class CommissioningToolkit:
                 raise ValueError("No Diagonal or Crossline profiles found for profile correction")
             target_profile = max(x_profiles, key=lambda p: p.field_size_mm[0])
 
-        sim_config = MachineConfig.load_from_json(self.config_path, energy=target_profile.energy)
+        sim_config = MachineConfig._from_dict(self._config_data, energy=target_profile.energy)
         sim_config.profile_curve = ((0.0, 1.0), (500.0, 1.0))
 
         def _apply_diagonal_taper(
@@ -973,10 +957,8 @@ class CommissioningToolkit:
             correction_curve = _apply_diagonal_taper(correction_curve)
             sim_config.profile_curve = correction_curve
 
-        raw_config = self.load_json(self.config_path)
         energy_key = target_profile.energy.replace(" ", "")
-        raw_config["energies"][energy_key]["profile"]["curve"] = correction_curve
-        self.save_json_compact(output_json, raw_config, indent=4)
+        self._config_data["energies"][energy_key]["profile"]["curve"] = correction_curve
 
         return ProfileCorrectionResult(
             energy=target_profile.energy,
@@ -1002,7 +984,7 @@ class CommissioningToolkit:
         res_mm: float,
         grid_span_mm: float,
     ) -> List[OutputFactorMeasurement]:
-        config = MachineConfig.load_from_json(self.config_path, energy=energy)
+        config = MachineConfig._from_dict(self._config_data, energy=energy)
         config.head_scatter_magnitude = 0.0
         config.output_factor_curve = [(0.0, 1.0), (500.0, 1.0)]
 
@@ -1265,7 +1247,6 @@ class CommissioningToolkit:
         measurements: List[OutputFactorMeasurement],
         *,
         energy: str = "10MV",
-        output_json: str = "machine_config_complete.json",
         tail_profiles: List[MeasuredProfile] | None = None,
         bands_pct: Sequence[Tuple[float, float]] | None = None,
         band_weights: Sequence[float] | None = None,
@@ -1279,9 +1260,7 @@ class CommissioningToolkit:
         jitter_sigma_mm: float = 2.0,
         plotter: Any | None = None,
     ) -> OutputFactorFitResult:
-        raw_config = self.load_json(self.config_path)
-
-        col_geo = raw_config.get("collimator_geometry", {})
+        col_geo = self._config_data.get("collimator_geometry", {})
         z_x = float(col_geo.get("x_jaw_z_mm", 366.0))
         z_y = float(col_geo.get("y_jaw_z_mm", 257.0))
         z_sc = 100.0
@@ -1557,10 +1536,9 @@ class CommissioningToolkit:
 
         curve = self._calculate_of_residual_curve(measurements, amp, sx_iso, sy_iso)
         energy_key = energy.replace(" ", "")
-        raw_config["energies"][energy_key]["source"]["head_scatter_magnitude"] = amp
-        raw_config["energies"][energy_key]["source"]["head_scatter_sigma_mm"] = [sx_iso, sy_iso]
-        raw_config["energies"][energy_key]["output_factors"]["curve"] = curve
-        self.save_json_compact(output_json, raw_config, indent=4)
+        self._config_data["energies"][energy_key]["source"]["head_scatter_magnitude"] = amp
+        self._config_data["energies"][energy_key]["source"]["head_scatter_sigma_mm"] = [sx_iso, sy_iso]
+        self._config_data["energies"][energy_key]["output_factors"]["curve"] = curve
 
         if plotter is not None:
             meas_sq = [m for m in measurements if abs(m.field_x_mm - m.field_y_mm) <= 1.0]

@@ -4,8 +4,9 @@ Run from the repository root:
 
     python examples/commissioning/run_commissioning_pipeline.py
 
-Each step writes an intermediate JSON config that the next step picks up, so
-you can re-run individual steps by toggling ``run_stepN`` flags in SETTINGS.
+Configuration state is held in memory throughout the pipeline.  Toggle
+``run_stepN`` flags in SETTINGS to run individual steps.  The final output
+is one PyDoseRT-format JSON per energy written to ``pydosert_output_dir``.
 """
 import os
 
@@ -22,9 +23,6 @@ SETTINGS = {
     "output_factors": "examples/commissioning/data/measurements_10MV/measurements_10_of_sp.json",
     "energy": "10MV",
     "report_dir": "examples/commissioning/reports/commissioning",
-    "step1": "examples/commissioning/machine_config_step1.json",
-    "step2": "examples/commissioning/machine_config_step2.json",
-    "final": "examples/commissioning/machine_config_complete.json",
     "pydosert_output_dir": "examples/commissioning",
     "run_step1": True,
     "run_step2": True,
@@ -104,14 +102,12 @@ def main() -> int:
             profiles,
             target_field_mm=(100.0, 100.0),
             target_depth_mm=100.0,
-            output_json=SETTINGS["step1"],
             plotter=plotter if SETTINGS["plots"] else None,
         )
         toolkit._log(
             f"Penumbra final: [{pen_res.geometric_penumbra_mm[0]:.2f}, "
             f"{pen_res.geometric_penumbra_mm[1]:.2f}]"
         )
-        toolkit.config_path = SETTINGS["step1"]
 
     # ── Step 2: off-axis profile correction ───────────────────────────────────
     if SETTINGS["run_step2"]:
@@ -119,16 +115,13 @@ def main() -> int:
         diagonals = meas.parse_rfa300(SETTINGS["diagonals"])
         pc_res = toolkit.fit_profile_correction(
             diagonals,
-            output_json=SETTINGS["step2"],
             plotter=plotter if SETTINGS["plots"] else None,
         )
         toolkit._log(f"Profile correction curve points: {len(pc_res.profile_curve)}")
-        toolkit.config_path = SETTINGS["step2"]
 
     # ── Step 3: head scatter / output factors ─────────────────────────────────
     if SETTINGS["run_step3"]:
         log_section("Tuning head scatter")
-        toolkit.config_path = SETTINGS["step2"]
 
         # Accept both JSON and CSV output-factor files automatically.
         of_path = SETTINGS["output_factors"]
@@ -142,7 +135,6 @@ def main() -> int:
         of_res = toolkit.fit_output_factors(
             of_meas,
             energy=SETTINGS["energy"],
-            output_json=SETTINGS["final"],
             tail_profiles=tail_profiles,
             axes=SETTINGS["hs_axes"],
             depths_mm=SETTINGS["hs_depths_mm"],
@@ -162,19 +154,15 @@ def main() -> int:
             f"{of_res.head_scatter_sigma_mm[1]:.2f}]"
         )
 
-        toolkit.config_path = SETTINGS["final"]
+        toolkit.finalize_config()
         if SETTINGS["run_report"]:
-            toolkit.finalize_config(SETTINGS["final"], intermediate_files=None)
             plotter.generate_report(
                 toolkit=toolkit,
                 measurement_files=[SETTINGS["profiles"], SETTINGS["diagonals"]],
                 output_dir=SETTINGS["report_dir"],
             )
-        else:
-            toolkit.finalize_config(SETTINGS["final"], intermediate_files=None)
 
         pydosert_paths = toolkit.export_pydosert_config(
-            SETTINGS["final"],
             output_dir=SETTINGS["pydosert_output_dir"],
         )
         for energy, path in pydosert_paths.items():

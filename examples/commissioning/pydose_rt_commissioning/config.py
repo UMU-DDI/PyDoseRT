@@ -33,11 +33,8 @@ class MachineConfig:
 
     mlc_transmission: float = 0.0
 
-    @staticmethod
-    def load_from_json(file_path: str, energy: str = "10MV") -> "MachineConfig":
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
+    @classmethod
+    def _from_dict(cls, data: dict, energy: str = "10MV") -> "MachineConfig":
         mlc = None
         if "mlc" in data:
             md = data["mlc"]
@@ -52,7 +49,7 @@ class MachineConfig:
         if energy not in energies:
             energy = energy.replace(" ", "")
         if energy not in energies:
-            raise ValueError(f"Energy '{energy}' not found in {file_path}")
+            raise ValueError(f"Energy '{energy}' not found in config data")
 
         e = energies[energy]
         src = e.get("source", {})
@@ -60,7 +57,7 @@ class MachineConfig:
         prof_data = e.get("profile", {}).get("curve")
         of_data = e.get("output_factors", {}).get("curve")
 
-        return MachineConfig(
+        return cls(
             energy=energy,
             gy_per_mu=e.get("gy_per_mu", 1.0),
             tpr20_10=e.get("tpr20_10", 0.7),
@@ -74,3 +71,9 @@ class MachineConfig:
             output_factor_curve=[tuple(p) for p in of_data] if of_data else None,
             mlc_transmission=mlc.transmission if mlc else 0.0,
         )
+
+    @staticmethod
+    def load_from_json(file_path: str, energy: str = "10MV") -> "MachineConfig":
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return MachineConfig._from_dict(data, energy)
