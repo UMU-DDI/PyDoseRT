@@ -233,18 +233,20 @@ def test_forward_fluence_maps_mus_scales_dose(
 
 
 def test_forward_fluence_maps_gradient_flow_without_mus(
-    dose_engine, default_field_size, default_device, default_dtype, default_ct_image
+    dose_engine, default_field_size, default_device, default_dtype
 ):
     """Gradients should propagate back through fluence_maps even when mus=None."""
     B, G = 1, dose_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype, requires_grad=True)
+    # Use uniform non-zero density so pencil-beam kernels are non-trivial
+    water_ct = torch.ones((B, *dose_engine.dose_grid_shape), device=default_device, dtype=default_dtype)
 
     dose = dose_engine.forward(
         leaf_positions=None,
         mus=None,
         jaw_positions=None,
-        density_image=default_ct_image,
+        density_image=water_ct,
         fluence_maps=fluence_maps,
     )
     dose.sum().backward()
@@ -293,19 +295,21 @@ def test_fluence_maps_equivalent_to_aperture_path(
 # ---------------------------------------------------------------------------
 
 def test_forward_fluence_maps_gradient_flow(
-    dose_engine, default_field_size, default_device, default_dtype, default_ct_image
+    dose_engine, default_field_size, default_device, default_dtype
 ):
     """Gradients should propagate back through fluence_maps into the loss."""
     B, G = 1, dose_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype, requires_grad=True)
     mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
+    # Use uniform non-zero density so pencil-beam kernels are non-trivial
+    water_ct = torch.ones((B, *dose_engine.dose_grid_shape), device=default_device, dtype=default_dtype)
 
     dose = dose_engine.forward(
         leaf_positions=None,
         mus=mus,
         jaw_positions=None,
-        density_image=default_ct_image,
+        density_image=water_ct,
         fluence_maps=fluence_maps,
     )
     dose.sum().backward()
