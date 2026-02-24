@@ -392,12 +392,13 @@ class DoseEngine(nn.Module):
 
             if fluence_maps is not None:
                 # Use provided fluence maps directly, skipping the FluenceMapLayer
-                B = mus.shape[0]
                 if fluence_maps.dim() == 4:
                     # [B, G, H, W] -> [B*G, H, W]
+                    B = fluence_maps.shape[0]
                     batched_fluence_maps = fluence_maps.reshape(B * G, fluence_maps.shape[2], fluence_maps.shape[3])
                 else:
                     # Already [B*G, H, W]
+                    B = fluence_maps.shape[0] // G
                     batched_fluence_maps = fluence_maps
             else:
                 if self._adjust_values:
@@ -431,7 +432,8 @@ class DoseEngine(nn.Module):
 
             D_, H_, W_, _ = batched_accumulated_dose.shape[1:]
             batched_accumulated_dose = batched_accumulated_dose.view(B, G, D_, H_, W_)
-            batched_accumulated_dose.mul_(mus[:, :, None, None, None])
+            if fluence_maps is not None:
+                batched_accumulated_dose.mul_(mus[:, :, None, None, None])
 
             batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)
 
