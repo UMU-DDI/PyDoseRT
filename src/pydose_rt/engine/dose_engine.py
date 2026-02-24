@@ -262,21 +262,17 @@ class DoseEngine(nn.Module):
         G = self.number_of_beams
 
         if fluence_maps is not None:
-            # When fluence_maps are provided directly, derive B from mus
-            assert mus.dim() == 2, \
-                f"MUs needs 2 dimensions [B, G], got {mus.dim()}D: {mus.shape}"
-            B = mus.shape[0]
-            expected_mus = (B, G)
-            assert mus.shape == expected_mus, \
-                f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
-
-            # Validate fluence_maps spatial dimensions match field_size
+            # Derive B from fluence_maps; mus is optional in this path
             fm_h, fm_w = self.field_size
             if fluence_maps.dim() == 4:
+                B = fluence_maps.shape[0]
                 expected_fm = (B, G, fm_h, fm_w)
                 assert fluence_maps.shape == expected_fm, \
                     f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
             elif fluence_maps.dim() == 3:
+                assert fluence_maps.shape[0] % G == 0, \
+                    f"Fluence maps leading dim {fluence_maps.shape[0]} is not divisible by G={G}"
+                B = fluence_maps.shape[0] // G
                 expected_fm = (B * G, fm_h, fm_w)
                 assert fluence_maps.shape == expected_fm, \
                     f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
@@ -285,8 +281,19 @@ class DoseEngine(nn.Module):
                     f"fluence_maps must be 3D [B*G, H, W] or 4D [B, G, H, W], got {fluence_maps.dim()}D"
                 )
 
-            devices = {fluence_maps.device, mus.device}
-            dtypes = {fluence_maps.dtype, mus.dtype}
+            # Validate mus only when provided
+            if mus is not None:
+                assert mus.dim() == 2, \
+                    f"MUs needs 2 dimensions [B, G], got {mus.dim()}D: {mus.shape}"
+                expected_mus = (B, G)
+                assert mus.shape == expected_mus, \
+                    f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
+
+            devices = {fluence_maps.device}
+            dtypes = {fluence_maps.dtype}
+            if mus is not None:
+                devices.add(mus.device)
+                dtypes.add(mus.dtype)
         else:
             B = leaf_positions.shape[0]
             assert leaf_positions.dim() == 4, \
@@ -345,7 +352,7 @@ class DoseEngine(nn.Module):
     def forward(
         self,
         leaf_positions: torch.Tensor | None,
-        mus: torch.Tensor,
+        mus: torch.Tensor | None,
         jaw_positions: torch.Tensor | None,
         density_image: torch.Tensor,
         return_intermediates: bool = False,
@@ -356,7 +363,8 @@ class DoseEngine(nn.Module):
 
         Args:
             leaf_positions: Leaf positions [B, G, N, 2]. Not required when fluence_maps is provided.
-            mus: Monitor units [B, G].
+            mus: Monitor units [B, G]. Optional when fluence_maps is provided; if supplied the dose
+                is scaled by MUs, if omitted the fluence maps are used as-is.
             jaw_positions: Jaw positions [B, G, 2]. Not required when fluence_maps is provided.
             density_image: CT image tensor [B, D, H, W].
             return_intermediates: If True, also return intermediate tensors.
@@ -432,7 +440,7 @@ class DoseEngine(nn.Module):
 
             D_, H_, W_, _ = batched_accumulated_dose.shape[1:]
             batched_accumulated_dose = batched_accumulated_dose.view(B, G, D_, H_, W_)
-            if fluence_maps is not None:
+            if mus is not None:
                 batched_accumulated_dose.mul_(mus[:, :, None, None, None])
 
             batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)

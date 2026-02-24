@@ -179,6 +179,81 @@ def test_forward_fluence_maps_multiple_beams_output_shape(
 
 
 # ---------------------------------------------------------------------------
+# mus=None tests  (fluence optimisation path — no aperture geometry needed)
+# ---------------------------------------------------------------------------
+
+def test_forward_fluence_maps_without_mus_output_shape(
+    dose_engine, default_field_size, default_device, default_dtype, default_ct_image
+):
+    """forward() with fluence_maps and mus=None should run without error and produce correct shape."""
+    B, G = 1, dose_engine.number_of_beams
+    H, W = default_field_size
+    fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
+
+    dose = dose_engine.forward(
+        leaf_positions=None,
+        mus=None,
+        jaw_positions=None,
+        density_image=default_ct_image,
+        fluence_maps=fluence_maps,
+    )
+
+    assert dose.shape == (B, *dose_engine.dose_grid_shape)
+
+
+def test_forward_fluence_maps_mus_scales_dose(
+    dose_engine, default_field_size, default_device, default_dtype, default_ct_image
+):
+    """Providing mus should scale the dose proportionally compared to mus=None."""
+    B, G = 1, dose_engine.number_of_beams
+    H, W = default_field_size
+    fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
+
+    dose_no_mus = dose_engine.forward(
+        leaf_positions=None,
+        mus=None,
+        jaw_positions=None,
+        density_image=default_ct_image,
+        fluence_maps=fluence_maps,
+    )
+
+    scale = 3.0
+    mus = torch.full((B, G), scale, device=default_device, dtype=default_dtype)
+    dose_with_mus = dose_engine.forward(
+        leaf_positions=None,
+        mus=mus,
+        jaw_positions=None,
+        density_image=default_ct_image,
+        fluence_maps=fluence_maps,
+    )
+
+    assert torch.allclose(dose_with_mus, dose_no_mus * scale, atol=1e-5), (
+        "dose with mus=scale should equal scale * dose without mus"
+    )
+
+
+def test_forward_fluence_maps_gradient_flow_without_mus(
+    dose_engine, default_field_size, default_device, default_dtype, default_ct_image
+):
+    """Gradients should propagate back through fluence_maps even when mus=None."""
+    B, G = 1, dose_engine.number_of_beams
+    H, W = default_field_size
+    fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype, requires_grad=True)
+
+    dose = dose_engine.forward(
+        leaf_positions=None,
+        mus=None,
+        jaw_positions=None,
+        density_image=default_ct_image,
+        fluence_maps=fluence_maps,
+    )
+    dose.sum().backward()
+
+    assert fluence_maps.grad is not None, "Gradients should reach fluence_maps even without mus"
+    assert torch.any(fluence_maps.grad != 0), "At least some fluence_maps gradients should be non-zero"
+
+
+# ---------------------------------------------------------------------------
 # Equivalence test
 # ---------------------------------------------------------------------------
 
@@ -199,7 +274,7 @@ def test_fluence_maps_equivalent_to_aperture_path(
         return_intermediates=True,
     )
 
-    # Re-run, supplying the extracted maps directly (FluenceMapLayer is skipped)
+    # Re-run with the extracted maps and the same mus — both paths now scale by mus
     dose_from_maps = dose_engine.forward(
         leaf_positions=None,
         mus=mus,
@@ -214,7 +289,7 @@ def test_fluence_maps_equivalent_to_aperture_path(
 
 
 # ---------------------------------------------------------------------------
-# Gradient flow test
+# Gradient flow test (with mus)
 # ---------------------------------------------------------------------------
 
 def test_forward_fluence_maps_gradient_flow(
@@ -248,13 +323,12 @@ def test_forward_fluence_maps_wrong_spatial_dims_raises(
 ):
     """forward() with fluence_maps whose spatial dims don't match field_size should raise."""
     B, G = 1, dose_engine.number_of_beams
-    mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
     bad_maps = torch.ones(B, G, 100, 100, device=default_device, dtype=default_dtype)
 
     with pytest.raises(AssertionError):
         dose_engine.forward(
             leaf_positions=None,
-            mus=mus,
+            mus=None,
             jaw_positions=None,
             density_image=default_ct_image,
             fluence_maps=bad_maps,
@@ -265,14 +339,12 @@ def test_forward_fluence_maps_wrong_ndim_raises(
     dose_engine, default_field_size, default_device, default_dtype, default_ct_image
 ):
     """forward() with a 2D fluence_maps tensor should raise ValueError."""
-    B, G = 1, dose_engine.number_of_beams
-    mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
     bad_maps = torch.ones(*default_field_size, device=default_device, dtype=default_dtype)  # 2D
 
     with pytest.raises(ValueError):
         dose_engine.forward(
             leaf_positions=None,
-            mus=mus,
+            mus=None,
             jaw_positions=None,
             density_image=default_ct_image,
             fluence_maps=bad_maps,
