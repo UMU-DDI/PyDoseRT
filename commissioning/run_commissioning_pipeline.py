@@ -38,8 +38,8 @@ SETTINGS = {
     "hs_plateau_window": 6,
     "hs_plateau_rtol": 1e-4,
     "hs_plateau_max_restarts": 5,
-    "hs_jitter_amp": 0.01,
-    "hs_jitter_sigma_mm": 2.0,
+    "hs_jitter_amp": 0.005,
+    "hs_jitter_sigma_mm": 1.0,
 }
 
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import types
 import warnings
 from dataclasses import dataclass
@@ -338,6 +339,17 @@ class CommissioningToolkit:
         for energy_key, e_data in (data.get("energies") or {}).items():
             src = e_data.get("source", {})
 
+            # Skip energies that still have placeholder (unfitted) parameters.
+            # head_scatter_magnitude is always > 0 after a successful Step 3 fit
+            # (amplitude bounds are 0.03–0.15); 0.0 means the energy was never
+            # commissioned in this session.
+            if float(src.get("head_scatter_magnitude", 0.0)) == 0.0:
+                self._log(
+                    f"Skipping energy '{energy_key}': head_scatter_magnitude is 0 "
+                    "(energy not commissioned in this run)"
+                )
+                continue
+
             # Penumbra: sigma (mm) → FWHM (px at 1 mm/px)
             geo_pen = src.get("geometric_penumbra_mm", [0.0, 0.0])
             penumbra_fwhm = [round(float(v) * 2.355, 4) for v in geo_pen]
@@ -369,8 +381,7 @@ class CommissioningToolkit:
                 ]
 
             # Mean photon energy: derive from energy key (e.g. "10MV" → 10.0)
-            import re as _re
-            _match = _re.search(r"(\d+(?:\.\d+)?)", energy_key)
+            _match = re.search(r"(\d+(?:\.\d+)?)", energy_key)
             mean_photon_energy_MeV = float(_match.group(1)) if _match else 10.0
 
             pydosert_cfg: Dict[str, Any] = {
@@ -1256,8 +1267,8 @@ class CommissioningToolkit:
         plateau_window: int = 6,
         plateau_rtol: float = 1e-4,
         plateau_max_restarts: int = 3,
-        jitter_amp: float = 0.01,
-        jitter_sigma_mm: float = 2.0,
+        jitter_amp: float = 0.005,
+        jitter_sigma_mm: float = 1.0,
         plotter: Any | None = None,
     ) -> OutputFactorFitResult:
         col_geo = self._config_data.get("collimator_geometry", {})
@@ -1470,7 +1481,7 @@ class CommissioningToolkit:
                         x0=x0,
                         bounds=minimize_bounds,
                         method="Powell",
-                        options={"maxiter": 200, "xtol": 1e-4, "ftol": 1e-6},
+                        options={"maxiter": 200, "xtol": 1e-5, "ftol": 1e-6},
                     )
                     break
                 except _RestartFit:
