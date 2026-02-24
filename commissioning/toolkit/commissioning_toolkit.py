@@ -3,7 +3,7 @@
 Fitting steps: geometric penumbra → off-axis profile correction → head scatter
 and output factors.  Configuration state is held in memory (``self._config_data``)
 throughout the pipeline; the final results are exported as PyDoseRT-format JSON
-files via ``export_pydosert_config``.
+files via ``export_config``.
 
 Dose planes are simulated using PyDoseRT layers directly:
 
@@ -273,11 +273,11 @@ class CommissioningToolkit:
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
-    def export_pydosert_config(
+    def export_config(
         self,
         *,
         output_dir: str | None = None,
-        output_prefix: str = "pydosert",
+        output_prefix: str = "machine_config",
     ) -> Dict[str, str]:
         """Convert the in-memory commissioning config to per-energy PyDoseRT-compatible flat JSONs.
 
@@ -384,7 +384,7 @@ class CommissioningToolkit:
             _match = re.search(r"(\d+(?:\.\d+)?)", energy_key)
             mean_photon_energy_MeV = float(_match.group(1)) if _match else 10.0
 
-            pydosert_cfg: Dict[str, Any] = {
+            out_cfg: Dict[str, Any] = {
                 "tpr_20_10": float(e_data.get("tpr20_10", 0.7)),
                 "number_of_leaf_pairs": number_of_leaf_pairs,
                 "mlc_transmission": mlc_transmission,
@@ -397,14 +397,14 @@ class CommissioningToolkit:
                 "head_scatter_ssd_mm": 50.0,
             }
             if profile_corrections is not None:
-                pydosert_cfg["profile_corrections"] = profile_corrections
+                out_cfg["profile_corrections"] = profile_corrections
             if output_factors is not None:
-                pydosert_cfg["output_factors"] = output_factors
+                out_cfg["output_factors"] = output_factors
 
             out_path = os.path.join(output_dir, f"{output_prefix}_{energy_key}.json")
-            self.save_json_compact(out_path, pydosert_cfg)
+            self.save_json_compact(out_path, out_cfg)
             output_paths[energy_key] = out_path
-            self._log(f"Exported PyDoseRT config ({energy_key}): {out_path}")
+            self._log(f"Exported machine config ({energy_key}): {out_path}")
 
         return output_paths
 
@@ -443,7 +443,7 @@ class CommissioningToolkit:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_pydosert_config(cfg: MachineConfig) -> PydoseRTMachineConfig:
+    def _build_engine_config(cfg: MachineConfig) -> PydoseRTMachineConfig:
         """Convert a commissioning MachineConfig to a PyDoseRT MachineConfig.
 
         The result is always at 1 mm/px (native FluenceMapLayer resolution).
@@ -508,7 +508,7 @@ class CommissioningToolkit:
         The fluence map (aperture, penumbra, profile correction, head scatter) is
         computed by ``FluenceMapLayer`` at its native 1 mm/px resolution, which
         matches the standard PyDoseRT treatment-planning setup and is consistent
-        with the parameters exported by ``export_pydosert_config``.
+        with the parameters exported by ``export_config``.
 
         Steps
         -----
@@ -522,18 +522,18 @@ class CommissioningToolkit:
         fw, fh = float(field_size_mm[0]), float(field_size_mm[1])
 
         # ---- 1. FluenceMapLayer at 1 mm/px -----------------------------------
-        pydosert_cfg = self._build_pydosert_config(config)
-        leaf_widths = pydosert_cfg.leaf_widths
+        engine_cfg = self._build_engine_config(config)
+        leaf_widths = engine_cfg.leaf_widths
         n_full = int(sum(leaf_widths)) if leaf_widths else 400
         if n_full % 2 == 0:
             n_full += 1
 
         fluence_layer = FluenceMapLayer(
-            pydosert_cfg, field_size=(n_full, n_full), device=device, dtype=dtype
+            engine_cfg, field_size=(n_full, n_full), device=device, dtype=dtype
         )
 
         # Leaf/jaw positions in mm = pixels at 1 mm/px
-        N = pydosert_cfg.number_of_leaf_pairs
+        N = engine_cfg.number_of_leaf_pairs
         leaf_pos = torch.zeros(1, 1, N, 2, device=device, dtype=dtype)
         leaf_pos[..., 0] = -fw / 2.0
         leaf_pos[..., 1] =  fw / 2.0

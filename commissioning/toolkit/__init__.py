@@ -1,4 +1,4 @@
-"""pydose_rt_commissioning – fluence-model commissioning using the PyDoseRT engine."""
+"""Commissioning toolkit – fluence-model commissioning using the PyDoseRT engine."""
 from .config import MachineConfig, MLCConfig
 from .commissioning_types import MeasuredProfile, OutputFactorMeasurement
 from .commissioning_parser import MeasurementParser

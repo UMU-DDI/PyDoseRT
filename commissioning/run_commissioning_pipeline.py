@@ -2,17 +2,17 @@
 
 Run from the repository root:
 
-    python examples/commissioning/run_commissioning_pipeline.py
+    python commissioning/run_commissioning_pipeline.py
 
 Configuration state is held in memory throughout the pipeline.  Toggle
 ``run_stepN`` flags in SETTINGS to run individual steps.  The final output
-is one PyDoseRT-format JSON per energy written to ``pydosert_output_dir``.
+is one machine-config JSON per energy written to ``output_dir``.
 """
 import os
 
-from pydose_rt_commissioning.commissioning_parser import MeasurementParser
-from pydose_rt_commissioning.commissioning_toolkit import CommissioningToolkit
-from pydose_rt_commissioning.commissioning_plotter import CommissioningPlotter
+from toolkit.commissioning_parser import MeasurementParser
+from toolkit.commissioning_toolkit import CommissioningToolkit
+from toolkit.commissioning_plotter import CommissioningPlotter
 
 
 SETTINGS = {
@@ -23,7 +23,7 @@ SETTINGS = {
     "output_factors": "commissioning/data/measurements_10MV/measurements_10_of_sp.json",
     "energy": "10MV",
     "report_dir": "commissioning/reports/commissioning",
-    "pydosert_output_dir": "commissioning",
+    "output_dir": "commissioning",
     "run_step1": True,
     "run_step2": True,
     "run_step3": True,
@@ -76,7 +76,6 @@ def main() -> int:
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
-    meas = MeasurementParser()
     plotter = CommissioningPlotter(show=SETTINGS["plots"])
     toolkit = CommissioningToolkit(
         SETTINGS["config"],
@@ -97,7 +96,7 @@ def main() -> int:
     # ── Step 1: geometric penumbra ────────────────────────────────────────────
     if SETTINGS["run_step1"]:
         log_section("Tuning geometric penumbra")
-        profiles = meas.parse_rfa300(SETTINGS["profiles"])
+        profiles = MeasurementParser.parse_rfa300(SETTINGS["profiles"])
         pen_res = toolkit.fit_geometric_penumbra(
             profiles,
             target_field_mm=(100.0, 100.0),
@@ -112,7 +111,7 @@ def main() -> int:
     # ── Step 2: off-axis profile correction ───────────────────────────────────
     if SETTINGS["run_step2"]:
         log_section("Tuning profile correction")
-        diagonals = meas.parse_rfa300(SETTINGS["diagonals"])
+        diagonals = MeasurementParser.parse_rfa300(SETTINGS["diagonals"])
         pc_res = toolkit.fit_profile_correction(
             diagonals,
             plotter=plotter if SETTINGS["plots"] else None,
@@ -126,11 +125,11 @@ def main() -> int:
         # Accept both JSON and CSV output-factor files automatically.
         of_path = SETTINGS["output_factors"]
         if of_path.endswith(".json"):
-            of_meas = meas.parse_output_factors_json(of_path)
+            of_meas = MeasurementParser.parse_output_factors_json(of_path)
         else:
-            of_meas = meas.parse_output_factors_csv(of_path)
+            of_meas = MeasurementParser.parse_output_factors_csv(of_path)
 
-        tail_profiles = meas.parse_rfa300(SETTINGS["profiles"])
+        tail_profiles = MeasurementParser.parse_rfa300(SETTINGS["profiles"])
 
         of_res = toolkit.fit_output_factors(
             of_meas,
@@ -162,11 +161,11 @@ def main() -> int:
                 output_dir=SETTINGS["report_dir"],
             )
 
-        pydosert_paths = toolkit.export_pydosert_config(
-            output_dir=SETTINGS["pydosert_output_dir"],
+        machine_config_paths = toolkit.export_config(
+            output_dir=SETTINGS["output_dir"],
         )
-        for energy, path in pydosert_paths.items():
-            toolkit._log(f"PyDoseRT machine config ({energy}): {path}")
+        for energy, path in machine_config_paths.items():
+            toolkit._log(f"Machine config ({energy}): {path}")
 
     if SETTINGS["plots"]:
         import matplotlib.pyplot as plt

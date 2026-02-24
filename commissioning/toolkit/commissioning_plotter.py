@@ -55,7 +55,6 @@ class CommissioningDashboard:
 
         self.pen_lines = []
         self.profile_lines = []
-        self.scatter_lines = []
         self.loss_line = None
         self.of_lines = []
 
@@ -158,45 +157,6 @@ class CommissioningDashboard:
 
         self.ax_profile.set_title("PROFILE", color="#e6edf3", fontsize=12, fontweight="bold", pad=10)
         self._autoscale(self.ax_profile)
-
-    def update_scatter(
-        self,
-        pos_x: Iterable[float],
-        meas_x: np.ndarray,
-        sim_x: np.ndarray,
-        pos_y: Iterable[float],
-        meas_y: np.ndarray,
-        sim_y: np.ndarray,
-        *,
-        title_extra: str = "",
-    ) -> None:
-        pos_x = -np.abs(np.asarray(pos_x))
-        pos_y = np.abs(np.asarray(pos_y))
-        meas_x = np.asarray(meas_x)
-        meas_y = np.asarray(meas_y)
-        sim_x = np.asarray(sim_x)
-        sim_y = np.asarray(sim_y)
-        meas_x = meas_x / (meas_x[np.argmin(np.abs(pos_x))] if meas_x.size else 1.0)
-        meas_y = meas_y / (meas_y[np.argmin(np.abs(pos_y))] if meas_y.size else 1.0)
-        sim_x = sim_x / (sim_x[np.argmin(np.abs(pos_x))] if sim_x.size else 1.0)
-        sim_y = sim_y / (sim_y[np.argmin(np.abs(pos_y))] if sim_y.size else 1.0)
-
-        if not self.scatter_lines:
-            self.scatter_lines = [
-                self.ax_scatter.plot(pos_x, meas_x, "o", color="#6fb1ff", markersize=2, alpha=0.5, label="Meas X")[0],
-                self.ax_scatter.plot(pos_x, sim_x, "-", color="#8ecbff", linewidth=1.6, label="Sim X")[0],
-                self.ax_scatter.plot(pos_y, meas_y, "o", color="#ff8fa3", markersize=2, alpha=0.5, label="Meas Y")[0],
-                self.ax_scatter.plot(pos_y, sim_y, "-", color="#ffb7c5", linewidth=1.6, label="Sim Y")[0],
-            ]
-            self.ax_scatter.legend(loc="upper right", fontsize=8, framealpha=0.1)
-        else:
-            self.scatter_lines[0].set_data(pos_x, meas_x)
-            self.scatter_lines[1].set_data(pos_x, sim_x)
-            self.scatter_lines[2].set_data(pos_y, meas_y)
-            self.scatter_lines[3].set_data(pos_y, sim_y)
-
-        self.ax_scatter.set_title("SCATTER", color="#e6edf3", fontsize=12, fontweight="bold", pad=10)
-        self._autoscale(self.ax_scatter)
 
     def update_scatter_multi(
         self,
@@ -311,22 +271,6 @@ class CommissioningPlotter:
     ) -> None:
         if self.dashboard is not None:
             self.dashboard.update_profile(pos, meas, sim, title_extra=title_extra, axis=axis)
-
-    def update_scatter(
-        self,
-        pos_x: Iterable[float],
-        meas_x: np.ndarray,
-        sim_x: np.ndarray,
-        pos_y: Iterable[float],
-        meas_y: np.ndarray,
-        sim_y: np.ndarray,
-        *,
-        title_extra: str = "",
-    ) -> None:
-        if self.dashboard is not None:
-            self.dashboard.update_scatter(
-                pos_x, meas_x, sim_x, pos_y, meas_y, sim_y, title_extra=title_extra
-            )
 
     def update_scatter_multi(
         self,
