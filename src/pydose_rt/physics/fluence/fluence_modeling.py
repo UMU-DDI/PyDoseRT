@@ -544,10 +544,6 @@ def compute_sc_output_factor(
             \\operatorname{erf}\\!\\left(\\frac{H}{2\\sqrt{2}\\sigma_y}\\right)}
             {S_{c,\\mathrm{ref}}}
 
-    This is identical to the model used in HeroDoseCalc's
-    ``_calculate_of_residual_curve`` / ``fit_output_factors`` commissioning
-    toolkit.
-
     Parameters
     ----------
     jaw_w_mm : torch.Tensor
@@ -555,8 +551,7 @@ def compute_sc_output_factor(
     jaw_h_mm : torch.Tensor
         Jaw opening in the inline (Y) direction, shape ``[B]``, in mm.
     sc_amplitude : float
-        Head-scatter amplitude ``A`` (same as ``head_scatter_magnitude`` in
-        HeroDoseCalc; typically 0.03 – 0.15).
+        Head-scatter amplitude ``A`` typically 0.03 – 0.15).
     sigma_x_mm : float
         Effective source sigma at isocentre in the X direction, in mm.
     sigma_y_mm : float

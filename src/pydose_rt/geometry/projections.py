@@ -23,9 +23,6 @@ def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0, pixel_s
     spans ``[left, right]``.  The return value is the overlap fraction in
     [0, 1] (optionally floored at ``min_value`` to model MLC transmission).
 
-    The 50 % crossing is at ``left`` and ``right`` exactly, matching how
-    HeroDoseCalc renders the aperture.
-
     Args:
         d: Pixel centre positions (mm).
         left: Left edge of aperture (mm).

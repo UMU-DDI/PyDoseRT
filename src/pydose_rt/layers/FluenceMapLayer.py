@@ -284,7 +284,7 @@ class FluenceMapLayer(nn.Module):
                 )
 
         # ════════════════════════════════════════════════════════════════════════
-        # Physics pipeline — mirrors HeroDoseCalc FluenceGenerator.generate_batch
+        # Physics pipeline
         #
         #  1. penumbra  conv (source blur, directional 1-D Gaussians)
         #  2. profile correction  (radial off-axis factor, applied to primary)
@@ -304,14 +304,12 @@ class FluenceMapLayer(nn.Module):
         else:
             primary = aperture
 
-        # Step 2 – radial off-axis profile correction (applied to primary only,
-        #           matching HeroDoseCalc which corrects primary before scatter blend)
+        # Step 2 – radial off-axis profile correction (applied to primary only)
         if self.use_profile_correction:
             primary = primary * self.profile_correction_map
 
         # Step 3 – head-scatter blend
         #   scatter is computed from the *raw aperture* with a wide Gaussian
-        #   (HeroDoseCalc: conv2d(aperture, scatter_kernel, padding=pad_s))
         if self.use_head_scatter:
             scatter = apply_head_scatter_kernels(
                 aperture,
@@ -324,7 +322,7 @@ class FluenceMapLayer(nn.Module):
             fluence_map = primary
 
         # Step 4 – output factor
-        #   (a) Physics-based Sc erf model (preferred, matches HeroDoseCalc)
+        #   (a) Physics-based Sc erf model
         if self.use_sc_model:
             sc = compute_sc_output_factor(
                 jaw_w_mm=field_size_x_mm,
