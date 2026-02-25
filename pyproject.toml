@@ -1,7 +1,7 @@
 
 [project]
 name = "pydose_rt"
-version = "1.0.0"
+version = "1.1.0"
 description = "A differentiable radiation therapy dose calculation engine for automated treatment planning, built on PyTorch."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

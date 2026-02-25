@@ -256,58 +256,94 @@ class DoseEngine(nn.Module):
         return (ix, iy, iz)
 
 
-    def _assert_sizes(self, density_image, leaf_positions, jaw_positions, mus):
+    def _assert_sizes(self, density_image, leaf_positions, jaw_positions, mus, fluence_maps=None):
         """Validate input tensor sizes."""
 
-        B = leaf_positions.shape[0]
-        assert leaf_positions.dim() == 4, \
-            f"Leaf positions needs 4 dimensions [B, 2, CP, N], got {leaf_positions.dim()}D: {leaf_positions.shape}"
-        assert mus.dim() == 2, \
-            f"MUs needs 2 dimensions [B, CP], got {mus.dim()}D: {mus.shape}"
+        G = self.number_of_beams
 
-        assert leaf_positions.shape[0] == B and mus.shape[0] == B, \
-            f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, mus={mus.shape[0]}"
+        if fluence_maps is not None:
+            # Derive B from fluence_maps; mus is optional in this path
+            fm_h, fm_w = self.field_size
+            if fluence_maps.dim() == 4:
+                B = fluence_maps.shape[0]
+                expected_fm = (B, G, fm_h, fm_w)
+                assert fluence_maps.shape == expected_fm, \
+                    f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
+            elif fluence_maps.dim() == 3:
+                assert fluence_maps.shape[0] % G == 0, \
+                    f"Fluence maps leading dim {fluence_maps.shape[0]} is not divisible by G={G}"
+                B = fluence_maps.shape[0] // G
+                expected_fm = (B * G, fm_h, fm_w)
+                assert fluence_maps.shape == expected_fm, \
+                    f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
+            else:
+                raise ValueError(
+                    f"fluence_maps must be 3D [B*G, H, W] or 4D [B, G, H, W], got {fluence_maps.dim()}D"
+                )
 
-        expected_leaf = (B, self.number_of_beams, self.machine_config.number_of_leaf_pairs, 2)
-        assert leaf_positions.shape == expected_leaf, \
-            f"Leaf positions shape mismatch: expected {expected_leaf}, got {leaf_positions.shape}"
+            # Validate mus only when provided
+            if mus is not None:
+                assert mus.dim() == 2, \
+                    f"MUs needs 2 dimensions [B, G], got {mus.dim()}D: {mus.shape}"
+                expected_mus = (B, G)
+                assert mus.shape == expected_mus, \
+                    f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
 
-        expected_mus = (B, self.number_of_beams)
-        assert mus.shape == expected_mus, \
-            f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
-        
-        if jaw_positions is not None:
-            assert jaw_positions.dim() == 3, \
-                f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}"
-            
-            assert jaw_positions.shape[0] == B, \
-                f"Batch size mismatch: ct={B}, jaw_positions={jaw_positions.shape[0]}"
-            
-            expected_jaw = (B, self.number_of_beams, 2)
-            assert jaw_positions.shape == expected_jaw, \
-                f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}"
-        
+            devices = {fluence_maps.device}
+            dtypes = {fluence_maps.dtype}
+            if mus is not None:
+                devices.add(mus.device)
+                dtypes.add(mus.dtype)
+        else:
+            B = leaf_positions.shape[0]
+            assert leaf_positions.dim() == 4, \
+                f"Leaf positions needs 4 dimensions [B, 2, CP, N], got {leaf_positions.dim()}D: {leaf_positions.shape}"
+            assert mus.dim() == 2, \
+                f"MUs needs 2 dimensions [B, CP], got {mus.dim()}D: {mus.shape}"
+
+            assert leaf_positions.shape[0] == B and mus.shape[0] == B, \
+                f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, mus={mus.shape[0]}"
+
+            expected_leaf = (B, G, self.machine_config.number_of_leaf_pairs, 2)
+            assert leaf_positions.shape == expected_leaf, \
+                f"Leaf positions shape mismatch: expected {expected_leaf}, got {leaf_positions.shape}"
+
+            expected_mus = (B, G)
+            assert mus.shape == expected_mus, \
+                f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
+
+            if jaw_positions is not None:
+                assert jaw_positions.dim() == 3, \
+                    f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}"
+
+                assert jaw_positions.shape[0] == B, \
+                    f"Batch size mismatch: ct={B}, jaw_positions={jaw_positions.shape[0]}"
+
+                expected_jaw = (B, G, 2)
+                assert jaw_positions.shape == expected_jaw, \
+                    f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}"
+
+            devices = {leaf_positions.device, mus.device}
+            if jaw_positions is not None:
+                devices.add(jaw_positions.device)
+            dtypes = {leaf_positions.dtype, mus.dtype}
+            if jaw_positions is not None:
+                dtypes.add(jaw_positions.dtype)
+
         if density_image is None:
             raise ValueError("CT image must be provided.")
         assert density_image.dim() == 4, \
             f"CT image needs 4 dimensions [B, D, H, W], got {density_image.dim()}D: {density_image.shape}"
-        
+
         expected_ct = (B, *self.dose_grid_shape)
         assert density_image.shape == expected_ct, \
             f"CT shape mismatch: expected {expected_ct}, got {density_image.shape}"
-        
-        
-        devices = {leaf_positions.device, jaw_positions.device, mus.device}
-        if density_image is not None:
-            devices.add(density_image.device)
+
+        devices.add(density_image.device)
+        dtypes.add(density_image.dtype)
 
         if len(devices) != 1:
             raise ValueError(f"Device mismatch among tensors: {devices}")
-
-        # Check that all tensors share the same dtype
-        dtypes = {leaf_positions.dtype, jaw_positions.dtype, mus.dtype}
-        if density_image is not None:
-            dtypes.add(density_image.dtype)
 
         if len(dtypes) != 1:
             raise ValueError(f"Dtype mismatch among tensors: {dtypes}")
@@ -315,30 +351,39 @@ class DoseEngine(nn.Module):
         
     def forward(
         self,
-        leaf_positions: torch.Tensor,
-        mus: torch.Tensor,
-        jaw_positions: torch.Tensor,
+        leaf_positions: torch.Tensor | None,
+        mus: torch.Tensor | None,
+        jaw_positions: torch.Tensor | None,
         density_image: torch.Tensor,
-        return_intermediates: bool = False
+        return_intermediates: bool = False,
+        fluence_maps: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Runs the full dose calculation pipeline.
 
         Args:
-            leaf_positions: Leaf positions [B, 2, CP, N].
-            mus: Monitor units [B, CP].
-            jaw_positions: Jaw positions [B, 2, CP].
+            leaf_positions: Leaf positions [B, G, N, 2]. Not required when fluence_maps is provided.
+            mus: Monitor units [B, G]. Optional when fluence_maps is provided; if supplied the dose
+                is scaled by MUs, if omitted the fluence maps are used as-is.
+            jaw_positions: Jaw positions [B, G, 2]. Not required when fluence_maps is provided.
             density_image: CT image tensor [B, D, H, W].
-            single_cp: If set, return dose for single control point only.
+            return_intermediates: If True, also return intermediate tensors.
+            fluence_maps: Optional pre-computed fluence maps [B, G, H, W] or [B*G, H, W].
+                If provided, the FluenceMapLayer is skipped and leaf_positions/jaw_positions
+                are ignored. The maps are used directly as input to the FluenceVolumeLayer.
 
         Returns:
-            Dose tensor [B, H, D, W].
+            Dose tensor [B, D, H, W].
         """
-        self._set_device_dtype(leaf_positions.device, leaf_positions.dtype)
+        if fluence_maps is not None:
+            self._set_device_dtype(fluence_maps.device, fluence_maps.dtype)
+        else:
+            self._set_device_dtype(leaf_positions.device, leaf_positions.dtype)
+
         if not self.layers_initialized:
             raise Exception("Layers haven't been initialized yet. Dose engine cannot perform dose calculations.")
 
-        self._assert_sizes(density_image, leaf_positions, jaw_positions, mus)
+        self._assert_sizes(density_image, leaf_positions, jaw_positions, mus, fluence_maps=fluence_maps)
 
         with torch.amp.autocast(self.device.type, dtype=self.dtype):
             if density_image.dim() == 3:
@@ -351,12 +396,26 @@ class DoseEngine(nn.Module):
                 del batched_radiological_depths
             H, D, W = self.dose_grid_shape
 
-            if self._adjust_values:
-                leaf_positions, jaw_positions, mus = self.beam_validation_layer(
-                    leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
-                )
+            G = self.number_of_beams
 
-            batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
+            if fluence_maps is not None:
+                # Use provided fluence maps directly, skipping the FluenceMapLayer
+                if fluence_maps.dim() == 4:
+                    # [B, G, H, W] -> [B*G, H, W]
+                    B = fluence_maps.shape[0]
+                    batched_fluence_maps = fluence_maps.reshape(B * G, fluence_maps.shape[2], fluence_maps.shape[3])
+                else:
+                    # Already [B*G, H, W]
+                    B = fluence_maps.shape[0] // G
+                    batched_fluence_maps = fluence_maps
+            else:
+                if self._adjust_values:
+                    leaf_positions, jaw_positions, mus = self.beam_validation_layer(
+                        leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
+                    )
+
+                batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
+                B = leaf_positions.shape[0]
 
             # Apply collimator rotation (beam limiting device angle)
             # This rotates the fluence map in-plane before projection to 3D
@@ -379,11 +438,10 @@ class DoseEngine(nn.Module):
             if not(return_intermediates):
                 del batched_fluence_volumes, batched_fluence_maps, batched_kernels
 
-            B = leaf_positions.shape[0]
-            G = self.number_of_beams
             D_, H_, W_, _ = batched_accumulated_dose.shape[1:]
             batched_accumulated_dose = batched_accumulated_dose.view(B, G, D_, H_, W_)
-            batched_accumulated_dose.mul_(mus[:, :, None, None, None])
+            if mus is not None:
+                batched_accumulated_dose.mul_(mus[:, :, None, None, None])
 
             batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)
 
@@ -399,17 +457,24 @@ class DoseEngine(nn.Module):
         beam_input: BeamSequence | Beam,
         density_image: torch.Tensor | None = None,
         return_intermediates: bool = False,
-        overwrite: bool = False
+        overwrite: bool = False,
+        fluence_maps: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
-        Compute dose from a BeamSequence.
+        Compute dose from a BeamSequence or Beam.
 
         Args:
-            beam_sequence: BeamSequence (shapes: mus [CP], leaf_positions [CP, N, 2], jaw_positions [CP, 2])
-            density_image: CT image tensor [1, D, H, W]
+            beam_input: BeamSequence (shapes: mus [CP], leaf_positions [CP, N, 2], jaw_positions [CP, 2])
+                or a single Beam. Always required for geometry (gantry angles, iso center, etc.).
+            density_image: CT image tensor [1, D, H, W].
+            return_intermediates: If True, also return intermediate tensors.
+            overwrite: Re-initialize layers even if already set up.
+            fluence_maps: Optional pre-computed fluence maps [1, G, H, W] or [G, H, W].
+                If provided, the FluenceMapLayer is skipped and leaf/jaw positions from
+                beam_input are ignored. G must equal the number of beams in beam_input.
 
         Returns:
-            Dose tensor [1, H, D, W]
+            Dose tensor [1, D, H, W].
         """
         self._initialize_layers(beam_input, overwrite)
 
@@ -430,12 +495,17 @@ class DoseEngine(nn.Module):
             mus = beam_input.mus.unsqueeze(0)
             jaw_positions = beam_input.jaw_positions.unsqueeze(0)
 
+        # Normalise fluence_maps to [1, G, H, W] so forward() can reshape to [B*G, H, W]
+        if fluence_maps is not None and fluence_maps.dim() == 3:
+            fluence_maps = fluence_maps.unsqueeze(0)  # [G, H, W] -> [1, G, H, W]
+
         return self.forward(
             leaf_positions=leaf_positions,
             mus=mus,
             jaw_positions=jaw_positions,
             density_image=ct_tensor,
-            return_intermediates=return_intermediates
+            return_intermediates=return_intermediates,
+            fluence_maps=fluence_maps,
         )
 
     def compute_dose_sequential(
