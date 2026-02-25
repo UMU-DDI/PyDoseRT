@@ -85,6 +85,26 @@ class MachineConfig(BaseSettings):
         default=None,
         description="Off-axis correction data: [distances_mm, correction_ratios]"
     )
+    dlg_mm: Optional[float] = Field(
+        default=None,
+        description=(
+            "Dosimetric Leaf Gap in mm. Each MLC bank is shifted outward by half "
+            "this value so that the effective aperture is wider than the nominal "
+            "leaf positions, matching the sub-field radiation leakage observed in "
+            "physical measurements."
+        ),
+    )
+    sc_source_sigma_mm: Optional[list[float]] = Field(
+        default=None,
+        description=(
+            "Effective source sigma at isocentre (mm) for the analytical "
+            "Sc(field_size) collimator-scatter model.  Provide a single value "
+            "[sigma_mm] for an isotropic source, or two values "
+            "[sigma_x_mm, sigma_y_mm] for crossline / inline directions.  "
+            "When set, Sc is computed via the erf-integral formula instead of "
+            "the empirical output-factor LUT."
+        ),
+    )
 
     
     @staticmethod
