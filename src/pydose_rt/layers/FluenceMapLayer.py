@@ -92,17 +92,19 @@ class FluenceMapLayer(nn.Module):
         else:
             self.leaf_widths = self.machine_config.leaf_widths
 
-        # Precompute depth indices
+        # Precompute depth/jaw indices in mm (not pixel units).
+        # Scaling by pixel_size_mm ensures that leaf/jaw positions (in mm) are
+        # directly comparable to these indices in fractional_box_overlap.
         W = self.field_size[1]
         N = machine_config.number_of_leaf_pairs
-        centers = (torch.arange(W, dtype=self.dtype) + 0.5) - (W / 2)  # [H]
-        depth_indices = centers.view(W, 1).repeat(1, N)  # [H, N]
-        self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.dtype))  # [1, H, N]
+        centers_mm = ((torch.arange(W, dtype=self.dtype) + 0.5) - W / 2) * pixel_size_mm
+        depth_indices = centers_mm.view(W, 1).repeat(1, N)
+        self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
 
         H = self.field_size[0]
-        centers = (torch.arange(H, dtype=self.dtype) + 0.5) - (H / 2)  # [W]
-        jaw_indices = centers.view(1, H).repeat(1, 1)
-        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
+        centers_mm = ((torch.arange(H, dtype=self.dtype) + 0.5) - H / 2) * pixel_size_mm
+        jaw_indices = centers_mm.view(1, H)
+        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, 1, H]
 
         # ============================================================================
         # Precompute physics augmentation kernels/masks for efficient forward pass
@@ -230,7 +232,9 @@ class FluenceMapLayer(nn.Module):
             d = d.to(leaf_positions.device)  # [1, W, N]
 
         # ── MLC aperture mask ────────────────────────────────────────────────────
-        mask = fractional_box_overlap(d, left_positions, right_positions, min_value=self.mlc_transmission)
+        mask = fractional_box_overlap(d, left_positions, right_positions,
+                                      min_value=self.mlc_transmission,
+                                      pixel_size=self.pixel_size_mm)
 
         mask = mask.view(B, G, W, N)
         mask = mask.view(B * G, W, N, 1)
@@ -248,7 +252,8 @@ class FluenceMapLayer(nn.Module):
             j = self.jaw_indices
             if j.device != leaf_positions.device:
                 j = j.to(leaf_positions.device)
-            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions)
+            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions,
+                                              pixel_size=self.pixel_size_mm)
             jaw_mask = jaw_mask.view(B, G, H, 1)
             jaw_mask = jaw_mask.view(B * G, 1, H, 1)
             jaw_mask = jaw_mask.repeat(1, W, 1, 1)
