@@ -901,7 +901,7 @@ class CommissioningToolkit:
                 return curve
             ssd_mm = float(target_profile.ssd_mm or 1000.0)
             depth_mm = float(target_profile.depth_mm or 0.0)
-            cutoff_mm = np.tan(np.deg2rad(14.0)) * (ssd_mm + depth_mm)
+            cutoff_mm = np.tan(np.deg2rad(13.0)) * (ssd_mm + depth_mm)
             start_mm = 0.95 * cutoff_mm
             if cutoff_mm <= 0.0 or cutoff_mm <= start_mm:
                 return curve
