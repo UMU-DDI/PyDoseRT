@@ -942,8 +942,35 @@ class CommissioningToolkit:
                 )
                 plotter.update_loss(loss_history)
 
-            threshold = 0.2
-            mask = (meas_norm > threshold) & (sim_norm > threshold)
+            # Restrict the profile-correction fit to the plateau region so that
+            # the penumbra transition of the reference field does not contaminate
+            # the correction curve.  Any positional mismatch between the
+            # simulated and measured penumbra produces a large spurious
+            # meas/sim ratio right at the field edge.  If that artefact is
+            # written into the correction curve, it distorts the apparent field
+            # width whenever a *different* field's penumbra falls at the same
+            # radial distance.
+            #
+            # Strategy: keep only plateau points (dose > 75 % of CAX) AND
+            # points within 85 % of the reference field's half-width.
+            plateau_mask = (meas_norm > 0.75) & (sim_norm > 0.75)
+
+            # Compute reference field half-width at the measurement point.
+            ssd_ref = float(target_profile.ssd_mm or 1000.0)
+            depth_ref = float(target_profile.depth_mm or 0.0)
+            mag_ref = (ssd_ref + depth_ref) / 1000.0
+            ax = target_profile.axis.upper()
+            if ax == "D":
+                fx_r = float(target_profile.field_size_mm[0]) * mag_ref
+                fy_r = float(target_profile.field_size_mm[1]) * mag_ref
+                ref_half_mm = np.sqrt((fx_r / 2.0) ** 2 + (fy_r / 2.0) ** 2)
+            elif ax == "X":
+                ref_half_mm = float(target_profile.field_size_mm[0]) / 2.0 * mag_ref
+            else:
+                ref_half_mm = float(target_profile.field_size_mm[1]) / 2.0 * mag_ref
+
+            inside_plateau = np.abs(target_profile.position_mm) <= 0.85 * ref_half_mm
+            mask = plateau_mask & inside_plateau
             valid_pos = np.abs(target_profile.position_mm[mask])
             valid_ratio = meas_norm[mask] / sim_norm[mask]
 
