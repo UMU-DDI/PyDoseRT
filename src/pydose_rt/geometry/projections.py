@@ -18,10 +18,22 @@ def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0, pixel_s
     """
     Compute the fractional overlap of a pixel with a 1-D box aperture.
 
-    All inputs should be in the same physical units (mm).  The pixel centred
-    at ``d`` spans ``[d - pixel_size/2,  d + pixel_size/2]``.  The aperture
-    spans ``[left, right]``.  The return value is the overlap fraction in
-    [0, 1] (optionally floored at ``min_value`` to model MLC transmission).
+    All inputs must be in the same physical units (mm).  The pixel centred at
+    ``d`` spans ``[d - pixel_size/2,  d + pixel_size/2]``.  The aperture spans
+    ``[left, right]``.
+
+    The effective aperture is extended by ``pixel_size/2`` on each side so
+    that a pixel whose centre coincides with ``left`` or ``right`` receives a
+    50 % fractional overlap.  This means the 50 % crossing of the rendered
+    step-function aperture is at ``left - pixel_size/2`` and
+    ``right + pixel_size/2`` — i.e. half a pixel *outside* the nominal leaf
+    position.
+
+    This convention matches the behaviour of the original PyDoseRT aperture
+    renderer that the commissioning data was fitted against.  Explicit DLG
+    (``dlg_mm``) shifts the leaf positions *before* this function is called
+    and provides additional physical widening on top of this half-pixel
+    rendering offset.
 
     Args:
         d: Pixel centre positions (mm).
@@ -35,8 +47,11 @@ def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0, pixel_s
     bin_start = d - half_w
     bin_end   = d + half_w
 
-    overlap_start = torch.maximum(left, bin_start)
-    overlap_end   = torch.minimum(right, bin_end)
+    # Extend the aperture by half a pixel on each side.  This places the 50 %
+    # crossing at ±half_w outside the nominal leaf position and provides smooth
+    # sub-pixel interpolation when leaf edges fall between pixel centres.
+    overlap_start = torch.maximum(left - half_w, bin_start)
+    overlap_end   = torch.minimum(right + half_w, bin_end)
     frac = torch.clamp(overlap_end - overlap_start, min=0.0) / pixel_size
 
     return torch.clamp(frac, min=min_value, max=max_value)
