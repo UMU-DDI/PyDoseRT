@@ -199,7 +199,7 @@ class RadiologicalDepthLayer(nn.Module):
             # For dose calculation at voxel CENTER, we need: sum(density[0:i]) * step + density[i] * step/2
             # This equals: cumsum[i] - density[i] * step/2
             cumsum = torch.cumsum(density, dim=-1) * step_sizes  # shape: [B, G, P]
-            cumsum = cumsum + density * step_sizes * 0.5 # Adjust to voxel center
+            cumsum = cumsum - density * step_sizes * 0.5  # shift from voxel exit to voxel centre
 
             # If we extracted from full-sized CT, downsample the radiological depths
             if self.downsample_depths:
