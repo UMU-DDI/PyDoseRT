@@ -880,6 +880,9 @@ class CommissioningToolkit:
         *,
         iterations: int = 2,
         sim_res_mm: float = 3.0,
+        plateau_dose_threshold: float = 0.75,
+        plateau_position_fraction: float = 0.85,
+        diagonal_cutoff_deg: float = 13.0,
         plotter: Any | None = None,
     ) -> ProfileCorrectionResult:
         candidates = [p for p in profiles if p.axis == "D"]
@@ -901,7 +904,7 @@ class CommissioningToolkit:
                 return curve
             ssd_mm = float(target_profile.ssd_mm or 1000.0)
             depth_mm = float(target_profile.depth_mm or 0.0)
-            cutoff_mm = np.tan(np.deg2rad(13.0)) * (ssd_mm + depth_mm)
+            cutoff_mm = np.tan(np.deg2rad(diagonal_cutoff_deg)) * (ssd_mm + depth_mm)
             start_mm = 0.95 * cutoff_mm
             if cutoff_mm <= 0.0 or cutoff_mm <= start_mm:
                 return curve
@@ -953,7 +956,7 @@ class CommissioningToolkit:
             #
             # Strategy: keep only plateau points (dose > 75 % of CAX) AND
             # points within 85 % of the reference field's half-width.
-            plateau_mask = (meas_norm > 0.75) & (sim_norm > 0.75)
+            plateau_mask = (meas_norm > plateau_dose_threshold) & (sim_norm > plateau_dose_threshold)
 
             # Compute reference field half-width at the measurement point.
             ssd_ref = float(target_profile.ssd_mm or 1000.0)
@@ -969,7 +972,7 @@ class CommissioningToolkit:
             else:
                 ref_half_mm = float(target_profile.field_size_mm[1]) / 2.0 * mag_ref
 
-            inside_plateau = np.abs(target_profile.position_mm) <= 0.85 * ref_half_mm
+            inside_plateau = np.abs(target_profile.position_mm) <= plateau_position_fraction * ref_half_mm
             mask = plateau_mask & inside_plateau
             valid_pos = np.abs(target_profile.position_mm[mask])
             valid_ratio = meas_norm[mask] / sim_norm[mask]

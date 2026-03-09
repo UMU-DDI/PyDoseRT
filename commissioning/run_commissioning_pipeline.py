@@ -4,9 +4,10 @@ Run from the repository root:
 
     python commissioning/run_commissioning_pipeline.py
 
-Configuration state is held in memory throughout the pipeline.  Toggle
-``run_stepN`` flags in SETTINGS to run individual steps.  The final output
-is one machine-config JSON per energy written to ``output_dir``.
+Edit the configuration variables below, then run.  All three steps
+(penumbra → profile correction → head scatter / output factors) are
+always executed in order.  The final output is one machine-config JSON
+per energy written to OUTPUT_DIR.
 """
 import os
 
@@ -15,37 +16,69 @@ from toolkit.commissioning_toolkit import CommissioningToolkit
 from toolkit.commissioning_plotter import CommissioningPlotter
 
 
-SETTINGS = {
-    "config": "commissioning/machine_config_base.json",
-    "profiles": "commissioning/data/measurements_10MV/measurements_10_profiles.asc",
-    "diagonals": "commissioning/data/measurements_10MV/measurements_10_diagonals.asc",
-    # JSON file produced by the clinic's OF measurement workflow
-    "output_factors": "commissioning/data/measurements_10MV/measurements_10_of_sp.json",
-    "energy": "10MV",
-    "report_dir": "commissioning/reports/commissioning",
-    "output_dir": "commissioning",
-    "run_step1": True,
-    "run_step2": True,
-    "run_step3": True,
-    "run_report": True,
-    "plots": True,
-    "verbose": True,
-    "hs_bands_pct": ["40-90", "110-150"],
-    "hs_band_weights": [100.0, 5.0],
-    "hs_axes": ["X", "Y"],
-    "hs_depths_mm": [100.0],
-    "hs_fields_cm": ["10x10", "20x20"],
-    "hs_plateau_window": 6,
-    "hs_plateau_rtol": 1e-4,
-    "hs_plateau_max_restarts": 5,
-    "hs_jitter_amp": 0.005,
-    "hs_jitter_sigma_mm": 1.0,
-}
+# ---------------------------------------------------------------------------
+# Input files
+# ---------------------------------------------------------------------------
+BASE_CONFIG         = "commissioning/machine_config_base.json"
+PROFILES_FILE       = "commissioning/data/measurements_10MV/measurements_10_profiles.asc"
+DIAGONALS_FILE      = "commissioning/data/measurements_10MV/measurements_10_diagonals.asc"
+OUTPUT_FACTORS_FILE = "commissioning/data/measurements_10MV/measurements_10_of_sp.json"
 
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+OUTPUT_DIR  = "commissioning"
+REPORT_DIR  = "commissioning/reports/commissioning"
+
+# ---------------------------------------------------------------------------
+# General options
+# ---------------------------------------------------------------------------
+ENERGY      = "10MV"
+SHOW_PLOTS  = True
+VERBOSE     = True
+
+# ---------------------------------------------------------------------------
+# Step 1 – geometric penumbra
+# Fits geometric_penumbra_mm to match the measured 20–80 % penumbra width
+# on the specified reference field and depth.
+# ---------------------------------------------------------------------------
+PENUMBRA_FIELD_MM = (100.0, 100.0)
+PENUMBRA_DEPTH_MM = 100.0
+
+# ---------------------------------------------------------------------------
+# Step 2 – off-axis profile correction
+# Builds a radial correction curve from the largest diagonal (or crossline)
+# profile.  Only plateau points are used for the fit:
+#   - dose must exceed PROFILE_PLATEAU_DOSE_THRESHOLD (fraction of CAX)
+#   - position must be within PROFILE_PLATEAU_POSITION_FRACTION of the
+#     reference field half-width
+# For diagonal profiles the curve is tapered to zero beyond the field corner
+# defined by PROFILE_DIAGONAL_CUTOFF_DEG (beam's-eye-view half-angle).
+# ---------------------------------------------------------------------------
+PROFILE_PLATEAU_DOSE_THRESHOLD    = 0.75   # fraction of CAX dose
+PROFILE_PLATEAU_POSITION_FRACTION = 0.85   # fraction of field half-width
+PROFILE_DIAGONAL_CUTOFF_DEG       = 13.0   # beam corner half-angle for diagonal taper
+
+# ---------------------------------------------------------------------------
+# Step 3 – head scatter / output factors
+# ---------------------------------------------------------------------------
+HS_AXES              = ["X", "Y"]
+HS_DEPTHS_MM         = [100.0]
+HS_FIELDS_CM         = ["10x10", "20x20"]   # field sizes used for tail-profile matching
+HS_BANDS_PCT         = ["40-90", "110-150"]  # dose-range bands for the scatter fit
+HS_BAND_WEIGHTS      = [100.0, 5.0]
+HS_PLATEAU_WINDOW    = 6
+HS_PLATEAU_RTOL      = 1e-4
+HS_PLATEAU_MAX_RESTARTS = 5
+HS_JITTER_AMP        = 0.005
+HS_JITTER_SIGMA_MM   = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _parse_field_pairs_cm(values):
-    if not values:
-        return None
     pairs = []
     for raw in values:
         parts = raw.lower().split("x")
@@ -56,15 +89,11 @@ def _parse_field_pairs_cm(values):
 
 
 def _parse_bands_pct(values):
-    if not values:
-        return None
     bands = []
     for raw in values:
         parts = raw.split("-")
         if len(parts) != 2:
-            raise ValueError(
-                f"Invalid band format: {raw!r}. Use start-end in percent (e.g. 40-90)."
-            )
+            raise ValueError(f"Invalid band format: {raw!r}. Use start-end in percent (e.g. 40-90).")
         start, end = float(parts[0]), float(parts[1])
         if end < start:
             start, end = end, start
@@ -72,15 +101,19 @@ def _parse_bands_pct(values):
     return bands
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
-    plotter = CommissioningPlotter(show=SETTINGS["plots"])
+    plotter = CommissioningPlotter(show=SHOW_PLOTS)
     toolkit = CommissioningToolkit(
-        SETTINGS["config"],
-        verbose=SETTINGS["verbose"],
-        log_callback=plotter.log if SETTINGS["plots"] else None,
+        BASE_CONFIG,
+        verbose=VERBOSE,
+        log_callback=plotter.log if SHOW_PLOTS else None,
     )
 
     def log_section(title: str) -> None:
@@ -88,88 +121,79 @@ def main() -> int:
         print(line)
         print(title)
         print(line)
-        if SETTINGS["plots"]:
+        if SHOW_PLOTS:
             plotter.log(line)
             plotter.log(title)
             plotter.log(line)
 
     # ── Step 1: geometric penumbra ────────────────────────────────────────────
-    if SETTINGS["run_step1"]:
-        log_section("Tuning geometric penumbra")
-        profiles = MeasurementParser.parse_rfa300(SETTINGS["profiles"])
-        pen_res = toolkit.fit_geometric_penumbra(
-            profiles,
-            target_field_mm=(100.0, 100.0),
-            target_depth_mm=100.0,
-            plotter=plotter if SETTINGS["plots"] else None,
-        )
-        toolkit._log(
-            f"Penumbra final: [{pen_res.geometric_penumbra_mm[0]:.2f}, "
-            f"{pen_res.geometric_penumbra_mm[1]:.2f}]"
-        )
+    log_section("Tuning geometric penumbra")
+    profiles = MeasurementParser.parse_rfa300(PROFILES_FILE)
+    pen_res = toolkit.fit_geometric_penumbra(
+        profiles,
+        target_field_mm=PENUMBRA_FIELD_MM,
+        target_depth_mm=PENUMBRA_DEPTH_MM,
+        plotter=plotter if SHOW_PLOTS else None,
+    )
+    toolkit._log(
+        f"Penumbra final: [{pen_res.geometric_penumbra_mm[0]:.2f}, "
+        f"{pen_res.geometric_penumbra_mm[1]:.2f}]"
+    )
 
     # ── Step 2: off-axis profile correction ───────────────────────────────────
-    if SETTINGS["run_step2"]:
-        log_section("Tuning profile correction")
-        diagonals = MeasurementParser.parse_rfa300(SETTINGS["diagonals"])
-        pc_res = toolkit.fit_profile_correction(
-            diagonals,
-            plotter=plotter if SETTINGS["plots"] else None,
-        )
-        toolkit._log(f"Profile correction curve points: {len(pc_res.profile_curve)}")
+    log_section("Tuning profile correction")
+    diagonals = MeasurementParser.parse_rfa300(DIAGONALS_FILE)
+    pc_res = toolkit.fit_profile_correction(
+        diagonals,
+        plateau_dose_threshold=PROFILE_PLATEAU_DOSE_THRESHOLD,
+        plateau_position_fraction=PROFILE_PLATEAU_POSITION_FRACTION,
+        diagonal_cutoff_deg=PROFILE_DIAGONAL_CUTOFF_DEG,
+        plotter=plotter if SHOW_PLOTS else None,
+    )
+    toolkit._log(f"Profile correction curve points: {len(pc_res.profile_curve)}")
 
     # ── Step 3: head scatter / output factors ─────────────────────────────────
-    if SETTINGS["run_step3"]:
-        log_section("Tuning head scatter")
+    log_section("Tuning head scatter")
+    if OUTPUT_FACTORS_FILE.endswith(".json"):
+        of_meas = MeasurementParser.parse_output_factors_json(OUTPUT_FACTORS_FILE)
+    else:
+        of_meas = MeasurementParser.parse_output_factors_csv(OUTPUT_FACTORS_FILE)
 
-        # Accept both JSON and CSV output-factor files automatically.
-        of_path = SETTINGS["output_factors"]
-        if of_path.endswith(".json"):
-            of_meas = MeasurementParser.parse_output_factors_json(of_path)
-        else:
-            of_meas = MeasurementParser.parse_output_factors_csv(of_path)
+    of_res = toolkit.fit_output_factors(
+        of_meas,
+        energy=ENERGY,
+        tail_profiles=profiles,
+        axes=HS_AXES,
+        depths_mm=HS_DEPTHS_MM,
+        fields_mm=_parse_field_pairs_cm(HS_FIELDS_CM),
+        bands_pct=_parse_bands_pct(HS_BANDS_PCT),
+        band_weights=HS_BAND_WEIGHTS,
+        plateau_window=HS_PLATEAU_WINDOW,
+        plateau_rtol=HS_PLATEAU_RTOL,
+        plateau_max_restarts=HS_PLATEAU_MAX_RESTARTS,
+        jitter_amp=HS_JITTER_AMP,
+        jitter_sigma_mm=HS_JITTER_SIGMA_MM,
+        plotter=plotter if SHOW_PLOTS else None,
+    )
+    toolkit._log(
+        f"HS final: Amplitude: {of_res.head_scatter_magnitude:.4f}, "
+        f"Sigma@iso: [{of_res.head_scatter_sigma_mm[0]:.2f}, "
+        f"{of_res.head_scatter_sigma_mm[1]:.2f}]"
+    )
 
-        tail_profiles = MeasurementParser.parse_rfa300(SETTINGS["profiles"])
+    toolkit.finalize_config()
+    plotter.generate_report(
+        toolkit=toolkit,
+        measurement_files=[PROFILES_FILE, DIAGONALS_FILE],
+        output_dir=REPORT_DIR,
+    )
 
-        of_res = toolkit.fit_output_factors(
-            of_meas,
-            energy=SETTINGS["energy"],
-            tail_profiles=tail_profiles,
-            axes=SETTINGS["hs_axes"],
-            depths_mm=SETTINGS["hs_depths_mm"],
-            fields_mm=_parse_field_pairs_cm(SETTINGS["hs_fields_cm"]),
-            bands_pct=_parse_bands_pct(SETTINGS["hs_bands_pct"]),
-            band_weights=SETTINGS["hs_band_weights"],
-            plateau_window=SETTINGS["hs_plateau_window"],
-            plateau_rtol=SETTINGS["hs_plateau_rtol"],
-            plateau_max_restarts=SETTINGS["hs_plateau_max_restarts"],
-            jitter_amp=SETTINGS["hs_jitter_amp"],
-            jitter_sigma_mm=SETTINGS["hs_jitter_sigma_mm"],
-            plotter=plotter if SETTINGS["plots"] else None,
-        )
-        toolkit._log(
-            f"HS final: Amplitude: {of_res.head_scatter_magnitude:.4f}, "
-            f"Sigma@iso: [{of_res.head_scatter_sigma_mm[0]:.2f}, "
-            f"{of_res.head_scatter_sigma_mm[1]:.2f}]"
-        )
+    machine_config_paths = toolkit.export_config(output_dir=OUTPUT_DIR)
+    for energy, path in machine_config_paths.items():
+        toolkit._log(f"Machine config ({energy}): {path}")
 
-        toolkit.finalize_config()
-        if SETTINGS["run_report"]:
-            plotter.generate_report(
-                toolkit=toolkit,
-                measurement_files=[SETTINGS["profiles"], SETTINGS["diagonals"]],
-                output_dir=SETTINGS["report_dir"],
-            )
-
-        machine_config_paths = toolkit.export_config(
-            output_dir=SETTINGS["output_dir"],
-        )
-        for energy, path in machine_config_paths.items():
-            toolkit._log(f"Machine config ({energy}): {path}")
-
-    if SETTINGS["plots"]:
+    if SHOW_PLOTS:
         import matplotlib.pyplot as plt
-
         plt.ioff()
         plt.show()
 
