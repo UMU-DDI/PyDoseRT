@@ -2,7 +2,7 @@ import sys
 import pytest
 import numpy as np
 import torch
-from pydose_rt.layers import RadiologicalDepthLayer
+from pydosert.layers import RadiologicalDepthLayer
 
 
 

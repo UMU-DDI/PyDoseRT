@@ -1,15 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import trapezoid
-from pydose_rt.data import MachineConfig, OptimizationConfig, Patient, Beam
-from pydose_rt.data.beam import BeamSequence
+from pydosert.data import MachineConfig, OptimizationConfig, Patient, Beam
+from pydosert.data.beam import BeamSequence
 import copy
 import pymedphys
 import torch
 from typing import Dict, List, Tuple, Optional
 from scipy.ndimage import binary_fill_holes, binary_erosion
 
-# DVH calculation functions moved to pydose_rt.data.metrics_helpers
+# DVH calculation functions moved to pydosert.data.metrics_helpers
 
 def dose_at_volume_max(
     dose_array: np.ndarray,

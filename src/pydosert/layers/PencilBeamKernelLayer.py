@@ -5,7 +5,7 @@ This module provides the PencilBeamKernelLayer class, which uses a pencil beam m
 dose kernels for each voxel in the CT volume, based on the radiological depth.
 Typical usage example::
 
-    from pydose_rt.data import MachineConfig
+    from pydosert.data import MachineConfig
     import torch
     machine_config = MachineConfig(...)
     layer = PencilBeamKernelLayer(machine_config, device, dtype, resolution, kernel_size)
@@ -17,8 +17,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pydose_rt.physics.kernels.pencil_beam_model import PencilBeamModel
-from pydose_rt.data import MachineConfig
+from pydosert.physics.kernels.pencil_beam_model import PencilBeamModel
+from pydosert.data import MachineConfig
 
         
 

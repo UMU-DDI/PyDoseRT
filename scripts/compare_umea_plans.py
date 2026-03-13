@@ -4,9 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 import pydicom
-from pydose_rt import DoseEngine
-from pydose_rt.data import MachineConfig, Phantom, loaders, Beam
-from pydose_rt.utils.utils import sample_tensor_nearest
+from pydosert import DoseEngine
+from pydosert.data import MachineConfig, Phantom, loaders, Beam
+from pydosert.utils.utils import sample_tensor_nearest
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype=torch.float32
@@ -44,7 +44,7 @@ for field_size in field_sizes:
     resolution = (1.0, 1.0, 1.0)
     ct_array_shape = (500, 500, 500)
     machine_config = MachineConfig(
-        preset="src/pydose_rt/data/machine_presets/umea_10MV.json",
+        preset="src/pydosert/data/machine_presets/umea_10MV.json",
         # profile_corrections=None,
         )
     phantom = Phantom.from_uniform_water(shape=ct_array_shape, spacing=resolution).to(device).to(dtype)

@@ -7,7 +7,7 @@ converts Hounsfield Units (HU) to density, and integrates the density along the 
 
 Typical usage example::
 
-    from pydose_rt.data import MachineConfig
+    from pydosert.data import MachineConfig
     import torch
     machine_config = MachineConfig(...)
     layer = RadiologicalDepthLayer(
@@ -22,8 +22,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig
-from pydose_rt.geometry.rotations import get_radiological_depth_indices
+from pydosert.data import MachineConfig
+from pydosert.geometry.rotations import get_radiological_depth_indices
 
 
 class RadiologicalDepthLayer(nn.Module):

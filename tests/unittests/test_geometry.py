@@ -5,8 +5,8 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
 import math
-from pydose_rt.geometry.projections import soft_max, soft_min, fractional_box_overlap, resample_fluence_map
-from pydose_rt.geometry.rotations import get_radiological_depth_indices, rotate_2d_images
+from pydosert.geometry.projections import soft_max, soft_min, fractional_box_overlap, resample_fluence_map
+from pydosert.geometry.rotations import get_radiological_depth_indices, rotate_2d_images
 
 
 class TestProjections:

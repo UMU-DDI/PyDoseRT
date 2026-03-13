@@ -13,8 +13,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig
-from pydose_rt.geometry.rotations import build_rotation_grids
+from pydosert.data import MachineConfig
+from pydosert.geometry.rotations import build_rotation_grids
 
 class BeamRotationLayer(nn.Module):
     """

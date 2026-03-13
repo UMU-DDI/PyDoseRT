@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydose_rt.data import MachineConfig, Beam, BeamSequence
+from pydosert.data import MachineConfig, Beam, BeamSequence
 import os
 from dotenv import load_dotenv
 load_dotenv()  # will look for .env in project root
@@ -78,7 +78,7 @@ def rtp_data_dir(pytestconfig):
 def default_machine_config():
     """Fixture for the default MachineConfig"""
     return MachineConfig(
-        preset="src/pydose_rt/data/machine_presets/test.json",
+        preset="src/pydosert/data/machine_presets/test.json",
 
         head_scatter_amplitude=None,
         head_scatter_sigma=None,

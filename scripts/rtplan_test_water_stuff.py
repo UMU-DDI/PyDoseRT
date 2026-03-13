@@ -8,17 +8,17 @@ import time
 import math
 
 from pydicom.data import get_testdata_file
-from pydose_rt.data import MachineConfig, Patient, loaders
-# from pydose_rt.data import MachineConfig
-from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
-from pydose_rt.utils.utils import mae_optimal_scale
+from pydosert.data import MachineConfig, Patient, loaders
+# from pydosert.data import MachineConfig
+from pydosert.objectives.metrics import result_validation, validate_unit_dose
+from pydosert.utils.utils import mae_optimal_scale
 import numpy as np
 from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
 from scipy.ndimage import zoom, rotate
-from pydose_rt import DoseEngine
+from pydosert import DoseEngine
 import SimpleITK as sitk
-from pydose_rt.utils.plotting import print_results, make_animation
+from pydosert.utils.plotting import print_results, make_animation
 import torch
 
 # Set paths
@@ -41,14 +41,14 @@ patient, treatment = loaders.load_dicom(
             dose_path=rtdose_path, 
             plan_path=rtplan_path, 
             struct_names=["External"],
-            treatment_preset="src/pydose_rt/data/optimization_presets/umea.json"
+            treatment_preset="src/pydosert/data/optimization_presets/umea.json"
             )
 
 treatment.kernel_size = 75
 treatment.device = device
 treatment.dtype = torch.float16
 
-machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_6MV.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
+machine_config = MachineConfig(preset="src/pydosert/data/machine_presets/umea_6MV.json", resolution=patient.resolution, ct_array_shape=patient.ct_array.shape)
 # ref_dose, calibration_factor = validate_unit_dose(machine_config, treatment, 110)
 # if (np.abs(ref_dose - 1.0) > 0.001):
 #     print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")

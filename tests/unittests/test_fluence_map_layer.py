@@ -5,10 +5,10 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import numpy as np
 import torch
-from pydose_rt.data import MachineConfig
-from pydose_rt.layers import FluenceMapLayer
-from pydose_rt.utils.grad_monitor import GradMonitor
-from pydose_rt.utils.utils import get_shapes
+from pydosert.data import MachineConfig
+from pydosert.layers import FluenceMapLayer
+from pydosert.utils.grad_monitor import GradMonitor
+from pydosert.utils.utils import get_shapes
  
 @pytest.fixture
 def fluence_map_layer(default_machine_config, default_resolution, default_field_size, default_device, default_dtype):

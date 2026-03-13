@@ -7,14 +7,14 @@ import time
 import math
 
 from pydicom.data import get_testdata_file
-from pydose_rt.data import MachineConfig, Patient, loaders
-from pydose_rt.utils.utils import find_patient_paths
+from pydosert.data import MachineConfig, Patient, loaders
+from pydosert.utils.utils import find_patient_paths
 import numpy as np
 from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
 from scipy.ndimage import zoom, rotate
-from pydose_rt import DoseEngine
-from pydose_rt.utils.utils import export_plan
+from pydosert import DoseEngine
+from pydosert.utils.utils import export_plan
 import torch
 import csv
 import ast

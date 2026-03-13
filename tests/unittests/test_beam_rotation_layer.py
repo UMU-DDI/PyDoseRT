@@ -5,7 +5,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import numpy as np
 import torch
-from pydose_rt.layers.BeamRotationLayer import BeamRotationLayer
+from pydosert.layers.BeamRotationLayer import BeamRotationLayer
 
 
 @pytest.fixture

@@ -8,7 +8,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 
 import pytest
 
-from pydose_rt.physics.kernels.pencil_beam_model import coeffs as COEFFICIENTS, PencilBeamModel
+from pydosert.physics.kernels.pencil_beam_model import coeffs as COEFFICIENTS, PencilBeamModel
 
 @pytest.fixture(scope="function")
 def pencil_beam_kernel_model(default_machine_config, default_resolution) -> PencilBeamModel:

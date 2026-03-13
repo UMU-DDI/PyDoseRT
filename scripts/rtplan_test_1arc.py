@@ -13,16 +13,16 @@ import nibabel as nib
 import time
 
 from pydicom.data import get_testdata_file
-from pydose_rt.data import MachineConfig, Patient, OptimizationConfig, loaders
-from pydose_rt.objectives.metrics import result_validation, validate_unit_dose
-from pydose_rt.utils.utils import mae_optimal_scale
+from pydosert.data import MachineConfig, Patient, OptimizationConfig, loaders
+from pydosert.objectives.metrics import result_validation, validate_unit_dose
+from pydosert.utils.utils import mae_optimal_scale
 import numpy as np
 from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
 from scipy.ndimage import zoom, rotate
-from pydose_rt import DoseEngine
+from pydosert import DoseEngine
 import SimpleITK as sitk
-from pydose_rt.utils.plotting import print_results, make_animation, quick_plot
+from pydosert.utils.plotting import print_results, make_animation, quick_plot
 import torch
 
 # Set paths
@@ -45,11 +45,11 @@ patient, beam_sequences = loaders.load_dicom(
             )
 
 optimization = OptimizationConfig(
-    preset="src/pydose_rt/data/optimization_presets/umea.json",
+    preset="src/pydosert/data/optimization_presets/umea.json",
 )
 
 ptv_struct_name = [key for key in patient.structures.keys() if "PTV" in key][0]
-machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
+machine_config = MachineConfig(preset="src/pydosert/data/machine_presets/umea_10MV.json")
 # ref_dose, calibration_factor = validate_unit_dose(machine_config, 110)
 # if (np.abs(ref_dose - 1.0) > 0.001):
 #     # print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")

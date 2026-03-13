@@ -6,8 +6,8 @@ from typing import List
 import torch
 from pathlib import Path
 import numpy as np
-from pydose_rt.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data
-from pydose_rt.data import Patient, BeamSequence
+from pydosert.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data
+from pydosert.data import Patient, BeamSequence
 import SimpleITK as sitk
 from typing import List, Dict, Any, Tuple
 
