@@ -22,10 +22,12 @@ def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0, pixel_s
     ``d`` spans ``[d - pixel_size/2,  d + pixel_size/2]``.  The aperture spans
     ``[left, right]``.
 
-    The 50 % crossing of the rendered aperture is at exactly ``left`` and
-    ``right`` — a pixel centred on ``left`` or ``right`` receives exactly
-    50 % fractional overlap.  Explicit DLG (``dlg_mm``) shifts the leaf
-    positions *before* this function is called.
+    The effective aperture is extended by ``pixel_size/2`` on each side so
+    that a pixel whose centre coincides with ``left`` or ``right`` receives a
+    50 % fractional overlap.  This means the 50 % crossing of the rendered
+    step-function aperture is at ``left - pixel_size/2`` and
+    ``right + pixel_size/2`` — i.e. half a pixel *outside* the nominal leaf
+    position.
 
     Args:
         d: Pixel centre positions (mm).
@@ -39,8 +41,11 @@ def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0, pixel_s
     bin_start = d - half_w
     bin_end   = d + half_w
 
-    overlap_start = torch.maximum(left, bin_start)
-    overlap_end   = torch.minimum(right, bin_end)
+    # Extend the aperture by half a pixel on each side.  This places the 50 %
+    # crossing at ±half_w outside the nominal leaf position and provides smooth
+    # sub-pixel interpolation when leaf edges fall between pixel centres.
+    overlap_start = torch.maximum(left - half_w, bin_start)
+    overlap_end   = torch.minimum(right + half_w, bin_end)
     frac = torch.clamp(overlap_end - overlap_start, min=0.0) / pixel_size
 
     return torch.clamp(frac, min=min_value, max=max_value)
