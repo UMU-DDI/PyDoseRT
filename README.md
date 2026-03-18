@@ -73,9 +73,9 @@ See `pyproject.toml` for the complete dependency list.
 
 ```python
 import torch
-from pydose_rt import DoseEngine
-from pydose_rt.data import MachineConfig, loaders
-from pydose_rt.data.beam import BeamSequence
+from pydosert import DoseEngine
+from pydosert.data import MachineConfig, loaders
+from pydosert.data.beam import BeamSequence
 
 # Setup device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -83,7 +83,7 @@ dtype = torch.float32
 
 # Load machine configuration (linear accelerator parameters)
 machine_config = MachineConfig(
-    preset="src/pydose_rt/data/machine_presets/umea_10MV.json"
+    preset="src/pydosert/data/machine_presets/umea_10MV.json"
 )
 
 # Load patient DICOM data (CT, RTPLAN, RTDOSE, RTSTRUCT)
@@ -139,19 +139,19 @@ dose_pred = dose_engine.compute_dose_sequential(
 dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
 
 # Visualize
-from pydose_rt.utils.plotting import quick_plot
+from pydosert.utils.plotting import quick_plot
 quick_plot(patient, dose_pred, title="Predicted Dose Distribution")
 ```
 
 ### Dose Validation and Metrics
 
 ```python
-from pydose_rt.objectives.metrics import result_validation
-from pydose_rt.data import OptimizationConfig
+from pydosert.objectives.metrics import result_validation
+from pydosert.data import OptimizationConfig
 
 # Load clinical objectives from preset
 optimization = OptimizationConfig.from_json(
-    "src/pydose_rt/data/optimization_presets/gold-atlas.json"
+    "src/pydosert/data/optimization_presets/gold-atlas.json"
 )
 
 # Validate calculated dose against reference
@@ -184,12 +184,12 @@ print(f"Mean Absolute Error: {mae:.3f} Gy")
 
 ```python
 import torch
-from pydose_rt.data import BeamSequence, OptimizationConfig
-from pydose_rt.objectives.losses import compute_dvh_loss, scale_loss
+from pydosert.data import BeamSequence, OptimizationConfig
+from pydosert.objectives.losses import compute_dvh_loss, scale_loss
 
 # Load optimization objectives
 optimization = OptimizationConfig.from_json(
-    "src/pydose_rt/data/optimization_presets/gold-atlas.json"
+    "src/pydosert/data/optimization_presets/gold-atlas.json"
 )
 
 # Create optimizable beam sequence with gradient tracking
@@ -298,7 +298,7 @@ After initialization, the engine must be calibrated using a reference beam confi
 
 ```
 PyDoseRT/
-├── src/pydose_rt/           # Main source code
+├── src/pydosert/           # Main source code
 │   ├── engine/              # Core dose calculation engine
 │   ├── data/                # Data structures and DICOM loaders
 │   ├── layers/              # Computation layers (fluence, convolution, etc.)
@@ -381,7 +381,7 @@ Run the test suite:
 pytest
 
 # Run with coverage
-pytest --cov=pydose_rt
+pytest --cov=pydosert
 
 # Run benchmarks
 pytest tests/benchmarks/ --benchmark-only
