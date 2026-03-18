@@ -8,9 +8,9 @@ from matplotlib.colors import ListedColormap
 import os
 from scipy import ndimage
 import cv2
-from pydose_rt.data.beam import BeamSequence
-from pydose_rt.engine.dose_engine import DoseEngine
-from pydose_rt.data import Patient, OptimizationConfig
+from pydosert.data.beam import BeamSequence
+from pydosert.engine.dose_engine import DoseEngine
+from pydosert.data import Patient, OptimizationConfig
 from scipy.ndimage import gaussian_filter
 from matplotlib.lines import Line2D
 

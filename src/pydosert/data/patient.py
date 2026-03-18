@@ -5,12 +5,12 @@ Patient configuration - CT dimensions and geometric parameters.
 from dataclasses import dataclass, field
 from token import OP
 from typing import Optional, TYPE_CHECKING
-from pydose_rt.physics.attenuation.hu_density_conversion import convert_HU_to_density
+from pydosert.physics.attenuation.hu_density_conversion import convert_HU_to_density
 import torch
 import numpy as np
 
 if TYPE_CHECKING:
-    from pydose_rt.data import Patient
+    from pydosert.data import Patient
 
 @dataclass
 class Patient:

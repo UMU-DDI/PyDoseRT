@@ -7,7 +7,7 @@ and profile corrections for efficient forward passes and accurate modeling of th
 
 Typical usage example::
 
-    from pydose_rt.data import MachineConfig
+    from pydosert.data import MachineConfig
     import torch
     machine_config = MachineConfig(...)
     layer = FluenceVolumeLayer(
@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydose_rt.data import MachineConfig
+from pydosert.data import MachineConfig
 
 
 class FluenceVolumeLayer(nn.Module):

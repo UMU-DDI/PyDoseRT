@@ -30,9 +30,9 @@ from scipy.interpolate import interp1d
 from scipy.optimize import minimize
 from scipy.special import erf
 
-from pydose_rt.physics.kernels.pencil_beam_model import PencilBeamModel
-from pydose_rt.layers.FluenceMapLayer import FluenceMapLayer
-from pydose_rt.data.machine_config import MachineConfig as PydoseRTMachineConfig
+from pydosert.physics.kernels.pencil_beam_model import PencilBeamModel
+from pydosert.layers.FluenceMapLayer import FluenceMapLayer
+from pydosert.data.machine_config import MachineConfig as PydoseRTMachineConfig
 
 from .commissioning_parser import MeasurementParser
 from .commissioning_types import MeasuredProfile, OutputFactorMeasurement
@@ -40,7 +40,7 @@ from .config import MachineConfig
 
 
 # ---------------------------------------------------------------------------
-# Device selection (mirrors pydose_rt.layers behaviour)
+# Device selection (mirrors pydosert.layers behaviour)
 # ---------------------------------------------------------------------------
 
 def _get_device() -> torch.device:

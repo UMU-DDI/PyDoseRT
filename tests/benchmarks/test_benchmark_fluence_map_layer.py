@@ -1,11 +1,11 @@
 from pathlib import Path
 import sys
 
-from pydose_rt.utils.utils import get_shapes
+from pydosert.utils.utils import get_shapes
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydose_rt.layers import FluenceMapLayer
+from pydosert.layers import FluenceMapLayer
 
 @pytest.fixture
 def fluence_map_layer(default_machine_config, default_resolution):

@@ -14,8 +14,8 @@ import numpy as np
 import torch
 
 if TYPE_CHECKING:
-    from pydose_rt.data import MachineConfig
-    from pydose_rt.engine.dose_engine import DoseEngine
+    from pydosert.data import MachineConfig
+    from pydosert.engine.dose_engine import DoseEngine
 
 
 @dataclass

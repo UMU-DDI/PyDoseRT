@@ -7,7 +7,7 @@ treatment machine, enabling accurate dose modeling and further processing.
 
 Typical usage example::
 
-    from pydose_rt.data import MachineConfig
+    from pydosert.data import MachineConfig
     import torch
     machine_config = MachineConfig(...)
     layer = FluenceMapLayer(machine_config, device, dtype, field_size)
@@ -21,9 +21,9 @@ Classes:
 
 import torch
 import torch.nn as nn
-from pydose_rt.data import MachineConfig
-from pydose_rt.geometry.projections import fractional_box_overlap, resample_fluence_map
-from pydose_rt.physics.fluence.fluence_modeling import (
+from pydosert.data import MachineConfig
+from pydosert.geometry.projections import fractional_box_overlap, resample_fluence_map
+from pydosert.physics.fluence.fluence_modeling import (
     create_radial_correction_map,
     precompute_head_scatter_kernel,
     apply_head_scatter_kernels,

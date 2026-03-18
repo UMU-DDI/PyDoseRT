@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pydose_rt.utils.utils import get_model_input, create_bound_weight_matrix
+from pydosert.utils.utils import get_model_input, create_bound_weight_matrix
 import math
 
 def scale_loss(loss, weight):

@@ -4,8 +4,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydose_rt import DoseEngine
-from pydose_rt.data import BeamSequence
+from pydosert import DoseEngine
+from pydosert.data import BeamSequence
 
 
 # ---------------------------------------------------------------------------

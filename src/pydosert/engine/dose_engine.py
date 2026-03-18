@@ -8,15 +8,15 @@ multiple beams, and can optionally perform upsampling and debugging visualizatio
 import torch
 from torch import nn
 
-from pydose_rt.layers.BeamValidationLayer import BeamValidationLayer
-from pydose_rt.layers.FluenceMapLayer import FluenceMapLayer
-from pydose_rt.layers.FluenceVolumeLayer import FluenceVolumeLayer
-from pydose_rt.layers.RadiologicalDepthLayer import RadiologicalDepthLayer
-from pydose_rt.layers.PencilBeamKernelLayer import PencilBeamKernelLayer
-from pydose_rt.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
-from pydose_rt.layers.BeamRotationLayer import BeamRotationLayer
-from pydose_rt.data import MachineConfig, Beam, BeamSequence
-from pydose_rt.geometry.rotations import rotate_2d_images
+from pydosert.layers.BeamValidationLayer import BeamValidationLayer
+from pydosert.layers.FluenceMapLayer import FluenceMapLayer
+from pydosert.layers.FluenceVolumeLayer import FluenceVolumeLayer
+from pydosert.layers.RadiologicalDepthLayer import RadiologicalDepthLayer
+from pydosert.layers.PencilBeamKernelLayer import PencilBeamKernelLayer
+from pydosert.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
+from pydosert.layers.BeamRotationLayer import BeamRotationLayer
+from pydosert.data import MachineConfig, Beam, BeamSequence
+from pydosert.geometry.rotations import rotate_2d_images
 
 
 class DoseEngine(nn.Module):

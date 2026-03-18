@@ -5,7 +5,7 @@ import SimpleITK as sitk
 from rt_utils import RTStructBuilder
 from typing import Any, Optional, List
 import math
-from pydose_rt.data.beam import Beam
+from pydosert.data.beam import Beam
 import torch
 
 def load_ct_images(folder_path):

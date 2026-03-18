@@ -7,7 +7,7 @@ and beam delivery in radiotherapy planning models.
 
 Typical usage example::
 
-    from pydose_rt.data import MachineConfig
+    from pydosert.data import MachineConfig
     import torch
     machine_config = MachineConfig(...)
     layer = BeamValidationLayer(machine_config, device, dtype, field_size)
@@ -23,7 +23,7 @@ Classes:
 import torch
 import torch.nn as nn
 from typing import Tuple
-from pydose_rt.data import MachineConfig
+from pydosert.data import MachineConfig
 
 def adjust_mask(pos_a, pos_b, min_overlap, field_size):
     centers = (pos_a + pos_b) / 2

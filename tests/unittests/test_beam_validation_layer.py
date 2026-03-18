@@ -5,7 +5,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import numpy as np
 import torch
-from pydose_rt.layers.BeamValidationLayer import BeamValidationLayer, adjust_mask
+from pydosert.layers.BeamValidationLayer import BeamValidationLayer, adjust_mask
 
 
 

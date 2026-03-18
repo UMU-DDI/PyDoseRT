@@ -3,12 +3,12 @@ import torch
 import random
 import copy
 import numpy as np
-from pydose_rt.data import Patient, MachineConfig
+from pydosert.data import Patient, MachineConfig
 import torch
 import os
 import time
 import pydicom
-from pydose_rt.data import OptimizationConfig
+from pydosert.data import OptimizationConfig
 import os
 from pathlib import Path
 import pydicom
