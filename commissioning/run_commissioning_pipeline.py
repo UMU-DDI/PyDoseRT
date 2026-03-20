@@ -19,10 +19,10 @@ from toolkit.commissioning_plotter import CommissioningPlotter
 # ---------------------------------------------------------------------------
 # Input files
 # ---------------------------------------------------------------------------
-BASE_CONFIG         = "commissioning/machine_config_base.json"
-PROFILES_FILE       = "commissioning/data/measurements_10MV/measurements_10_profiles.asc"
-DIAGONALS_FILE      = "commissioning/data/measurements_10MV/measurements_10_diagonals.asc"
-OUTPUT_FACTORS_FILE = "commissioning/data/measurements_10MV/measurements_10_of_sp.json"
+BASE_CONFIG         = "commissioning/machine_config_base_vienna.json"
+PROFILES_FILE       = "commissioning/data/vienna_mcc_profiles.json"
+DIAGONALS_FILE      = "commissioning/data/vienna_mcc_diagonals.json"
+OUTPUT_FACTORS_FILE = "commissioning/data/vienna_output_factors.json"
 
 # ---------------------------------------------------------------------------
 # Output
@@ -128,7 +128,7 @@ def main() -> int:
 
     # ── Step 1: geometric penumbra ────────────────────────────────────────────
     log_section("Tuning geometric penumbra")
-    profiles = MeasurementParser.parse_rfa300(PROFILES_FILE)
+    profiles = MeasurementParser.parse_json_profiles(PROFILES_FILE)
     pen_res = toolkit.fit_geometric_penumbra(
         profiles,
         target_field_mm=PENUMBRA_FIELD_MM,
@@ -142,7 +142,7 @@ def main() -> int:
 
     # ── Step 2: off-axis profile correction ───────────────────────────────────
     log_section("Tuning profile correction")
-    diagonals = MeasurementParser.parse_rfa300(DIAGONALS_FILE)
+    diagonals = MeasurementParser.parse_json_profiles(DIAGONALS_FILE)
     pc_res = toolkit.fit_profile_correction(
         diagonals,
         plateau_dose_threshold=PROFILE_PLATEAU_DOSE_THRESHOLD,
