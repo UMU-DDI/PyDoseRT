@@ -149,7 +149,7 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
         
         # Available ROI names are those present in the RTSTRUCT
         available_names = rtstruct.get_roi_names()
-        available_names = [name.lower() for name in available_names]
+        available_names = [name for name in available_names]
 
         if struct_names is None:
             # If no specific structure name set is provided, take all available names
@@ -158,23 +158,33 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
             # If specific structure names are provided, try to match them with available names using synonyms
             matched_names = {}
             for name in struct_names:
-                # If name is present directly, take that
-                if name.lower() in available_names:
-                    matched_names[name] = name
-                else:
-                    found = False
-                    for canonical_name, synonyms in ROI_SYNONYM_CONFIG.items():
-                        # Check if there are synonyms for this requested structure
-                        if name.lower() == canonical_name.lower():
-                            for synonym in synonyms:
-                                if synonym.lower() in available_names:
-                                    matched_names[name] = synonym
-                                    found = True
-                                    break
-                        if found:
-                            break
-                    if not found:
-                        print(f"Warning: Structure '{name}' not found in RTSTRUCT and no suitable synonym found. Skipping.")
+                # If name pattern is present directly, take that
+                temp_names = []
+                for available_name in available_names:
+                    if name.lower() in available_name.lower():
+                        temp_names.append(available_name)
+                if len(temp_names) == 1:
+                    matched_names[name] = temp_names[0]
+                    continue
+                elif len(temp_names) > 1:
+                    print(f"Warning: Multiple matches found for '{name}' in RTSTRUCT: {temp_names}. Using the first match.")
+                    matched_names[name] = temp_names[0]
+                    continue
+                # If len(temp_names) == 0, try to find synonyms
+
+                found = False
+                for canonical_name, synonyms in ROI_SYNONYM_CONFIG.items():
+                    # Check if there are synonyms for this requested structure
+                    if name.lower() == canonical_name.lower():
+                        for synonym in synonyms:
+                            if synonym.lower() in available_names:
+                                matched_names[name] = synonym
+                                found = True
+                                break
+                    if found:
+                        break
+                if not found:
+                    print(f"Warning: Structure '{name}' not found in RTSTRUCT and no suitable synonym found. Skipping.")
 
         masks = dict()
         for req_name, matched_name in matched_names.items():
