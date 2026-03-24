@@ -17,4 +17,5 @@ This changelog was introduced after releasing version 1.3.0.
 - The correct email adresses are now in the pyproject file.
 ### Removed
 - Three unused examples have been removed.
-- **Breaking**: The beam validation layer has been removed, due to serious limitations. The `adjust_values` parameter now throws an error.
+- **Breaking**: The beam validation layer has been removed, due to serious limitations. The `adjust_values` parameter is no longer available for initializing the dose engine.
+- **Breaking**: The calibration of the dose engine no longer requires the beam template. Calibration can also be performed automatically during the initialization of the dose engine using the `auto_calibrate` argument.

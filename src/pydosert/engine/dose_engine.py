@@ -50,8 +50,8 @@ class DoseEngine(nn.Module):
         kernel_size: int,
         dose_grid_spacing: tuple[float, float, float],
         dose_grid_shape: tuple[int, int, int],
-        beam_template: BeamSequence | Beam | None = None,
-        adjust_values = None, # Deprecated. Keep for value error.
+        beam_template: BeamSequence | Beam | None = None,        
+        auto_calibrate: bool = False,
         device: torch.device | str | None = None,
         dtype: torch.dtype = None,
         verbose: bool = False,
@@ -63,9 +63,10 @@ class DoseEngine(nn.Module):
             machine_config: Machine physics and MLC specifications.
             kernel_size: Size of the pencil beam dose kernel.
             dose_grid_spacing: Voxel spacing in mm (depth, height, width).
-            dose_grid_shape: Shape of the output grid tensor (depth, height, width) in pixels.
-            beam_input: Beam or BeamSequence defining the treatment geometry.
-            adjust_values: The validation layer has been deprecated due to serious limitations. Make sure your beam parameters are valid.
+            dose_grid_shape: Shape of the output grid tensor (depth, height, width) in pixels.            
+            beam_template: Optional Beam or BeamSequence defining the treatment geometry.
+                If omitted, the engine is unconfigured until the first compute_dose call.
+            auto_calibrate: Run calibration immediately after construction (default: False).
             device: PyTorch device for computation.
             dtype: Data type for tensors.
             verbose: Enable verbose output (default: False).
@@ -77,15 +78,13 @@ class DoseEngine(nn.Module):
         self.device = device
         self.dtype = dtype
         self.verbose = verbose
-        if adjust_values is not None:
-            raise ValueError("The parameter `adjust_values` is deprecated. " \
-            "Make sure to validate your beam parameters before using them in the dose engine."
-            )
 
         self.machine_config = machine_config
         self.dose_grid_spacing = dose_grid_spacing
         self.dose_grid_shape = dose_grid_shape
-        self._initialize_layers(beam_template)
+        self._initialize_layers(beam_template)        
+        if auto_calibrate:
+            self.calibrate(verbose=verbose)
 
     def _set_device_dtype(self, device, dtype) -> None:
         if self.dtype is None:
@@ -95,10 +94,6 @@ class DoseEngine(nn.Module):
 
     def _initialize_layers(self, new_beam_data: BeamSequence | Beam, overwrite: bool = False) -> None:
         if new_beam_data is None:
-            return
-        
-        if (self.number_of_beams is not None) and (not overwrite):
-            # TODO: Check should be performed to ensure that things match.
             return
 
         initialize_fluence_map_layer = not hasattr(self, 'fluence_map_layer')
@@ -529,22 +524,31 @@ class DoseEngine(nn.Module):
         self._initialize_layers(beam_sequence, overwrite=True)
         return total_dose
 
-    def calibrate(self, 
+    def calibrate(self,                   
                   calibration_mu: float = None,
-                  original_beam_template: BeamSequence | None = None,
-                  verbose: bool = True) -> None: # Keep in dose engine
-        if not self.layers_initialized:
-            raise Exception("Layers must be fully initialized for calibration.")
+                  verbose: bool = True) -> None:
+        if self.machine_config is None:
+            raise Exception("machine_config must be set before calibration.")
+        if self.dose_grid_shape is None:
+            raise Exception("dose_grid_shape must be set before calibration.")
+        if self.dose_grid_spacing is None:
+            raise Exception("dose_grid_spacing must be set before calibration.")
 
+        # Apply defaults so calibration works even without a prior beam template
+        if self.device is None:
+            self.device = torch.device('cpu')
+        if self.dtype is None:
+            self.dtype = torch.float32
+            
         center_x, _, center_z = torch.tensor(self.dose_grid_spacing) * (torch.tensor(self.dose_grid_shape)) / 2
         iso_center = (center_x.item(), 100.0, center_z.item())
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
         if calibration_mu is None:
             calibration_mu = self.machine_config.calibration_mu
+            
         beam.mu = calibration_mu * beam.mu
         water_attenuation = torch.ones(self.dose_grid_shape).to(self.device).to(self.dtype)
 
-        self.layers_initialized = False
         old_kernel_size = self.kernel_size
 
         self.kernel_size = max(self.dose_grid_shape)
@@ -553,7 +557,7 @@ class DoseEngine(nn.Module):
             beam,
             density_image=water_attenuation,
             overwrite=True
-            )
+        )
 
 
         # Get center dose (at 10cm depth - index 50 for 100 voxels)
@@ -569,5 +573,7 @@ class DoseEngine(nn.Module):
             self.machine_config.mean_photon_energy_MeV = calibration_factor
 
         self.kernel_size = old_kernel_size
-        if original_beam_template is not None:
-            self._initialize_layers(original_beam_template, True)
+        
+        # Reset geometry state so the next compute_dose call reinitialises from its beam input
+        self.layers_initialized = False
+        self.number_of_beams = None
