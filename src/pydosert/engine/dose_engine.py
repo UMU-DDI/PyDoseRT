@@ -85,6 +85,7 @@ class DoseEngine(nn.Module):
         self._initialize_layers(beam_template)        
         if auto_calibrate:
             self.calibrate(verbose=verbose)
+            self._initialize_layers(beam_template)    
 
     def _set_device_dtype(self, device, dtype) -> None:
         if self.dtype is None:
@@ -545,7 +546,7 @@ class DoseEngine(nn.Module):
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
         if calibration_mu is None:
             calibration_mu = self.machine_config.calibration_mu
-            
+
         beam.mu = calibration_mu * beam.mu
         water_attenuation = torch.ones(self.dose_grid_shape).to(self.device).to(self.dtype)
 
