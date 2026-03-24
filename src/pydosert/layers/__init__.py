@@ -3,7 +3,6 @@ from .FluenceMapLayer import FluenceMapLayer
 from .FluenceVolumeLayer import FluenceVolumeLayer
 from .PencilBeamKernelLayer import PencilBeamKernelLayer
 from .RadiologicalDepthLayer import RadiologicalDepthLayer
-from .BeamValidationLayer import BeamValidationLayer
 from .BeamRotationLayer import BeamRotationLayer
 
 __all__ = [
@@ -12,6 +11,5 @@ __all__ = [
     "FluenceVolumeLayer",
     "PencilBeamKernelLayer",
     "RadiologicalDepthLayer",
-    "BeamValidationLayer",    
     "BeamRotationLayer",
     ]

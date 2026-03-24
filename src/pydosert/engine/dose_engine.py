@@ -8,7 +8,6 @@ multiple beams, and can optionally perform upsampling and debugging visualizatio
 import torch
 from torch import nn
 
-from pydosert.layers.BeamValidationLayer import BeamValidationLayer
 from pydosert.layers.FluenceMapLayer import FluenceMapLayer
 from pydosert.layers.FluenceVolumeLayer import FluenceVolumeLayer
 from pydosert.layers.RadiologicalDepthLayer import RadiologicalDepthLayer
@@ -52,7 +51,7 @@ class DoseEngine(nn.Module):
         dose_grid_spacing: tuple[float, float, float],
         dose_grid_shape: tuple[int, int, int],
         beam_template: BeamSequence | Beam | None = None,
-        adjust_values: bool = False, # Move to nn.Module
+        adjust_values = None, # Deprecated. Keep for value error.
         device: torch.device | str | None = None,
         dtype: torch.dtype = None,
         verbose: bool = False,
@@ -66,7 +65,7 @@ class DoseEngine(nn.Module):
             dose_grid_spacing: Voxel spacing in mm (depth, height, width).
             dose_grid_shape: Shape of the output grid tensor (depth, height, width) in pixels.
             beam_input: Beam or BeamSequence defining the treatment geometry.
-            adjust_values: Whether to validate and adjust parameter values (default: False).
+            adjust_values: The validation layer has been deprecated due to serious limitations. Make sure your beam parameters are valid.
             device: PyTorch device for computation.
             dtype: Data type for tensors.
             verbose: Enable verbose output (default: False).
@@ -78,7 +77,10 @@ class DoseEngine(nn.Module):
         self.device = device
         self.dtype = dtype
         self.verbose = verbose
-        self._adjust_values = adjust_values
+        if adjust_values is not None:
+            raise ValueError("The parameter `adjust_values` is deprecated. " \
+            "Make sure to validate your beam parameters before using them in the dose engine."
+            )
 
         self.machine_config = machine_config
         self.dose_grid_spacing = dose_grid_spacing
@@ -99,7 +101,6 @@ class DoseEngine(nn.Module):
             # TODO: Check should be performed to ensure that things match.
             return
 
-        initialize_beam_validation_layer = not hasattr(self, 'beam_validation_layer')
         initialize_fluence_map_layer = not hasattr(self, 'fluence_map_layer')
         initialize_fluence_volume_layer = not hasattr(self, 'fluence_volume_layer')
         initialize_beam_wise_conv_layer = not hasattr(self, 'beam_wise_conv_layer')
@@ -136,7 +137,6 @@ class DoseEngine(nn.Module):
 
 
         if self.field_size is None or (self.field_size != new_beam_data.field_size):
-            initialize_beam_validation_layer = True
             initialize_fluence_map_layer = True
             initialize_fluence_volume_layer = True
         self.field_size = new_beam_data.field_size
@@ -160,14 +160,6 @@ class DoseEngine(nn.Module):
         if self.number_of_beams is None:
             return
         
-        if self._adjust_values and initialize_beam_validation_layer:
-            self.beam_validation_layer = BeamValidationLayer(
-                self.machine_config,
-                device = self.device,
-                dtype=self.dtype,
-                field_size=self.field_size,
-            )
-
         if initialize_fluence_map_layer:
             self.fluence_map_layer = FluenceMapLayer(
                 self.machine_config,
@@ -408,11 +400,6 @@ class DoseEngine(nn.Module):
                     # Already [B*G, H, W]
                     B = fluence_maps.shape[0] // G
                     batched_fluence_maps = fluence_maps
-            else:
-                if self._adjust_values:
-                    leaf_positions, jaw_positions, mus = self.beam_validation_layer(
-                        leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
-                    )
 
                 batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
                 B = leaf_positions.shape[0]
