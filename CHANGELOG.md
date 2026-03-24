@@ -17,3 +17,4 @@ This changelog was introduced after releasing version 1.3.0.
 - The correct email adresses are now in the pyproject file.
 ### Removed
 - Three unused examples have been removed.
+- **Breaking**: The beam validation layer has been removed, due to serious limitations. The `adjust_values` parameter now throws an error.
