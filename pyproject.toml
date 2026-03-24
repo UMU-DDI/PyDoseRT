@@ -6,7 +6,7 @@ description = "A differentiable radiation therapy dose calculation engine for au
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 authors = [
-    { name="Attila Simkó", email="gerd.heilemann@meduniwien.ac.at" },
+    { name="Attila Simkó", email="attila.simko@umu.se" },
     { name="Gerd Heilemann", email="gerd.heilemann@meduniwien.ac.at" },
     { name="Josef Lundman", email="josef.lundman@regionvasterbotten.se" },
 ]
