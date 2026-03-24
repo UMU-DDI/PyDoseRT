@@ -1,12 +1,12 @@
 import sys
 
-from pydose_rt.utils.utils import get_shapes
+from pydosert.utils.utils import get_shapes
 sys.path.append("../../")
 import pytest
 import numpy as np
 import torch
-from pydose_rt.data import MachineConfig
-from pydose_rt.layers import RadiologicalDepthLayer
+from pydosert.data import MachineConfig
+from pydosert.layers import RadiologicalDepthLayer
 
 
 @pytest.fixture

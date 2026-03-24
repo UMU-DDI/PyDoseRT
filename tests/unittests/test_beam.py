@@ -5,7 +5,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
 import math
-from pydose_rt.data import Beam, BeamSequence
+from pydosert.data import Beam, BeamSequence
 
 
 class TestBeam:

@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydose_rt.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
+from pydosert.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
 
 
 @pytest.fixture

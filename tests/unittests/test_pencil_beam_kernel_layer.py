@@ -1,8 +1,8 @@
-from pydose_rt.utils.utils import get_shapes
+from pydosert.utils.utils import get_shapes
 import pytest
 import torch
-from pydose_rt.data import MachineConfig
-from pydose_rt.layers import PencilBeamKernelLayer
+from pydosert.data import MachineConfig
+from pydosert.layers import PencilBeamKernelLayer
 
 @pytest.fixture
 def pencil_beam_kernel_layer(request, default_machine_config, default_resolution):

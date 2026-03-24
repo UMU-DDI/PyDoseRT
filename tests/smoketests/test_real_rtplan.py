@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import os
 import torch
-from pydose_rt.data import MachineConfig, loaders
-from pydose_rt import DoseEngine
+from pydosert.data import MachineConfig, loaders
+from pydosert import DoseEngine
 import SimpleITK as sitk
 
 
@@ -37,7 +37,7 @@ def test_real_rtplan(rtp_data_dir, rtp_struct_path, rtp_dose_path, rtp_plan_path
     patient = patient.to(device).to(dtype)
     beam_sequence = beam_sequence.to(device).to(dtype)
 
-    machine_config = MachineConfig(preset="src/pydose_rt/data/machine_presets/umea_10MV.json")
+    machine_config = MachineConfig(preset="src/pydosert/data/machine_presets/umea_10MV.json")
         
     ct_volume = patient.get_masked_ct("External").unsqueeze(0)
     dose_target = patient.get_masked_dose("External").cpu().detach().numpy()
