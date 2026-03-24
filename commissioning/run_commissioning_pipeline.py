@@ -17,12 +17,13 @@ from toolkit.commissioning_plotter import CommissioningPlotter
 
 
 # ---------------------------------------------------------------------------
-# Input files
+# Input files - .json is expected. To convert raw data, there are functions 
+# `convert_asc_to_json`, `convert_mcc_to_json`, `convert_of_csv_to_json`.
 # ---------------------------------------------------------------------------
-BASE_CONFIG         = "commissioning/machine_config_base_vienna.json"
-PROFILES_FILE       = "commissioning/data/vienna_mcc_profiles.json"
-DIAGONALS_FILE      = "commissioning/data/vienna_mcc_diagonals.json"
-OUTPUT_FACTORS_FILE = "commissioning/data/vienna_output_factors.json"
+BASE_CONFIG         = "commissioning/machine_config_base_umea.json"
+PROFILES_FILE       = "commissioning/data/umea/measurements_10_profiles.json"
+DIAGONALS_FILE      = "commissioning/data/umea/measurements_10_diagonals.json"
+OUTPUT_FACTORS_FILE = "commissioning/data/umea/measurements_10_of_sp.json"
 
 # ---------------------------------------------------------------------------
 # Output
