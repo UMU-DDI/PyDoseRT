@@ -400,7 +400,7 @@ class DoseEngine(nn.Module):
                     # Already [B*G, H, W]
                     B = fluence_maps.shape[0] // G
                     batched_fluence_maps = fluence_maps
-
+            else:
                 batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
                 B = leaf_positions.shape[0]
 
