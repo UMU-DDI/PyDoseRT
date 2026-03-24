@@ -188,7 +188,7 @@ class RadiologicalDepthLayer(nn.Module):
             # Integrate density along each line (cumulative sum) and scale by step size
             # For dose calculation at voxel CENTER, we need: sum(density[0:i]) * step + density[i] * step/2
             cumsum = torch.cumsum(density, dim=-1) * step_sizes  # shape: [B, G, P]
-            cumsum = cumsum + (density * step_sizes * 0.5) # Adjust to voxel center
+            cumsum = cumsum - density * step_sizes * 0.5  # shift from voxel exit to voxel centre
 
             cumsum = cumsum.view(B * G, P, 1)
 

@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Test, build, release, and publish
 
 on:
   push:
@@ -6,25 +6,83 @@ on:
       - "v*"
 
 permissions:
-  contents: read
-  id-token: write
+  contents: write
+
+env:
+  UV_SYSTEM_PYTHON: 1
 
 jobs:
-  publish:
+  build:
+    name: Test and build distributions
     runs-on: ubuntu-latest
-    environment: pypi
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.12"
+          version: "latest"
 
-      - run: |
-          python -m pip install --upgrade pip build
-          python -m build
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: pyproject.toml
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Install build/test dependencies
+        run: uv pip install setuptools wheel twine pytest
+
+      - name: Install package + test deps
+        run: uv pip install -e ".[test]"
+
+      - name: Run tests
+        run: pytest
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Upload built distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+
+  github-release:
+    name: Publish to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Create GitHub release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/*
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

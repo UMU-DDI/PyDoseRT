@@ -28,6 +28,7 @@ from pydosert.physics.fluence.fluence_modeling import (
     precompute_head_scatter_kernel,
     apply_head_scatter_kernels,
     get_output_factor,
+    compute_sc_output_factor,
     apply_directional_precomputed_kernel,
     estimate_field_size_1d,
     precompute_directional_source_penumbra_kernels,
@@ -57,6 +58,7 @@ class FluenceMapLayer(nn.Module):
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         training_sharpness: float = 10.0,
+        pixel_size_mm: float = 1.0,
     ) -> 'FluenceMapLayer':
         """
         Initializes the FluenceMapLayer.
@@ -82,6 +84,7 @@ class FluenceMapLayer(nn.Module):
         self.verbose = verbose
         self.training_sharpness = training_sharpness
         self.field_size = field_size
+        self.pixel_size_mm = pixel_size_mm
         self.training = False
 
         if self.machine_config.leaf_widths is None:
@@ -89,17 +92,19 @@ class FluenceMapLayer(nn.Module):
         else:
             self.leaf_widths = self.machine_config.leaf_widths
 
-        # Precompute depth indices
+        # Precompute depth/jaw indices in mm (not pixel units).
+        # Scaling by pixel_size_mm ensures that leaf/jaw positions (in mm) are
+        # directly comparable to these indices in fractional_box_overlap.
         W = self.field_size[1]
         N = machine_config.number_of_leaf_pairs
-        centers = (torch.arange(W, dtype=self.dtype) + 0.5) - (W / 2)  # [H]
-        depth_indices = centers.view(W, 1).repeat(1, N)  # [H, N]
-        self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.dtype))  # [1, H, N]
+        centers_mm = ((torch.arange(W, dtype=self.dtype) + 0.5) - W / 2) * pixel_size_mm
+        depth_indices = centers_mm.view(W, 1).repeat(1, N)
+        self.register_buffer("depth_indices", depth_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
 
         H = self.field_size[0]
-        centers = (torch.arange(H, dtype=self.dtype) + 0.5) - (H / 2)  # [W]
-        jaw_indices = centers.view(1, H).repeat(1, 1)
-        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, W, N]
+        centers_mm = ((torch.arange(H, dtype=self.dtype) + 0.5) - H / 2) * pixel_size_mm
+        jaw_indices = centers_mm.view(1, H)
+        self.register_buffer("jaw_indices", jaw_indices.unsqueeze(0).to(self.dtype))  # [1, 1, H]
 
         # ============================================================================
         # Precompute physics augmentation kernels/masks for efficient forward pass
@@ -164,7 +169,7 @@ class FluenceMapLayer(nn.Module):
                 self.machine_config.profile_corrections[0],
                 self.machine_config.profile_corrections[1],
                 self.field_size,
-                1.0
+                self.pixel_size_mm
             ).unsqueeze(0).unsqueeze(0).to(self.device).to(self.dtype).detach()
             self.register_buffer("profile_correction_map", profile_correction_map)
             self.use_profile_correction = True
@@ -172,6 +177,24 @@ class FluenceMapLayer(nn.Module):
             self.use_profile_correction = False
 
         self.mlc_transmission = self.machine_config.mlc_transmission
+
+        # DLG: half of the gap is added to each bank edge
+        self.dlg_half_mm = (self.machine_config.dlg_mm or 0.0) / 2.0
+
+        # Physics-based Sc model (erf integral of Gaussian source over jaw)
+        self.use_sc_model = False
+        if (hasattr(self.machine_config, 'sc_source_sigma_mm') and
+                self.machine_config.sc_source_sigma_mm is not None):
+            sigmas = self.machine_config.sc_source_sigma_mm
+            self.sc_sigma_x_mm = float(sigmas[0])
+            self.sc_sigma_y_mm = float(sigmas[1]) if len(sigmas) > 1 else float(sigmas[0])
+            # sc_amplitude reuses the head-scatter amplitude (same physics parameter)
+            self.sc_amplitude = (
+                float(self.machine_config.head_scatter_amplitude[0])
+                if (self.machine_config.head_scatter_amplitude is not None)
+                else 0.0
+            )
+            self.use_sc_model = True
 
 
     def forward(
@@ -189,100 +212,131 @@ class FluenceMapLayer(nn.Module):
             torch.Tensor: Fluence map tensor of shape [B*G, H, W].
         """
         B, G, N, _ = leaf_positions.shape  # [B, G, N, 2]
-        leaf_positions = leaf_positions.reshape(
-            B * G, N, 2
-        )  # [B*G, N, 2]
+        leaf_positions = leaf_positions.reshape(B * G, N, 2)  # [B*G, N, 2]
 
         left_positions = leaf_positions[..., 0]   # [B*G, N]
         right_positions = leaf_positions[..., 1]   # [B*G, N]
 
+        # ── DLG: widen each MLC bank by half the dosimetric leaf gap ────────────
+        if self.dlg_half_mm > 0.0:
+            left_positions = left_positions - self.dlg_half_mm
+            right_positions = right_positions + self.dlg_half_mm
+
         W = self.field_size[1]
 
-        left_positions = left_positions.unsqueeze(1).repeat(1, W, 1)  # [B*G, H, N]
-        right_positions = right_positions.unsqueeze(1).repeat(1, W, 1)  # [B*G, H, N]
+        left_positions = left_positions.unsqueeze(1).repeat(1, W, 1)   # [B*G, W, N]
+        right_positions = right_positions.unsqueeze(1).repeat(1, W, 1)  # [B*G, W, N]
 
         d = self.depth_indices
         if d.device != leaf_positions.device:
-            d = d.to(leaf_positions.device)  # [1, H, N]
+            d = d.to(leaf_positions.device)  # [1, W, N]
 
-        # Use training-dependent sharpness: smooth gradients during training, sharp during eval
-        sharpness = self.training_sharpness if self.training else None
+        # ── MLC aperture mask ────────────────────────────────────────────────────
+        mask = fractional_box_overlap(d, left_positions, right_positions,
+                                      min_value=self.mlc_transmission,
+                                      pixel_size=self.pixel_size_mm)
 
-        # ---------- new box (no sigmoids) ----------
-        mask = fractional_box_overlap(d, left_positions, right_positions, min_value=self.mlc_transmission)
-        # -------------------------------------------
-
-        # Reshape
         mask = mask.view(B, G, W, N)
         mask = mask.view(B * G, W, N, 1)
+        mask = resample_fluence_map(mask, self.leaf_widths, self.field_size[0], self.dtype)  # [B*G, W, H, 1]
 
-        mask = resample_fluence_map(mask, self.leaf_widths, self.field_size[0], self.dtype)  # [B*G, H, M, 1]
-
+        # ── Jaw aperture mask ────────────────────────────────────────────────────
         if jaw_positions is not None:
             jaw_positions = jaw_positions.reshape(B * G, 2)  # [B*G, 2]
-            bottom_positions = jaw_positions[:, 0].unsqueeze(1)  # [B*G]
-            top_positions = jaw_positions[:, 1].unsqueeze(1)  # [B*G]
+            bottom_positions = jaw_positions[:, 0].unsqueeze(1)  # [B*G, 1]
+            top_positions    = jaw_positions[:, 1].unsqueeze(1)  # [B*G, 1]
             H = self.field_size[0]
-            bottom_positions = bottom_positions.unsqueeze(2).repeat(1, 1, H)  # [B*G, H]
-            top_positions = top_positions.unsqueeze(2).repeat(1, 1, H)
+            bottom_positions = bottom_positions.unsqueeze(2).repeat(1, 1, H)
+            top_positions    = top_positions.unsqueeze(2).repeat(1, 1, H)
 
             j = self.jaw_indices
             if j.device != leaf_positions.device:
-                j = j.to(leaf_positions.device)  # [1, H, N]
-            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions)
-
+                j = j.to(leaf_positions.device)
+            jaw_mask = fractional_box_overlap(j, bottom_positions, top_positions,
+                                              pixel_size=self.pixel_size_mm)
             jaw_mask = jaw_mask.view(B, G, H, 1)
             jaw_mask = jaw_mask.view(B * G, 1, H, 1)
             jaw_mask = jaw_mask.repeat(1, W, 1, 1)
 
-            if self.use_output_factor:
-                field_size_mlc_mm = estimate_field_size_1d(jaw_mask.permute(0, 2, 1, 3).mean(dim=1).squeeze(2), 1.0)
-                field_size_jaw_mm = estimate_field_size_1d(jaw_mask.mean(dim=2).squeeze(2), 1.0)
-
             mask *= jaw_mask
-            # mask *= jaw_mask.permute(0, 2, 1, 3)
-        else:
-            if self.use_output_factor:
-                field_size_mlc_mm = estimate_field_size_1d(mask.mean(dim=1).squeeze(2), 1.0)
-                field_size_jaw_mm = estimate_field_size_1d(mask.mean(dim=2).squeeze(2), 1.0)
-        
-        # if self.use_output_factor:
-        #     field_size_mlc_mm = estimate_field_size_1d(mask.mean(dim=1).squeeze(2), 1.0)
 
-        fluence_map = mask.permute(0, 3, 2, 1)
+        # aperture: [B*G, W, H, 1] → [B*G, 1, H, W]
+        aperture = mask.permute(0, 3, 2, 1)
 
-        # ============================================================================
-        # Apply precomputed physics augmentation effects
-        # ============================================================================
+        # ── Estimate jaw field sizes for OF / Sc (from the jaw mask alone) ──────
+        need_field_size = self.use_output_factor or self.use_sc_model
+        if need_field_size:
+            if jaw_positions is not None:
+                # jaw_mask is [B*G, W, H, 1]; average over the orthogonal axis
+                field_size_x_mm = estimate_field_size_1d(
+                    jaw_mask.permute(0, 2, 1, 3).mean(dim=1).squeeze(2), self.pixel_size_mm
+                )
+                field_size_y_mm = estimate_field_size_1d(
+                    jaw_mask.mean(dim=2).squeeze(2), self.pixel_size_mm
+                )
+            else:
+                # No jaws: use the MLC aperture projected profiles
+                field_size_x_mm = estimate_field_size_1d(
+                    aperture.mean(dim=2).squeeze(1), self.pixel_size_mm
+                )
+                field_size_y_mm = estimate_field_size_1d(
+                    aperture.mean(dim=3).squeeze(1), self.pixel_size_mm
+                )
 
-        # Apply source penumbra using precomputed kernel(s)
+        # ════════════════════════════════════════════════════════════════════════
+        # Physics pipeline
+        #
+        #  1. penumbra  conv (source blur, directional 1-D Gaussians)
+        #  2. profile correction  (radial off-axis factor, applied to primary)
+        #  3. head-scatter blend  (1 - w)*primary + w*scatter
+        #     scatter is convolved from the *original aperture* with a wide kernel
+        #  4. output factor  (Sc erf model and/or empirical LUT)
+        # ════════════════════════════════════════════════════════════════════════
+
+        # Step 1 – source penumbra (Gaussian blur in MLC and jaw directions)
         if self.use_penumbra:
-            fluence_map = apply_directional_precomputed_kernel(
-                fluence_map,
+            primary = apply_directional_precomputed_kernel(
+                aperture,
                 kernel_mlc=self.source_penumbra_kernel_mlc,
                 kernel_jaw=self.source_penumbra_kernel_jaw,
                 padding_mode='replicate'
             ).to(self.dtype)
+        else:
+            primary = aperture
 
-        # Apply head scatter using precomputed kernel(s)
+        # Step 2 – radial off-axis profile correction (applied to primary only)
+        if self.use_profile_correction:
+            primary = primary * self.profile_correction_map
+
+        # Step 3 – head-scatter blend
+        #   scatter is computed from the *raw aperture* with a wide Gaussian
         if self.use_head_scatter:
-            # New directional approach: independent 1D convolutions with separate amplitude scaling
-            head_scatter_component = apply_head_scatter_kernels(
-                fluence_map,
+            scatter = apply_head_scatter_kernels(
+                aperture,
                 self.head_scatter_kernel_mlc,
                 self.head_scatter_kernel_jaw,
-                self.head_scatter_amplitude_mlc,
-                self.head_scatter_amplitude_jaw
             ).to(self.dtype)
+            w = self.head_scatter_amplitude_mlc
+            fluence_map = (1.0 - w) * primary + w * scatter
+        else:
+            fluence_map = primary
 
-        if self.use_profile_correction:
-            fluence_map = fluence_map * self.profile_correction_map
+        # Step 4 – output factor
+        #   (a) Physics-based Sc erf model
+        if self.use_sc_model:
+            sc = compute_sc_output_factor(
+                jaw_w_mm=field_size_x_mm,
+                jaw_h_mm=field_size_y_mm,
+                sc_amplitude=self.sc_amplitude,
+                sigma_x_mm=self.sc_sigma_x_mm,
+                sigma_y_mm=self.sc_sigma_y_mm,
+            )
+            fluence_map = sc[:, None, None, None] * fluence_map
 
-        if self.use_head_scatter:
-            fluence_map = (1 - self.head_scatter_amplitude_mlc) * fluence_map + head_scatter_component
-
+        #   (b) Empirical OF LUT (can be used as residual correction on top of Sc,
+        #       or as the sole OF model when sc_source_sigma_mm is not configured)
         if self.use_output_factor:
-            OF = get_output_factor(field_size_mlc_mm, field_size_jaw_mm, self.output_factors)
+            OF = get_output_factor(field_size_x_mm, field_size_y_mm, self.output_factors)
             fluence_map = OF[:, None, None, None] * fluence_map
 
         fluence_map = fluence_map[:, 0, :, :]  # [B*G, H, W]

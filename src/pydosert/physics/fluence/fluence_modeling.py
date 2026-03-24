@@ -467,62 +467,113 @@ def make_interpolator(point_dict):
     return interpolate
 
 
-def apply_head_scatter_kernels(fluence_map, kernel_x, kernel_y, scatter_amplitude, scatter_fraction):
+def apply_head_scatter_kernels(fluence_map, kernel_x, kernel_y):
     """
-    Pure PyTorch implementation using conv2d (faster on GPU).
-    
-    Parameters:
-    -----------
+    Apply 2D separable head-scatter convolution to the fluence map.
+
+    Convolves the aperture with a wide Gaussian kernel (separable, X then Y)
+    to produce the scatter fluence component.  The caller is responsible for
+    the weighted combination::
+
+        total = (1 - w) * primary + w * scatter
+
+    Parameters
+    ----------
     fluence_map : torch.Tensor
-        2D fluence map [H, W] or [1, 1, H, W]
-    kernel_x, kernel_y : numpy.ndarray or torch.Tensor
-        1D convolution kernels
-    scatter_fraction : float
-        Scatter fraction S
-        
-    Returns:
-    --------
-    fluence_total : torch.Tensor
-        Total fluence with scatter
+        Aperture / primary fluence map, shape ``[N, C, H, W]``, ``[N, H, W]``,
+        or ``[H, W]``.
+    kernel_x : torch.Tensor or np.ndarray
+        1-D Gaussian kernel for the horizontal (MLC leaf-motion) direction.
+    kernel_y : torch.Tensor or np.ndarray
+        1-D Gaussian kernel for the vertical (jaw / inline) direction.
+
+    Returns
+    -------
+    torch.Tensor
+        Blurred scatter map with the same shape as the input.
     """
     device = fluence_map.device
     dtype = fluence_map.dtype
-    
+
     # Ensure input is 4D [N, C, H, W]
+    original_ndim = fluence_map.ndim
     if fluence_map.ndim == 2:
         fluence_map = fluence_map.unsqueeze(0).unsqueeze(0)
     elif fluence_map.ndim == 3:
         fluence_map = fluence_map.unsqueeze(0)
-    
-    # Convert kernels to torch tensors
+
+    # Convert kernels to torch tensors on the correct device/dtype
     if not isinstance(kernel_x, torch.Tensor):
-        kernel_x = torch.from_numpy(kernel_x).to(device=device, dtype=dtype)
+        kernel_x = torch.from_numpy(kernel_x)
+    kernel_x = kernel_x.to(device=device, dtype=dtype)
+
     if not isinstance(kernel_y, torch.Tensor):
-        kernel_y = torch.from_numpy(kernel_y).to(device=device, dtype=dtype)
-    
-    # Create 2D separable kernel by outer product
-    # Method 1: Convolve sequentially (more memory efficient)
-    
-    # Reshape kernel_x for horizontal convolution [out_ch, in_ch, height, width]
+        kernel_y = torch.from_numpy(kernel_y)
+    kernel_y = kernel_y.to(device=device, dtype=dtype)
+
+    # Separable convolution: horizontal then vertical
     kernel_x_2d = kernel_x.view(1, 1, 1, -1)
-    
-    # Reshape kernel_y for vertical convolution
-    kernel_y_2d = kernel_y.view(1, 1, -1, 1)
-    
-    # Apply convolution in X direction
     padding_x = kernel_x_2d.shape[3] // 2
-    fluence_conv = torch.nn.functional.conv2d(
-        fluence_map, kernel_x_2d, padding=(0, padding_x)
-    )
-    
-    # Apply convolution in Y direction
+    fluence_conv = F.conv2d(fluence_map, kernel_x_2d, padding=(0, padding_x))
+
+    kernel_y_2d = kernel_y.view(1, 1, -1, 1)
     padding_y = kernel_y_2d.shape[2] // 2
-    fluence_conv = torch.nn.functional.conv2d(
-        fluence_conv, kernel_y_2d, padding=(padding_y, 0)
-    )
-    fluence_conv = fluence_conv / torch.clamp(fluence_conv.max(), min=1e-8)
-    
-    # Combine primary and scattered
-    fluence_total = scatter_amplitude * fluence_conv / scatter_fraction
-    
-    return fluence_total
+    fluence_conv = F.conv2d(fluence_conv, kernel_y_2d, padding=(padding_y, 0))
+
+    return fluence_conv
+
+
+def compute_sc_output_factor(
+    jaw_w_mm: torch.Tensor,
+    jaw_h_mm: torch.Tensor,
+    sc_amplitude: float,
+    sigma_x_mm: float,
+    sigma_y_mm: float,
+    ref_field_mm: float = 100.0,
+) -> torch.Tensor:
+    """
+    Compute the collimator scatter factor Sc analytically.
+
+    Sc is modelled as the integral of a 2-D Gaussian extended source over the
+    jaw opening, normalised to a 10 × 10 cm² reference field:
+
+    .. math::
+
+        S_c(W, H) = \\frac{1 + A \\cdot \\operatorname{erf}\\!
+            \\left(\\frac{W}{2\\sqrt{2}\\sigma_x}\\right)
+            \\operatorname{erf}\\!\\left(\\frac{H}{2\\sqrt{2}\\sigma_y}\\right)}
+            {S_{c,\\mathrm{ref}}}
+
+    Parameters
+    ----------
+    jaw_w_mm : torch.Tensor
+        Jaw opening in the crossline (X) direction, shape ``[B]``, in mm.
+    jaw_h_mm : torch.Tensor
+        Jaw opening in the inline (Y) direction, shape ``[B]``, in mm.
+    sc_amplitude : float
+        Head-scatter amplitude ``A`` typically 0.03 – 0.15).
+    sigma_x_mm : float
+        Effective source sigma at isocentre in the X direction, in mm.
+    sigma_y_mm : float
+        Effective source sigma at isocentre in the Y direction, in mm.
+    ref_field_mm : float
+        Side length of the reference square field in mm (default 100 mm = 10 cm).
+
+    Returns
+    -------
+    torch.Tensor
+        Sc values, shape ``[B]``, normalised so Sc = 1 for the reference field.
+    """
+    sqrt2 = 2.0 ** 0.5
+
+    # Reference field normalisation (scalar, computed once)
+    t_ref_x = float(torch.erf(torch.tensor(ref_field_mm / (2.0 * sqrt2 * sigma_x_mm))))
+    t_ref_y = float(torch.erf(torch.tensor(ref_field_mm / (2.0 * sqrt2 * sigma_y_mm))))
+    sc_ref = 1.0 + sc_amplitude * t_ref_x * t_ref_y
+
+    # Actual field
+    t_x = torch.erf(jaw_w_mm / (2.0 * sqrt2 * sigma_x_mm))
+    t_y = torch.erf(jaw_h_mm / (2.0 * sqrt2 * sigma_y_mm))
+    sc = (1.0 + sc_amplitude * t_x * t_y) / sc_ref
+
+    return sc

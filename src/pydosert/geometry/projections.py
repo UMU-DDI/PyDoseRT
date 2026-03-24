@@ -14,23 +14,41 @@ def soft_min(a, b, sharpness=10.0):
     # min(a, b) = -max(-a, -b)
     return -soft_max(-a, -b, sharpness)
 
-def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0) -> torch.Tensor:
+def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0, pixel_size=1.0) -> torch.Tensor:
     """
-    Compute fractional overlap with geometric max/min for accurate overlap computation.
+    Compute the fractional overlap of a pixel with a 1-D box aperture.
+
+    All inputs must be in the same physical units (mm).  The pixel centred at
+    ``d`` spans ``[d - pixel_size/2,  d + pixel_size/2]``.  The aperture spans
+    ``[left, right]``.
+
+    The effective aperture is extended by ``pixel_size/2`` on each side so
+    that a pixel whose centre coincides with ``left`` or ``right`` receives a
+    50 % fractional overlap.  This means the 50 % crossing of the rendered
+    step-function aperture is at ``left - pixel_size/2`` and
+    ``right + pixel_size/2`` — i.e. half a pixel *outside* the nominal leaf
+    position.
+
     Args:
-        d: Bin center positions
-        left: Left edge positions
-        right: Right edge positions
+        d: Pixel centre positions (mm).
+        left: Left edge of aperture (mm).
+        right: Right edge of aperture (mm).
+        min_value: Floor value (e.g. MLC transmission, default 0).
+        max_value: Ceiling value (default 1).
+        pixel_size: Physical pixel width in mm (default 1.0).
     """
-    half_w = 0.5
+    half_w = pixel_size / 2
     bin_start = d - half_w
     bin_end   = d + half_w
- 
-    overlap_start_hard = torch.maximum(left - half_w, bin_start)
-    overlap_end_hard = torch.minimum(right + half_w, bin_end)
-    hard = torch.clamp(overlap_end_hard - overlap_start_hard, min=min_value, max=max_value)
 
-    return hard
+    # Extend the aperture by half a pixel on each side.  This places the 50 %
+    # crossing at ±half_w outside the nominal leaf position and provides smooth
+    # sub-pixel interpolation when leaf edges fall between pixel centres.
+    overlap_start = torch.maximum(left - half_w, bin_start)
+    overlap_end   = torch.minimum(right + half_w, bin_end)
+    frac = torch.clamp(overlap_end - overlap_start, min=0.0) / pixel_size
+
+    return torch.clamp(frac, min=min_value, max=max_value)
 
 def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_size: int, dtype: type) -> torch.Tensor:
     """

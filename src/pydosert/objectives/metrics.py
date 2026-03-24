@@ -1,15 +1,9 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.integrate import trapezoid
-from pydosert.data import MachineConfig, OptimizationConfig, Patient, Beam
+from pydosert.data import MachineConfig, OptimizationConfig, Patient
 from pydosert.data.beam import BeamSequence
-import copy
-import pymedphys
 import torch
-from typing import Dict, List, Tuple, Optional
+from typing import Dict
 from scipy.ndimage import binary_fill_holes, binary_erosion
-
-# DVH calculation functions moved to pydosert.data.metrics_helpers
 
 def dose_at_volume_max(
     dose_array: np.ndarray,
@@ -225,6 +219,14 @@ def result_validation(patient: Patient,
 
             
     if compute_gamma:
+        try:
+            import pymedphys
+        except ImportError as e:
+            raise ImportError(
+                "compute_gamma=True requires the optional dependency 'pymedphys'. "
+                "Install it with: pip install pymedphys"
+            ) from e
+        
         axes = tuple(
             np.arange(patient.dose.shape[i]) * patient.resolution[i]
             for i in range(3)

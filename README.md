@@ -29,6 +29,15 @@ PyDoseRT implements a physics-based **pencil beam convolution model** with full 
 - **Gradient-Based Optimization**: Optimize MLC leaf positions and monitor units directly
 - **Calibration System**: Ensures accurate absolute dose at reference conditions
 
+## Quick start
+
+For getting started, we have collected some example data and workflows using PyDoseRT in different scenarios:
+- [Dose calculation from a DICOM RTPLAN](https://colab.research.google.com/github/UMU-DDI/PyDoseRT/blob/main/examples/rtplan.ipynb)
+- [Machine parameter optimization using gradient descent](https://colab.research.google.com/github/UMU-DDI/PyDoseRT/blob/main/examples/optimization.ipynb)
+- [PyDoseRT in a deep learning model](https://colab.research.google.com/github/UMU-DDI/PyDoseRT/blob/main/examples/dlmodel.ipynb)
+- [Water phantom evaluations](https://colab.research.google.com/github/UMU-DDI/PyDoseRT/blob/main/examples/phantom.ipynb)
+- [Pencil beam kernel visualization](https://colab.research.google.com/github/UMU-DDI/PyDoseRT/blob/main/examples/pbkernel.ipynb)
+
 ## Installation
 
 ### Requirements
@@ -36,6 +45,15 @@ PyDoseRT implements a physics-based **pencil beam convolution model** with full 
 - Python 3.11, 3.12, or 3.13
 - CUDA-capable GPU (recommended, but CPU supported)
 - Linux, macOS, or Windows
+
+
+### Install through pip
+
+The latest stable release of PyDoseRT is available through pip, and it can be installed by running:
+
+```bash
+pip install pydosert
+```
 
 ### Install from Source
 
@@ -63,195 +81,9 @@ PyDoseRT requires the following key packages:
 - **SciPy** (≥1.11.1) - Scientific computing
 - **pydicom** (≥2.4.4) - DICOM file handling
 - **SimpleITK** (≥2.4.1) - Medical image processing
-- **pymedphys** (≥0.41.0) - Medical physics utilities
+- (**pymedphys** (≥0.41.0) - Medical physics utilities only used for gamma pass rate evaluations)
 
 See `pyproject.toml` for the complete dependency list.
-
-## Quick Start
-
-### Basic Dose Calculation from DICOM Data
-
-```python
-import torch
-from pydosert import DoseEngine
-from pydosert.data import MachineConfig, loaders
-from pydosert.data.beam import BeamSequence
-
-# Setup device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-dtype = torch.float32
-
-# Load machine configuration (linear accelerator parameters)
-machine_config = MachineConfig(
-    preset="src/pydosert/data/machine_presets/umea_10MV.json"
-)
-
-# Load patient DICOM data (CT, RTPLAN, RTDOSE, RTSTRUCT)
-patient, beam_sequences = loaders.load_dicom(
-    ct_folder="path/to/ct_series/",
-    dose_path="path/to/rtdose.dcm",
-    plan_path="path/to/rtplan.dcm",
-    struct_path="path/to/rtstruct.dcm",
-    struct_names=["CTV", "PTV", "Bladder", "Rectum", "External"],
-    use_delivery=True  # Use actual delivery MUs from plan
-)
-
-# Combine beam sequences if multiple arcs
-beam_sequence = BeamSequence.from_beams(
-    [beam for bs in beam_sequences for beam in bs]
-)
-
-# Move data to device
-patient = patient.to(device).to(dtype)
-beam_sequence = beam_sequence.to(device).to(dtype)
-
-# Get density image (masked by external contour)
-density_image = torch.where(
-    patient.structures["External"],
-    patient.density_image,
-    0.0
-)
-
-# Initialize dose engine
-dose_engine = DoseEngine(
-    kernel_size=251,  # Size of pencil beam kernel (larger = more accurate, slower)
-    dose_grid_spacing=patient.resolution,  # Voxel spacing (mm)
-    dose_grid_shape=density_image.shape,  # Grid dimensions
-    machine_config=machine_config,
-    beam_template=beam_sequence,
-    device=device,
-    dtype=dtype
-)
-
-# Calibrate dose engine to match machine output
-dose_engine.calibrate(
-    calibration_mu=machine_config.calibration_mu,
-    original_beam_template=beam_sequence
-)
-
-# Calculate dose
-dose_pred = dose_engine.compute_dose_sequential(
-    beam_sequence,
-    density_image=density_image
-)
-
-# Mask dose to external contour
-dose_pred = torch.where(patient.structures["External"], dose_pred[0], 0.0)
-
-# Visualize
-from pydosert.utils.plotting import quick_plot
-quick_plot(patient, dose_pred, title="Predicted Dose Distribution")
-```
-
-### Dose Validation and Metrics
-
-```python
-from pydosert.objectives.metrics import result_validation
-from pydosert.data import OptimizationConfig
-
-# Load clinical objectives from preset
-optimization = OptimizationConfig.from_json(
-    "src/pydosert/data/optimization_presets/gold-atlas.json"
-)
-
-# Validate calculated dose against reference
-results = result_validation(
-    patient,
-    machine_config,
-    beam_sequence,
-    dose_pred,
-    optimization,
-    compute_gamma=True,  # Gamma index analysis
-    compute_clinical_criteria=True,  # DVH constraint checking
-    gamma_threshold_distance=2.0,  # mm
-    gamma_threshold_dose=2.0  # %
-)
-
-# Print results
-if "gamma_pass_rate" in results:
-    print(f"Gamma pass rate (2%/2mm): {results['gamma_pass_rate']:.2%}")
-
-if "clinical_criteria" in results:
-    print(f"Clinical criteria passed: {results['clinical_criteria']['passed_test']:.1%}")
-
-# Compare with TPS dose
-import torch
-mae = torch.abs(dose_pred - patient.dose).mean()
-print(f"Mean Absolute Error: {mae:.3f} Gy")
-```
-
-### Treatment Plan Optimization
-
-```python
-import torch
-from pydosert.data import BeamSequence, OptimizationConfig
-from pydosert.objectives.losses import compute_dvh_loss, scale_loss
-
-# Load optimization objectives
-optimization = OptimizationConfig.from_json(
-    "src/pydosert/data/optimization_presets/gold-atlas.json"
-)
-
-# Create optimizable beam sequence with gradient tracking
-beam_sequence = BeamSequence.create(
-    gantry_angles_deg=[0, 51, 102, 153, 204, 255, 306],  # 7 beams
-    number_of_leaf_pairs=60,
-    field_size=(400.0, 400.0),  # mm
-    iso_center=(0.0, 0.0, 0.0),
-    collimator_angles_deg=[0.0] * 7,
-    sid=1000.0,  # mm
-    open_field_size=100.0,  # Initial aperture
-    device=device,
-    dtype=dtype,
-    requires_grad=True  # Enable gradient tracking for MLC leaves and MUs
-)
-
-# Initialize optimizer (AdamW works well for fluence optimization)
-optimizer = torch.optim.AdamW(
-    beam_sequence.parameters(),
-    lr=1.0,
-    weight_decay=1e-4
-)
-
-# Optimization loop
-max_iterations = 100
-for iteration in range(max_iterations):
-    optimizer.zero_grad()
-
-    # Forward pass: calculate dose with current beam parameters
-    dose_pred = dose_engine.compute_dose(
-        beam_sequence.to_delivery(),
-        density_image=patient.density_image.unsqueeze(0)
-    )
-
-    # Compute loss based on clinical constraints
-    losses = []
-
-    # PTV prescription (e.g., 60 Gy)
-    if "PTV" in patient.structures:
-        ptv_loss = torch.mean(
-            torch.abs(dose_pred[0][patient.structures["PTV"]] - 60.0)
-        )
-        losses.append(scale_loss(ptv_loss, optimization.structures["PTV"]["weight"]))
-
-    # OAR sparing (minimize dose to organs at risk)
-    for oar_name in ["Bladder", "Rectum", "FemoralHead_L", "FemoralHead_R"]:
-        if oar_name in patient.structures:
-            oar_loss = torch.mean(
-                torch.abs(dose_pred[0][patient.structures[oar_name]])
-            )
-            losses.append(scale_loss(oar_loss, optimization.structures[oar_name]["weight"]))
-
-    # Total loss
-    total_loss = torch.stack(losses).sum()
-
-    # Backward pass and optimization step
-    total_loss.backward()
-    optimizer.step()
-
-    if iteration % 10 == 0:
-        print(f"Iteration {iteration}: Loss = {total_loss.item():.4f}")
-```
 
 ## Architecture
 
@@ -278,7 +110,7 @@ PyDoseRT implements dose calculation as a series of differentiable PyTorch layer
    - Lateral scatter based on radiological depth
    - Energy-dependent beam hardening
 
-6. **Beam-wise Convolution Layer** - Applies pencil beam kernels via 3D FFT convolution
+6. **Beam-wise Convolution Layer** - Applies pencil beam kernels
 
 7. **Beam Rotation Layer** - Rotates dose distribution from beam's-eye-view to patient coordinates using trilinear interpolation
 
