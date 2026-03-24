@@ -42,6 +42,9 @@ where = ["src"]
 include = ["pydosert*"]
 exclude = ["pydosert.egg-info*"]
 
+[tool.setuptools.package-data]
+"pydosert" = ["data/machine_presets/*.json", "data/optimization_presets/*.json"]
+
 [build-system]
 requires = ["setuptools>=80", "setuptools-scm[simple]>=9.2"]
 build-backend = "setuptools.build_meta"
