@@ -139,61 +139,73 @@ def fetch_plan_data(plan_path: str) -> str:
     return parameters
 
 def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[str] | None = None):
-    
     masks = dict()
-    if struct_path is not None:
-        rtstruct = RTStructBuilder.create_from(
-            dicom_series_path=ct_folder_path, 
-            rt_struct_path=struct_path
-        )
-        
-        # Available ROI names are those present in the RTSTRUCT
-        available_names = rtstruct.get_roi_names()
-        available_names = [name for name in available_names]
+    if struct_path is None:
+        return masks
 
-        if struct_names is None:
-            # If no specific structure name set is provided, take all available names
-            matched_names = available_names
-        else:
-            # If specific structure names are provided, try to match them with available names using synonyms
-            matched_names = {}
-            for name in struct_names:
-                # If name pattern is present directly, take that
-                temp_names = []
-                for available_name in available_names:
-                    if name.lower() in available_name.lower():
-                        temp_names.append(available_name)
-                if len(temp_names) == 1:
-                    matched_names[name] = temp_names[0]
-                    continue
-                elif len(temp_names) > 1:
-                    print(f"Warning: Multiple matches found for '{name}' in RTSTRUCT: {temp_names}. Using the first match.")
-                    matched_names[name] = temp_names[0]
-                    continue
-                # If len(temp_names) == 0, try to find synonyms
+    rtstruct = RTStructBuilder.create_from(
+        dicom_series_path=ct_folder_path,
+        rt_struct_path=struct_path,
+    )
 
-                found = False
+    # Available ROI names are those present in RTSTRUCT.
+    # Ignore helper/temporary contours often prefixed with "z" or "_".
+    available_names = rtstruct.get_roi_names()
+    available_names = [
+        name for name in available_names
+        if not name.startswith("z") and not name.startswith("_")
+    ]
+
+    def _direct_match(pattern: str) -> Optional[str]:
+        matches = [name for name in available_names if pattern.lower() in name.lower()]
+        if len(matches) > 1:
+            print(
+                f"Warning: Multiple ROI matches for '{pattern}': {matches}. "
+                f"Using '{matches[0]}'."
+            )
+        return matches[0] if matches else None
+
+    selected_structures: list[tuple[str, str]] = []
+    if struct_names is None:
+        selected_structures = [(name, name) for name in available_names]
+    else:
+        for requested_name in struct_names:
+            matched_name = _direct_match(requested_name)
+
+            # Fallback to configured synonyms for canonical names.
+            if matched_name is None:
                 for canonical_name, synonyms in ROI_SYNONYM_CONFIG.items():
-                    # Check if there are synonyms for this requested structure
-                    if name.lower() == canonical_name.lower():
-                        for synonym in synonyms:
-                            if synonym.lower() in available_names:
-                                matched_names[name] = synonym
-                                found = True
-                                break
-                    if found:
+                    if requested_name.lower() != canonical_name.lower():
+                        continue
+                    for synonym in synonyms:
+                        synonym_match = next(
+                            (name for name in available_names if name.lower() == synonym.lower()),
+                            None,
+                        )
+                        if synonym_match is not None:
+                            matched_name = synonym_match
+                            break
+                    if matched_name is not None:
                         break
-                if not found:
-                    print(f"Warning: Structure '{name}' not found in RTSTRUCT and no suitable synonym found. Skipping.")
 
-        masks = dict()
-        for req_name, matched_name in matched_names.items():
-            mask_np = rtstruct.get_roi_mask_by_name(matched_name)
-            mask = sitk.GetImageFromArray(np.transpose(mask_np.astype(np.float32), (2, 0, 1)))
-            mask.SetOrigin(ct_series.GetOrigin())
-            mask.SetDirection(ct_series.GetDirection())
-            mask.SetSpacing(ct_series.GetSpacing())
-            masks[req_name] = mask
+            if matched_name is None:
+                print(
+                    f"Warning: No ROI matching '{requested_name}' found in RTSTRUCT. "
+                    f"Available: {available_names}"
+                )
+                continue
+
+            # Keep the output key as the requested name for stable downstream keys.
+            selected_structures.append((requested_name, matched_name))
+
+    for output_name, struct_name in selected_structures:
+        mask_np = rtstruct.get_roi_mask_by_name(struct_name)
+        mask = sitk.GetImageFromArray(np.transpose(mask_np.astype(np.float32), (2, 0, 1)))
+        mask.SetOrigin(ct_series.GetOrigin())
+        mask.SetDirection(ct_series.GetDirection())
+        mask.SetSpacing(ct_series.GetSpacing())
+        masks[output_name] = mask
+
     return masks
 
 def load_dose(path):

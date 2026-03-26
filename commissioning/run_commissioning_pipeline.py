@@ -16,13 +16,15 @@ from toolkit.commissioning_toolkit import CommissioningToolkit
 from toolkit.commissioning_plotter import CommissioningPlotter
 
 # ---------------------------------------------------------------------------
-# Input files - .json is expected. To convert raw data, there are functions 
-# `convert_asc_to_json`, `convert_mcc_to_json`, `convert_of_csv_to_json`.
+# Input files
+# Supports both JSON and raw measurement formats:
+# - Profiles/diagonals: .json (parse_json_profiles) or .asc (parse_rfa300)
+# - Output factors: .json (parse_output_factors_json) or CSV-like text
 # ---------------------------------------------------------------------------
-BASE_CONFIG         = "commissioning/machine_config_base_varian.json"
-PROFILES_FILE       = "commissioning/data/umea/profiles_10MV.json"
-DIAGONALS_FILE      = "commissioning/data/umea/diagonals_10MV.json"
-OUTPUT_FACTORS_FILE = "commissioning/data/umea/output_factors_10MV.json"
+BASE_CONFIG         = "commissioning/machine_config_base_VersaHD.json"
+PROFILES_FILE       = "commissioning/data/measurements_10MV/measurements_10_profiles.asc"
+DIAGONALS_FILE      = "commissioning/data/measurements_10MV/measurements_10_diagonals.asc"
+OUTPUT_FACTORS_FILE = "commissioning/data/measurements_10MV/measurements_10_of_sp.json"
 
 # ---------------------------------------------------------------------------
 # Output
@@ -101,6 +103,12 @@ def _parse_bands_pct(values):
     return bands
 
 
+def _parse_profiles_file(path: str):
+    if path.endswith(".json"):
+        return MeasurementParser.parse_json_profiles(path)
+    return MeasurementParser.parse_rfa300(path)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -128,7 +136,7 @@ def main() -> int:
 
     # ── Step 1: geometric penumbra ────────────────────────────────────────────
     log_section("Tuning geometric penumbra")
-    profiles = MeasurementParser.parse_json_profiles(PROFILES_FILE)
+    profiles = _parse_profiles_file(PROFILES_FILE)
     pen_res = toolkit.fit_geometric_penumbra(
         profiles,
         target_field_mm=PENUMBRA_FIELD_MM,
@@ -142,7 +150,7 @@ def main() -> int:
 
     # ── Step 2: off-axis profile correction ───────────────────────────────────
     log_section("Tuning profile correction")
-    diagonals = MeasurementParser.parse_json_profiles(DIAGONALS_FILE)
+    diagonals = _parse_profiles_file(DIAGONALS_FILE)
     pc_res = toolkit.fit_profile_correction(
         diagonals,
         plateau_dose_threshold=PROFILE_PLATEAU_DOSE_THRESHOLD,
