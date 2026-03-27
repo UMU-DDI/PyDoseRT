@@ -52,6 +52,7 @@ class DoseEngine(nn.Module):
         dose_grid_shape: tuple[int, int, int],
         beam_template: BeamSequence | Beam | None = None,        
         auto_calibrate: bool = False,
+        adjust_values: bool = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype = None,
         verbose: bool = False,
@@ -67,6 +68,7 @@ class DoseEngine(nn.Module):
             beam_template: Optional Beam or BeamSequence defining the treatment geometry.
                 If omitted, the engine is unconfigured until the first compute_dose call.
             auto_calibrate: Run calibration immediately after construction (default: False).
+            adjust_values: Deprecated adjustment of beam parameters.
             device: PyTorch device for computation.
             dtype: Data type for tensors.
             verbose: Enable verbose output (default: False).
@@ -82,7 +84,11 @@ class DoseEngine(nn.Module):
         self.machine_config = machine_config
         self.dose_grid_spacing = dose_grid_spacing
         self.dose_grid_shape = dose_grid_shape
-        self._initialize_layers(beam_template)        
+        self._initialize_layers(beam_template)       
+
+        if adjust_values is not None:
+            raise ValueError("The `adjust_values` argument, together with the beam validation layer has been removed due to major limitations.")
+        
         if auto_calibrate:
             self.calibrate(verbose=verbose)
             self._initialize_layers(beam_template)    
