@@ -38,6 +38,15 @@ SHOW_PLOTS  = True
 VERBOSE     = True
 
 # ---------------------------------------------------------------------------
+# Kernel size
+# The dose engine kernel is always evaluated at this fixed size regardless of
+# the simulation grid span.  A 100 mm × 100 mm kernel is the standard choice
+# for a 100 mm × 100 mm reference field; change this value if you commission
+# the engine with a different reference kernel extent.
+# ---------------------------------------------------------------------------
+KERNEL_SIZE_MM = 100.0
+
+# ---------------------------------------------------------------------------
 # Step 1 – geometric penumbra
 # Fits geometric_penumbra_mm to match the measured 20–80 % penumbra width
 # on the specified reference field and depth.
@@ -113,7 +122,7 @@ def main() -> int:
     toolkit = CommissioningToolkit(
         BASE_CONFIG,
         verbose=VERBOSE,
-        log_callback=plotter.log if SHOW_PLOTS else None,
+        log_callback=plotter.log if SHOW_PLOTS else None,        kernel_size_mm=KERNEL_SIZE_MM,
     )
 
     def log_section(title: str) -> None:
