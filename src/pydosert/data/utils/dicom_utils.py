@@ -8,6 +8,24 @@ import math
 from pydosert.data.beam import Beam
 import torch
 
+ROI_SYNONYM_CONFIG = {    
+      "CTV": [
+        "CTV", "CTV_Prostata", "CTV_Prostata_6000", "CTV_Prostata_gol_6000",
+        "CTV_Samenblasen_gol_6000", "CTV_Prostata", "CTV:Prostata_6000", "zaa_CTV_Prostata_6000",
+        "CTV_Prostata_gol_6000", "CTV_Prostata_gol", "CTV_Prostata60_a", "CTV_Prostata60_auto"
+      ],
+      "PTV": [
+        "PTV", "PTV_Prostata", "PTV_Prostata_6000", "PTV_Prostata_gol_6000",
+        "PTV_Samenblasen_gol_6000", "PTV_Prostata", "PTV:Prostata_6000",
+        "PTV_Prostata_gol_6000", "PTV_Prostata_gol", "PTV_Prostata60_a", "PTV_Prostata60_auto"
+      ],
+      "Bladder": ["Blase", "Bladder", "Blad"],
+      "Rectum": ["Rektum", "Rectum", "Colon", "Rect"],
+      "FemoralHead_L": ["FemoralHead_L", "Femurkopf_Links", "Femoral Head_Left", "Hüftkopf_Links", "Hüftkopf links"],
+      "FemoralHead_R": ["FemoralHead_R", "Femurkopf_Rechts", "Femoral Head_Right", "Hüftkopf_Rechts", "Hüftkopf rechts"],
+      "Body": ["Körper", "Body", "Torso"]
+    }
+
 def load_ct_images(folder_path):
     """Loads all CT DICOM files from a specified folder."""
     ct_images = []
@@ -129,31 +147,53 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
             rt_struct_path=struct_path
         )
         
+        # Available ROI names are those present in the RTSTRUCT
         available_names = rtstruct.get_roi_names()
-        available_names = [name for name in available_names if not(name.startswith("z")) and not(name.startswith("_"))]
-        
+        available_names = [name for name in available_names]
+
         if struct_names is None:
+            # If no specific structure name set is provided, take all available names
             matched_names = available_names
         else:
-            matched_names = []
-            for pattern in struct_names:
-                matches = [name for name in available_names if pattern.upper() in name.upper()]
-                
-                if len(matches) == 0:
-                    print(f"Warning: No ROI matching '{pattern}' found. Available: {available_names}")
-                else:
-                    if len(matches) > 1:
-                        print(f"Ambiguous pattern '{pattern}' matches multiple ROIs: {matches}. Adding first one")
-                    matched_names.append(matches[0])
+            # If specific structure names are provided, try to match them with available names using synonyms
+            matched_names = {}
+            for name in struct_names:
+                # If name pattern is present directly, take that
+                temp_names = []
+                for available_name in available_names:
+                    if name.lower() in available_name.lower():
+                        temp_names.append(available_name)
+                if len(temp_names) == 1:
+                    matched_names[name] = temp_names[0]
+                    continue
+                elif len(temp_names) > 1:
+                    print(f"Warning: Multiple matches found for '{name}' in RTSTRUCT: {temp_names}. Using the first match.")
+                    matched_names[name] = temp_names[0]
+                    continue
+                # If len(temp_names) == 0, try to find synonyms
+
+                found = False
+                for canonical_name, synonyms in ROI_SYNONYM_CONFIG.items():
+                    # Check if there are synonyms for this requested structure
+                    if name.lower() == canonical_name.lower():
+                        for synonym in synonyms:
+                            if synonym.lower() in available_names:
+                                matched_names[name] = synonym
+                                found = True
+                                break
+                    if found:
+                        break
+                if not found:
+                    print(f"Warning: Structure '{name}' not found in RTSTRUCT and no suitable synonym found. Skipping.")
 
         masks = dict()
-        for idx, struct_name in enumerate(matched_names):
-            mask_np = rtstruct.get_roi_mask_by_name(struct_name)
+        for req_name, matched_name in matched_names.items():
+            mask_np = rtstruct.get_roi_mask_by_name(matched_name)
             mask = sitk.GetImageFromArray(np.transpose(mask_np.astype(np.float32), (2, 0, 1)))
             mask.SetOrigin(ct_series.GetOrigin())
             mask.SetDirection(ct_series.GetDirection())
             mask.SetSpacing(ct_series.GetSpacing())
-            masks[struct_names[idx]] = mask
+            masks[req_name] = mask
     return masks
 
 def load_dose(path):

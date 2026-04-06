@@ -32,7 +32,7 @@ class OptimizationConfig:
 
     Example:
         # Load from JSON
-        config = OptimizationConfig.from_json("umea.json")
+        config = OptimizationConfig.from_json("varian_10MV.json")
 
         # Or create programmatically
         config = OptimizationConfig(prescription_gy=42.7)

@@ -556,9 +556,7 @@ class DoseEngine(nn.Module):
         beam.mu = calibration_mu * beam.mu
         water_attenuation = torch.ones(self.dose_grid_shape).to(self.device).to(self.dtype)
 
-        old_kernel_size = self.kernel_size
-
-        self.kernel_size = max(self.dose_grid_shape)
+        self.layers_initialized = False
 
         dose = self.compute_dose(
             beam,
@@ -578,9 +576,3 @@ class DoseEngine(nn.Module):
             if verbose:
                 print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
-
-        self.kernel_size = old_kernel_size
-        
-        # Reset geometry state so the next compute_dose call reinitialises from its beam input
-        self.layers_initialized = False
-        self.number_of_beams = None

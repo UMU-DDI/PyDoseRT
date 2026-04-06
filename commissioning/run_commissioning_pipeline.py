@@ -15,14 +15,14 @@ from toolkit.commissioning_parser import MeasurementParser
 from toolkit.commissioning_toolkit import CommissioningToolkit
 from toolkit.commissioning_plotter import CommissioningPlotter
 
-
 # ---------------------------------------------------------------------------
-# Input files
+# Input files - .json is expected. To convert raw data, there are functions 
+# `convert_asc_to_json`, `convert_mcc_to_json`, `convert_of_csv_to_json`.
 # ---------------------------------------------------------------------------
-BASE_CONFIG         = "commissioning/machine_config_base.json"
-PROFILES_FILE       = "commissioning/data/measurements_10MV/measurements_10_profiles.asc"
-DIAGONALS_FILE      = "commissioning/data/measurements_10MV/measurements_10_diagonals.asc"
-OUTPUT_FACTORS_FILE = "commissioning/data/measurements_10MV/measurements_10_of_sp.json"
+BASE_CONFIG         = "commissioning/machine_config_base_varian.json"
+PROFILES_FILE       = "commissioning/data/umea/profiles_10MV.json"
+DIAGONALS_FILE      = "commissioning/data/umea/diagonals_10MV.json"
+OUTPUT_FACTORS_FILE = "commissioning/data/umea/output_factors_10MV.json"
 
 # ---------------------------------------------------------------------------
 # Output
@@ -36,6 +36,12 @@ REPORT_DIR  = "commissioning/reports/commissioning"
 ENERGY      = "10MV"
 SHOW_PLOTS  = True
 VERBOSE     = True
+
+# ---------------------------------------------------------------------------
+# Kernel size
+# The dose engine kernel is commissioned with a large kernel size which vcan be used for computations with smaller kernel sizes. This is a known limitation, but has empirically shown good results.
+# ---------------------------------------------------------------------------
+KERNEL_SIZE_MM = 400.0
 
 # ---------------------------------------------------------------------------
 # Step 1 – geometric penumbra
@@ -113,7 +119,7 @@ def main() -> int:
     toolkit = CommissioningToolkit(
         BASE_CONFIG,
         verbose=VERBOSE,
-        log_callback=plotter.log if SHOW_PLOTS else None,
+        log_callback=plotter.log if SHOW_PLOTS else None,        kernel_size_mm=KERNEL_SIZE_MM,
     )
 
     def log_section(title: str) -> None:
@@ -128,7 +134,7 @@ def main() -> int:
 
     # ── Step 1: geometric penumbra ────────────────────────────────────────────
     log_section("Tuning geometric penumbra")
-    profiles = MeasurementParser.parse_rfa300(PROFILES_FILE)
+    profiles = MeasurementParser.parse_json_profiles(PROFILES_FILE)
     pen_res = toolkit.fit_geometric_penumbra(
         profiles,
         target_field_mm=PENUMBRA_FIELD_MM,
@@ -142,7 +148,7 @@ def main() -> int:
 
     # ── Step 2: off-axis profile correction ───────────────────────────────────
     log_section("Tuning profile correction")
-    diagonals = MeasurementParser.parse_rfa300(DIAGONALS_FILE)
+    diagonals = MeasurementParser.parse_json_profiles(DIAGONALS_FILE)
     pc_res = toolkit.fit_profile_correction(
         diagonals,
         plateau_dose_threshold=PROFILE_PLATEAU_DOSE_THRESHOLD,

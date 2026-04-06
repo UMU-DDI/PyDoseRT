@@ -1,0 +1,27 @@
+{
+  "metadata": {
+    "energy": "10MV",
+    "ssd_mm": 900,
+    "source": "ASC"
+  },
+  "measurements": [
+    {
+      "id": 1,
+      "field_size_mm": [100, 100],
+      "depth_mm": 100.0,
+      "scan_type": "DIA",
+      "axis": "D",
+      "positions": [-70.7, -60.5, -50.3, 0.0, 50.3, 60.5, 70.7],
+      "doses": [35.2, 40.1, 45.3, 50.0, 45.2, 40.0, 35.1]
+    },
+    {
+      "id": 2,
+      "field_size_mm": [100, 100],
+      "depth_mm": 100.0,
+      "scan_type": "DIA",
+      "axis": "D",
+      "positions": [-70.7, -60.5, -50.3, 0.0, 50.3, 60.5, 70.7],
+      "doses": [36.0, 41.0, 46.0, 51.0, 46.1, 41.0, 36.0]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 test_data/
-commissioning/data/*
+commissioning/data/umea/*
 examples/data/mr_alderson/*
 build/
 out/

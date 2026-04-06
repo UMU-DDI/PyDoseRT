@@ -151,6 +151,7 @@ class CommissioningToolkit:
         device: torch.device = DEVICE,
         verbose: bool = False,
         log_callback: Callable[[str], None] | None = None,
+        kernel_size_mm: float = 100.0,
     ):
         self.config_path = config_path
         self._config_data: Dict[str, Any] = self.load_json(config_path)
@@ -159,6 +160,7 @@ class CommissioningToolkit:
         self.log_callback = log_callback
         self.jaw_offset_mm = (0.0, 0.0)
         self.jaw_scale = (1.0, 1.0)
+        self.kernel_size_mm: float = float(kernel_size_mm)
 
     # ------------------------------------------------------------------
     # Logging
@@ -578,7 +580,14 @@ class CommissioningToolkit:
         start = c - n_roi_1mm // 2
         fluence_roi = fluence[:, :, start : start + n_roi_1mm, start : start + n_roi_1mm]
 
-        pbm = PencilBeamModel((1.0, 1.0, 1.0), config.tpr20_10, n_roi_1mm)
+
+        # Kernel size is fixed by kernel_size_mm and is independent of the
+        # simulation grid span.  It must not exceed the extracted ROI (which
+        # itself is bounded by n_full, the physical leaf-pair extent).
+        kernel_1mm = int(self.kernel_size_mm)
+        if kernel_1mm % 2 == 0:
+            kernel_1mm += 1
+        pbm = PencilBeamModel((1.0, 1.0, 1.0), config.tpr20_10, kernel_1mm)
         d_t = torch.tensor([[[[float(depth_mm)]]]], dtype=dtype, device=device)
         with torch.no_grad():
             kernel = pbm.get_pencil_beam(
@@ -674,7 +683,7 @@ class CommissioningToolkit:
             ref.field_size_mm, depth_mm=ref.depth_mm, ssd_mm=ref.ssd_mm
         )
         field_size = max(scaled_field)
-        grid_span = field_size + 40.0
+        grid_span = max(field_size + 40.0, self.kernel_size_mm)
         dose_2d, pos = self._simulate_dose_plane_fast(
             config,
             scaled_field,
@@ -1161,7 +1170,7 @@ class CommissioningToolkit:
                 sigma_pad = 3.0 * max(config.head_scatter_sigma_mm)
                 pos_span = 2.0 * max(float(np.abs(adj_pos).max()), 0.0) + 40.0
                 sigma_span = 2.0 * (field_half + sigma_pad + 20.0)
-                grid_span = max(field_size + 40.0, pos_span, sigma_span)
+                grid_span = max(field_size + 40.0, pos_span, sigma_span, self.kernel_size_mm)
                 plane_key = (
                     round(float(scaled_field[0]), 3),
                     round(float(scaled_field[1]), 3),
@@ -1570,7 +1579,7 @@ class CommissioningToolkit:
             max(max(m.field_x_mm, m.field_y_mm) for m in measurements) if measurements else 0.0
         )
         sigma_pad = 3.0 * max(sx_iso, sy_iso)
-        grid_span = max_field + 2.0 * sigma_pad
+        grid_span = max(max_field + 2.0 * sigma_pad, self.kernel_size_mm)
         measurements = self._calculate_sp_factors(
             measurements, energy, res_mm=3.0, grid_span_mm=grid_span
         )

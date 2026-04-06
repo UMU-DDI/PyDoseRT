@@ -539,7 +539,7 @@ def print_results(
     dose_pred,
     title,
     plot_ct=True,
-    preset="umea",
+    preset="varian_10MV",
     out_path=None
 ):
     dose_max = patient.number_of_fractions * max(patient.dose.max(), dose_pred.max()).item()
@@ -647,7 +647,7 @@ def print_results(
         coronal_zend = 80
         coronal_ystart = 32
         coronal_yend = 224
-    elif (preset == "umea"):
+    elif (preset == "varian_10MV"):
         axial_z = 84
         axial_xstart = 64
         axial_xend = 124

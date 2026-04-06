@@ -1,0 +1,24 @@
+{
+  "measurements": [
+    {
+      "field_x_mm": 40,
+      "field_y_mm": 40,
+      "output_factor": 0.9346943068838863
+    },
+    {
+      "field_x_mm": 50,
+      "field_y_mm": 50,
+      "output_factor": 0.9486401805120812
+    },
+    {
+      "field_x_mm": 100,
+      "field_y_mm": 100,
+      "output_factor": 1.0
+    },
+    {
+      "field_x_mm": 200,
+      "field_y_mm": 200,
+      "output_factor": 1.0590008264756985
+    }
+  ]
+}
