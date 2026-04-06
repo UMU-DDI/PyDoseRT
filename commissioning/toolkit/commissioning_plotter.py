@@ -328,6 +328,9 @@ class CommissioningPlotter:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        self.dashboard.fig.savefig(os.path.join(output_dir, "report"), dpi=100)
+        print("Dashboard saved.")
+
         all_profiles: List[MeasuredProfile] = []
         for f in measurement_files:
             all_profiles.extend(MeasurementParser.parse_rfa300(f))

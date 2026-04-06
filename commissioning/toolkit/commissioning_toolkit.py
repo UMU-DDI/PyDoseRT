@@ -403,7 +403,7 @@ class CommissioningToolkit:
             if output_factors is not None:
                 out_cfg["output_factors"] = output_factors
 
-            out_path = os.path.join(output_dir, f"{output_prefix}_{int(self.kernel_size_mm)}x{int(self.kernel_size_mm)}_{energy_key}.json")
+            out_path = os.path.join(output_dir, f"{output_prefix}_{energy_key}.json")
             self.save_json_compact(out_path, out_cfg)
             output_paths[energy_key] = out_path
             self._log(f"Exported machine config ({energy_key}): {out_path}")
@@ -584,7 +584,7 @@ class CommissioningToolkit:
         # Kernel size is fixed by kernel_size_mm and is independent of the
         # simulation grid span.  It must not exceed the extracted ROI (which
         # itself is bounded by n_full, the physical leaf-pair extent).
-        kernel_1mm = min(int(self.kernel_size_mm), n_roi_1mm)
+        kernel_1mm = int(self.kernel_size_mm)
         if kernel_1mm % 2 == 0:
             kernel_1mm += 1
         pbm = PencilBeamModel((1.0, 1.0, 1.0), config.tpr20_10, kernel_1mm)

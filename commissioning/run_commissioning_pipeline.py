@@ -39,12 +39,9 @@ VERBOSE     = True
 
 # ---------------------------------------------------------------------------
 # Kernel size
-# The dose engine kernel is always evaluated at this fixed size regardless of
-# the simulation grid span.  A 100 mm × 100 mm kernel is the standard choice
-# for a 100 mm × 100 mm reference field; change this value if you commission
-# the engine with a different reference kernel extent.
+# The dose engine kernel is commissioned with a large kernel size which vcan be used for computations with smaller kernel sizes. This is a known limitation, but has empirically shown good results.
 # ---------------------------------------------------------------------------
-KERNEL_SIZE_MM = 100.0
+KERNEL_SIZE_MM = 400.0
 
 # ---------------------------------------------------------------------------
 # Step 1 – geometric penumbra
