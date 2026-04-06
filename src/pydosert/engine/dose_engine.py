@@ -533,7 +533,19 @@ class DoseEngine(nn.Module):
 
     def calibrate(self,                   
                   calibration_mu: float = None,
+                  original_beam_template: BeamSequence | None = None, # Deprecated setting
                   verbose: bool = True) -> None:
+        """
+        Calibrates the model by normalizing the output dose so that the pre-defined MU value corresponds to 1Gy.
+
+        Args:
+            calibration_mu: The MU where the delivered dose should correspond to 1Gy in water at 10cm depth.
+            original_beam_template: A depracated argument for setting the template back to the engine.
+            verbose: Enable verbose output (default: False).
+
+        Returns:
+            None
+        """
         if self.machine_config is None:
             raise Exception("machine_config must be set before calibration.")
         if self.dose_grid_shape is None:
@@ -547,6 +559,8 @@ class DoseEngine(nn.Module):
         if self.dtype is None:
             self.dtype = torch.float32
             
+        if original_beam_template is not None:
+            print("The argument `original_bema_template` is now deprecated and will not be used for calibration")
         center_x, _, center_z = torch.tensor(self.dose_grid_spacing) * (torch.tensor(self.dose_grid_shape)) / 2
         iso_center = (center_x.item(), 100.0, center_z.item())
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
