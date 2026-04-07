@@ -560,7 +560,7 @@ class DoseEngine(nn.Module):
             self.dtype = torch.float32
             
         if original_beam_template is not None:
-            print("The argument `original_bema_template` is now deprecated and will not be used for calibration")
+            print("The argument `original_beam_template` is now deprecated and will not be used for calibration")
         center_x, _, center_z = torch.tensor(self.dose_grid_spacing) * (torch.tensor(self.dose_grid_shape)) / 2
         iso_center = (center_x.item(), 100.0, center_z.item())
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
