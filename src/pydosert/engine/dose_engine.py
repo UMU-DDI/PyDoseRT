@@ -578,7 +578,6 @@ class DoseEngine(nn.Module):
             overwrite=True
         )
 
-
         # Get center dose (at 10cm depth - index 50 for 100 voxels)
         center_dose = dose[0, *self.iso_center_voxel].detach().cpu().numpy().item()
 
@@ -590,3 +589,6 @@ class DoseEngine(nn.Module):
             if verbose:
                 print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
+
+        # Reset layers to apply new beam sequence
+        self.layers_initialized = False
