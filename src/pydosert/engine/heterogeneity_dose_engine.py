@@ -1,5 +1,5 @@
 """
-VolumetricDoseEngine — Finite-Size Pencil-Beam engine with 3D density correction.
+HeterogeneityDoseEngine — Finite-Size Pencil-Beam engine with 3D density correction.
 
 The baseline :class:`pydosert.engine.dose_engine.DoseEngine` approximates the
 radiological-depth dependence of the pencil-beam kernel using a *single*
@@ -48,12 +48,16 @@ from pydosert.data import MachineConfig, BeamSequence, Beam
 from pydosert.geometry.rotations import rotate_2d_images
 
 
-DEFAULT_REFERENCE_DEPTHS_MM = (0.0, 10.0, 20.0, 40.0, 50.0, 100.0)
+# Spans the surface region (0-20 mm), common treatment depths (40-100 mm) and
+# deep inhomogeneities (200-500 mm) so the per-voxel interpolation always has
+# bracketing reference depths for typical patient geometries.
+DEFAULT_REFERENCE_DEPTHS_MM = (0.0, 10.0, 20.0, 40.0, 50.0, 100.0, 200.0, 500.0)
 
 
-class VolumetricDoseEngine(BaseDoseEngine):
+class HeterogeneityDoseEngine(BaseDoseEngine):
     """
-    FSPB dose engine with 3D density correction via per-voxel depth interpolation.
+    FSPB dose engine with 3D density (heterogeneity) correction via per-voxel
+    depth interpolation.
 
     The public API mirrors :class:`pydosert.engine.dose_engine.DoseEngine`, so
     existing training / planning loops can swap engines transparently.

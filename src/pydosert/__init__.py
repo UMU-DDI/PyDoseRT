@@ -1,5 +1,5 @@
 from pydosert.engine.dose_engine import DoseEngine
-from pydosert.engine.volumetric_dose_engine import VolumetricDoseEngine
+from pydosert.engine.heterogeneity_dose_engine import HeterogeneityDoseEngine
 from pydosert.engine.base_dose_engine import BaseDoseEngine
 from pydosert.data import MachineConfig, OptimizationConfig, Phantom, Patient, Beam, BeamSequence
 from importlib.metadata import version, PackageNotFoundError
@@ -12,7 +12,7 @@ except PackageNotFoundError:
 __all__ = [
     'BaseDoseEngine',
     'DoseEngine',
-    'VolumetricDoseEngine',
+    'HeterogeneityDoseEngine',
     'MachineConfig',
     'OptimizationConfig',
     'Phantom',

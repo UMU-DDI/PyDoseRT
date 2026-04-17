@@ -5,7 +5,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
 
-from pydosert import VolumetricDoseEngine, DoseEngine, BaseDoseEngine
+from pydosert import HeterogeneityDoseEngine, DoseEngine, BaseDoseEngine
 from pydosert.data import BeamSequence
 
 
@@ -19,7 +19,7 @@ def reference_depths_mm():
 
 
 @pytest.fixture
-def vol_engine(
+def het_engine(
     default_machine_config,
     default_ct_array_shape,
     default_resolution,
@@ -29,7 +29,7 @@ def vol_engine(
     default_dtype,
     reference_depths_mm,
 ):
-    return VolumetricDoseEngine(
+    return HeterogeneityDoseEngine(
         machine_config=default_machine_config,
         kernel_size=default_kernel_size,
         dose_grid_spacing=default_resolution,
@@ -62,7 +62,7 @@ def multi_beam_sequence(
 
 
 @pytest.fixture
-def multi_beam_vol_engine(
+def multi_beam_het_engine(
     default_machine_config,
     default_ct_array_shape,
     default_resolution,
@@ -72,7 +72,7 @@ def multi_beam_vol_engine(
     default_dtype,
     reference_depths_mm,
 ):
-    return VolumetricDoseEngine(
+    return HeterogeneityDoseEngine(
         machine_config=default_machine_config,
         kernel_size=default_kernel_size,
         dose_grid_spacing=default_resolution,
@@ -98,8 +98,8 @@ def water_ct_image(default_ct_array_shape, default_device, default_dtype):
 # Basic sanity
 # ---------------------------------------------------------------------------
 
-def test_engine_inherits_base(vol_engine):
-    assert isinstance(vol_engine, BaseDoseEngine)
+def test_engine_inherits_base(het_engine):
+    assert isinstance(het_engine, BaseDoseEngine)
 
 
 def test_reference_depths_validation(
@@ -108,7 +108,7 @@ def test_reference_depths_validation(
 ):
     """A single reference depth is rejected — interpolation needs at least two."""
     with pytest.raises(ValueError):
-        VolumetricDoseEngine(
+        HeterogeneityDoseEngine(
             machine_config=default_machine_config,
             kernel_size=default_kernel_size,
             dose_grid_spacing=default_resolution,
@@ -121,55 +121,55 @@ def test_reference_depths_validation(
 
 
 def test_forward_output_shape_with_fluence_maps(
-    vol_engine, default_field_size, default_device, default_dtype, default_ct_image
+    het_engine, default_field_size, default_device, default_dtype, default_ct_image
 ):
-    B, G = 1, vol_engine.number_of_beams
+    B, G = 1, het_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
     mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
 
-    dose = vol_engine.forward(
+    dose = het_engine.forward(
         leaf_positions=None,
         mus=mus,
         jaw_positions=None,
         density_image=default_ct_image,
         fluence_maps=fluence_maps,
     )
-    assert dose.shape == (B, *vol_engine.dose_grid_shape)
+    assert dose.shape == (B, *het_engine.dose_grid_shape)
 
 
 def test_forward_output_shape_multi_beam(
-    multi_beam_vol_engine, default_field_size, default_device, default_dtype, default_ct_image,
+    multi_beam_het_engine, default_field_size, default_device, default_dtype, default_ct_image,
 ):
     B = 1
-    G = multi_beam_vol_engine.number_of_beams
+    G = multi_beam_het_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
     mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
 
-    dose = multi_beam_vol_engine.forward(
+    dose = multi_beam_het_engine.forward(
         leaf_positions=None,
         mus=mus,
         jaw_positions=None,
         density_image=default_ct_image,
         fluence_maps=fluence_maps,
     )
-    assert dose.shape == (B, *multi_beam_vol_engine.dose_grid_shape)
+    assert dose.shape == (B, *multi_beam_het_engine.dose_grid_shape)
 
 
 def test_compute_dose_auto_unsqueeze(
-    vol_engine, default_beam_sequence, default_field_size, default_device, default_dtype, default_ct_image,
+    het_engine, default_beam_sequence, default_field_size, default_device, default_dtype, default_ct_image,
 ):
     G = len(default_beam_sequence)
     H, W = default_field_size
     fluence_maps = torch.ones(G, H, W, device=default_device, dtype=default_dtype)
 
-    dose = vol_engine.compute_dose(
+    dose = het_engine.compute_dose(
         beam_input=default_beam_sequence,
         density_image=default_ct_image,
         fluence_maps=fluence_maps,
     )
-    assert dose.shape == (1, *vol_engine.dose_grid_shape)
+    assert dose.shape == (1, *het_engine.dose_grid_shape)
 
 
 # ---------------------------------------------------------------------------
@@ -177,16 +177,16 @@ def test_compute_dose_auto_unsqueeze(
 # ---------------------------------------------------------------------------
 
 def test_zero_density_gives_zero_dose(
-    vol_engine, default_field_size, default_device, default_dtype, default_ct_image,
+    het_engine, default_field_size, default_device, default_dtype, default_ct_image,
 ):
     """With vacuum everywhere, all rad depths are at the low reference (0 mm),
     where the pencil-beam model delivers zero dose (below the depth threshold)."""
-    B, G = 1, vol_engine.number_of_beams
+    B, G = 1, het_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
     mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
 
-    dose = vol_engine.forward(
+    dose = het_engine.forward(
         leaf_positions=None,
         mus=mus,
         jaw_positions=None,
@@ -197,13 +197,13 @@ def test_zero_density_gives_zero_dose(
 
 
 def test_mus_scales_dose(
-    vol_engine, default_field_size, default_device, default_dtype, water_ct_image,
+    het_engine, default_field_size, default_device, default_dtype, water_ct_image,
 ):
-    B, G = 1, vol_engine.number_of_beams
+    B, G = 1, het_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
 
-    dose_no_mus = vol_engine.forward(
+    dose_no_mus = het_engine.forward(
         leaf_positions=None,
         mus=None,
         jaw_positions=None,
@@ -212,7 +212,7 @@ def test_mus_scales_dose(
     )
     scale = 3.0
     mus = torch.full((B, G), scale, device=default_device, dtype=default_dtype)
-    dose_with_mus = vol_engine.forward(
+    dose_with_mus = het_engine.forward(
         leaf_positions=None,
         mus=mus,
         jaw_positions=None,
@@ -223,15 +223,15 @@ def test_mus_scales_dose(
 
 
 def test_gradient_flow_through_fluence_maps(
-    vol_engine, default_field_size, default_device, default_dtype,
+    het_engine, default_field_size, default_device, default_dtype,
 ):
-    B, G = 1, vol_engine.number_of_beams
+    B, G = 1, het_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype, requires_grad=True)
     mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
-    water_ct = torch.ones((B, *vol_engine.dose_grid_shape), device=default_device, dtype=default_dtype)
+    water_ct = torch.ones((B, *het_engine.dose_grid_shape), device=default_device, dtype=default_dtype)
 
-    dose = vol_engine.forward(
+    dose = het_engine.forward(
         leaf_positions=None,
         mus=mus,
         jaw_positions=None,
@@ -265,7 +265,7 @@ def test_similar_order_of_magnitude_to_baseline_in_water(
         device=default_device,
         dtype=default_dtype,
     )
-    vol = VolumetricDoseEngine(
+    vol = HeterogeneityDoseEngine(
         machine_config=default_machine_config,
         kernel_size=default_kernel_size,
         dose_grid_spacing=default_resolution,
@@ -294,11 +294,11 @@ def test_similar_order_of_magnitude_to_baseline_in_water(
 
 
 def test_lateral_inhomogeneity_changes_dose(
-    vol_engine, default_field_size, default_device, default_dtype, default_ct_array_shape,
+    het_engine, default_field_size, default_device, default_dtype, default_ct_array_shape,
 ):
     """The whole point of 3D density correction: a lateral inhomogeneity should
     change the dose somewhere in the volume."""
-    B, G = 1, vol_engine.number_of_beams
+    B, G = 1, het_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
     mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
@@ -309,8 +309,8 @@ def test_lateral_inhomogeneity_changes_dose(
     # axis-only engine would not "see" this, but a 3D engine must.
     inhomogeneous_ct[:, :, :, : default_ct_array_shape[2] // 4] = 0.0
 
-    dose_water = vol_engine.forward(None, mus, None, water_ct, fluence_maps=fluence_maps)
-    dose_inh = vol_engine.forward(None, mus, None, inhomogeneous_ct, fluence_maps=fluence_maps)
+    dose_water = het_engine.forward(None, mus, None, water_ct, fluence_maps=fluence_maps)
+    dose_inh = het_engine.forward(None, mus, None, inhomogeneous_ct, fluence_maps=fluence_maps)
 
     assert not torch.allclose(dose_water, dose_inh, atol=1e-4), (
         "3D density correction should respond to a lateral inhomogeneity."
@@ -318,15 +318,15 @@ def test_lateral_inhomogeneity_changes_dose(
 
 
 def test_return_intermediates(
-    vol_engine, default_field_size, default_device, default_dtype, default_ct_image,
+    het_engine, default_field_size, default_device, default_dtype, default_ct_image,
     reference_depths_mm,
 ):
-    B, G = 1, vol_engine.number_of_beams
+    B, G = 1, het_engine.number_of_beams
     H, W = default_field_size
     fluence_maps = torch.ones(B, G, H, W, device=default_device, dtype=default_dtype)
     mus = torch.ones(B, G, device=default_device, dtype=default_dtype)
 
-    rad_depth, fm, conv, dose = vol_engine.forward(
+    rad_depth, fm, conv, dose = het_engine.forward(
         leaf_positions=None,
         mus=mus,
         jaw_positions=None,
@@ -335,7 +335,7 @@ def test_return_intermediates(
         return_intermediates=True,
     )
     BG = B * G
-    D, H_, W_ = vol_engine.dose_grid_shape
+    D, H_, W_ = het_engine.dose_grid_shape
     assert rad_depth.shape == (BG, D, H_, W_)
     assert conv.shape == (BG, len(reference_depths_mm), D, H_, W_)
     assert dose.shape == (B, D, H_, W_)

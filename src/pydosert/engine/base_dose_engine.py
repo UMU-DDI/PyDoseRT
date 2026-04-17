@@ -11,12 +11,15 @@ Two engines currently derive from this class:
 - :class:`pydosert.engine.dose_engine.DoseEngine` — the baseline pencil-beam
   convolution engine that extracts a single radiological-depth profile along the
   central axis and builds one kernel per BEV depth slice.
-- :class:`pydosert.engine.volumetric_dose_engine.VolumetricDoseEngine` — the
-  finite-size pencil-beam engine with full 3D density correction. It convolves
-  the fluence with a small set of kernels at fixed reference radiological depths
-  and then interpolates per-voxel using a ray-traced 3D radiological-depth map.
+- :class:`pydosert.engine.heterogeneity_dose_engine.HeterogeneityDoseEngine` —
+  the finite-size pencil-beam engine with full 3D density (heterogeneity)
+  correction. It convolves the fluence with a small set of kernels at fixed
+  reference radiological depths and then interpolates per-voxel using a
+  ray-traced 3D radiological-depth map.
 """
 from __future__ import annotations
+
+import os
 
 import torch
 from torch import nn
@@ -322,24 +325,96 @@ class BaseDoseEngine(nn.Module):
         self,
         beam_sequence: BeamSequence,
         density_image: torch.Tensor | None = None,
+        debug_dir: str | None = None,
     ) -> torch.Tensor:
-        """Accumulate dose beam-by-beam (memory efficient)."""
+        """Accumulate dose beam-by-beam (memory efficient).
+
+        Args:
+            beam_sequence: Control points to process.
+            density_image: CT density volume ``[1, D, H, W]``.
+            debug_dir: If set, write a per-beam diagnostic PNG plus a total-dose
+                PNG into this directory. Useful for debugging geometry and
+                heterogeneity issues on real plans. Requires ``matplotlib``.
+        """
         self._initialize_layers(beam_sequence)
         total_dose = None
 
-        for beam in beam_sequence:
-            beam_dose = self.compute_dose(
-                beam,
-                density_image=density_image,
-                overwrite=True,
-            )
+        if debug_dir is not None:
+            # Lazy import so matplotlib stays optional for normal pipeline runs.
+            from pydosert.utils.debug_plots import plot_beam_debug, plot_total_dose_debug
+            os.makedirs(debug_dir, exist_ok=True)
+
+        for idx, beam in enumerate(beam_sequence):
+            if debug_dir is not None:
+                result = self.compute_dose(
+                    beam,
+                    density_image=density_image,
+                    overwrite=True,
+                    return_intermediates=True,
+                )
+                # Different engines return different intermediate sets; keep
+                # only the ones plot_beam_debug understands.
+                beam_dose, fluence_map, rad_depth = self._unpack_debug_intermediates(result)
+                plot_beam_debug(
+                    out_path=os.path.join(debug_dir, f"beam_{idx:03d}.png"),
+                    beam_index=idx,
+                    gantry_angle_rad=float(beam.gantry_angle),
+                    mu=float(beam.mu.detach().cpu().item()) if beam.mu is not None else None,
+                    ct=density_image,
+                    dose=beam_dose,
+                    iso_center=self.iso_center,
+                    dose_grid_spacing=self.dose_grid_spacing,
+                    fluence_map=fluence_map,
+                    rad_depth_bev=rad_depth,
+                    title=f"{self.__class__.__name__} debug",
+                )
+            else:
+                beam_dose = self.compute_dose(
+                    beam,
+                    density_image=density_image,
+                    overwrite=True,
+                )
+
             if total_dose is None:
                 total_dose = beam_dose
             else:
                 total_dose = total_dose + beam_dose
 
+        if debug_dir is not None:
+            plot_total_dose_debug(
+                out_path=os.path.join(debug_dir, "total.png"),
+                ct=density_image,
+                dose=total_dose,
+                iso_center=self.iso_center,
+                dose_grid_spacing=self.dose_grid_spacing,
+                title=f"{self.__class__.__name__} — accumulated dose",
+            )
+
         self._initialize_layers(beam_sequence, overwrite=True)
         return total_dose
+
+    def _unpack_debug_intermediates(self, result):
+        """Normalise ``forward(..., return_intermediates=True)`` return tuples.
+
+        Engines return different intermediate tuples; this helper extracts the
+        handful of tensors that :func:`plot_beam_debug` knows how to display
+        and returns ``(dose, fluence_map, rad_depth)``. Unknown entries are
+        ignored so subclasses can add new intermediates without breaking the
+        debug path.
+        """
+        # Current convention (both engines): the last element is the dose; the
+        # second element is the fluence maps; the first element is the rad
+        # depth (either 1-D central-axis profile for DoseEngine or a 4-D BEV
+        # volume for HeterogeneityDoseEngine).
+        if not isinstance(result, (tuple, list)):
+            return result, None, None
+        dose = result[-1]
+        rad_depth = result[0] if len(result) >= 1 else None
+        fluence_map = result[1] if len(result) >= 2 else None
+        # Trim a leading BG dimension for plotting — plotting helpers squeeze.
+        if fluence_map is not None and fluence_map.dim() >= 3:
+            fluence_map = fluence_map[0]
+        return dose, fluence_map, rad_depth
 
     def calibrate(
         self,

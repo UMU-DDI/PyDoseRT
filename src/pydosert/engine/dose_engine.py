@@ -8,8 +8,9 @@ convolved with a per-depth pencil-beam kernel. The approach is fast but only
 accounts for density variations along the central ray — it cannot capture
 lateral inhomogeneities.
 
-See :class:`pydosert.engine.volumetric_dose_engine.VolumetricDoseEngine` for a
-full 3D density-correction counterpart that shares this engine's base class.
+See :class:`pydosert.engine.heterogeneity_dose_engine.HeterogeneityDoseEngine`
+for a full 3D density-correction counterpart that shares this engine's base
+class.
 """
 import torch
 
