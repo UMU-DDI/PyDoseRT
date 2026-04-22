@@ -116,8 +116,18 @@ class RadiologicalDepthLayer(nn.Module):
             y_coords = coords[..., 1]  # D dimension [B, G, P]
             z_coords = coords[..., 2]  # H dimension [B, G, P]
 
-            # Perform trilinear interpolation manually
-            # Clamp coordinates to valid range
+            # Mask points that fall outside the CT volume so they contribute
+            # zero density (treated as air). Clamping instead of masking causes
+            # out-of-bounds ray points to sample the boundary voxel, which
+            # double-counts edge density for rays entering near the far face
+            # of the volume and shifts the radiological depth at entry.
+            in_bounds = (
+                (x_coords >= 0) & (x_coords <= W - 1)
+                & (y_coords >= 0) & (y_coords <= D - 1)
+                & (z_coords >= 0) & (z_coords <= H - 1)
+            )
+
+            # Clamp coordinates so the subsequent gather indexing stays valid.
             x_coords = torch.clamp(x_coords, 0, W - 1)
             y_coords = torch.clamp(y_coords, 0, D - 1)
             z_coords = torch.clamp(z_coords, 0, H - 1)
@@ -159,6 +169,9 @@ class RadiologicalDepthLayer(nn.Module):
             c1 = c10 * (1 - yd) + c11 * yd
 
             density = c0 * (1 - zd) + c1 * zd  # [B, G, P]
+
+            # Zero out density for ray points outside the CT (air).
+            density = density * in_bounds.to(density.dtype)
 
             # Calculate physical step size per angle (accounts for anisotropic voxels)
             if P > 1:
