@@ -20,6 +20,7 @@ This changelog was introduced after releasing version 1.3.0.
 - Mask out-of-bounds ray points in RadiologicalDepthLayer instead of clamping
 - Align the rad-depth ray rotation center with the align_corners=False convention (+0.5 voxel shift).
 - Aspect-correct the affine_grid rotation matrices in build_rotation_grids and rotate_2d_images.
+- Removed warning for leaf_widths cloning of tensors.
 ### Removed
 - Three unused examples have been removed.
 - **Breaking**: The beam validation layer has been removed, due to serious limitations. The `adjust_values` parameter is no longer available for initializing the dose engine.
