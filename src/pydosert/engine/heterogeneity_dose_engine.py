@@ -139,6 +139,7 @@ class HeterogeneityDoseEngine(BaseDoseEngine):
                 ct_array_shape=self.dose_grid_shape,
                 gantry_angles=self.gantry_angles,
                 iso_center=self.iso_center,
+                sid=self.SID,
                 verbose=self.verbose,
             )
 

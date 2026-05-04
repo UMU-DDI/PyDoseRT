@@ -92,10 +92,13 @@ class BeamRotationLayer(nn.Module):
         rot_grid = rot_grid.reshape(B*G*H, D, W, 2)                # [B*G*H, D, W, 2]
         
         
-        # Rotate
+        # Rotate. Border padding mirrors the edge dose into the off-grid
+        # corners that the rotation would otherwise pull from outside the BEV
+        # box; with zero padding those corners create dark wedges in CT space
+        # whenever a beam's BEV extends past the CT volume after rotation.
         accumulated_dose = F.grid_sample(accumulated_dose, rot_grid,
                                     mode="bilinear",
-                                    padding_mode="zeros",
+                                    padding_mode="border",
                                     align_corners=False)    # [B*G*H, 1, D, W]
 
         # Reshape back
