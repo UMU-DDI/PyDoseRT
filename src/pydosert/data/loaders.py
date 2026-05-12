@@ -10,6 +10,9 @@ from pydosert.data.utils.dicom_utils import load_ct_series, load_structures, loa
 from pydosert.data import Patient, BeamSequence
 import SimpleITK as sitk
 from typing import List, Dict, Any, Tuple
+from rtmlc.preprocess import Preprocessor, Case
+from rtmlc.patient import Patient as RTMLCPatient
+from rtmlc.handler.GridData import GridData, TransformGrid
 
 def load_dicom(
     ct_folder: Path,
@@ -48,8 +51,22 @@ def load_dicom(
         - BeamSequence contains N+1 raw control points from DICOM
         - Call beam_seq.to_delivery() before dose calculation
     """
-    ct_series, ref = load_ct_series(ct_folder)
-    structures = load_structures(ct_series, ct_folder, struct_path, struct_names=struct_names)
+    
+    case_name = ct_folder.name
+    rtmlc_patient = RTMLCPatient(patient_id="Patient001")
+    rtmlc_patient.add_case(Case.from_dicom(ct_folder, modalities=["CT", "RTDOSE", "RTSTRUCT", "RTPLAN"], roi_config_path="/home/bolo/Documents/rt_ai_preprocesssing/src/rtmlc/utils/dcm_roi_config.json"))
+    
+    rtmlc_patient.preprocess_all(config_path="/home/bolo/Documents/rt_ai_preprocesssing/src/rtmlc/utils/config_small.json", isocenter="PTV")
+    rtmlc_ct = list(rtmlc_patient.cases[case_name].modality_handlers["CT"].values())[0]
+    rtmlc_dose = list(rtmlc_patient.cases[case_name].modality_handlers["RTDOSE"].values())[0]
+
+    # ct_series, ref = load_ct_series(ct_folder)
+
+    rtmlc_structures = list(rtmlc_patient.cases[case_name].modality_handlers["RTSTRUCT"].values())[0].structures
+    rtmlc_structures_torch = {}
+    for name, struct in rtmlc_structures.items():
+        rtmlc_structures_torch[name] = torch.from_numpy(np.transpose(struct.GridData.data > 0, (2, 1, 0)))
+    # structures = load_structures(ct_series, ct_folder, struct_path, struct_names=struct_names)
 
     if isinstance(dose_path, Path):
         dose_path = [ dose_path ]
@@ -70,83 +87,103 @@ def load_dicom(
     dose_ref = list(doses.keys())[0]
     dose = doses[dose_ref]
     _, num_fractions = list(plans.values())[0]
-    ct_resampled = resample_image_to_spacing(
-        ct_series,
-        new_spacing=new_spacing_sitk,
-        interpolator=sitk.sitkLinear,
-    )
+    # ct_resampled = resample_image_to_spacing(
+    #     ct_series,
+    #     new_spacing=new_spacing_sitk,
+    #     interpolator=sitk.sitkLinear,
+    # )
 
-    if (crop_volume):
-        ct_resampled = center_crop_axial(ct_resampled, max_size_cm=40.0)
+    # if (crop_volume):
+    #     ct_resampled = center_crop_axial(ct_resampled, max_size_cm=40.0)
 
     # 2. Resample all structures to the CT grid (use nearest-neighbor!)
-    resampled_structures_torch = {}
-    for name, struct_img in structures.items():
-        struct_resampled = sitk.Resample(
-            struct_img,
-            ct_resampled,              # reference image
-            sitk.Transform(),
-            sitk.sitkNearestNeighbor,  # important for labels
-            0,                         # default value
-            struct_img.GetPixelID(),
-        )
+    # resampled_structures_torch = {}
+    # for name, struct_img in structures.items():
+    #     struct_resampled = sitk.Resample(
+    #         struct_img,
+    #         ct_resampled,              # reference image
+    #         sitk.Transform(),
+    #         sitk.sitkNearestNeighbor,  # important for labels
+    #         0,                         # default value
+    #         struct_img.GetPixelID(),
+    #     )
 
-        struct_array = sitk.GetArrayFromImage(struct_resampled) > 0  # (z, y, x), bool
-        resampled_structures_torch[name] = torch.from_numpy(struct_array)
+    #     struct_array = sitk.GetArrayFromImage(struct_resampled) > 0  # (z, y, x), bool
+    #     resampled_structures_torch[name] = torch.from_numpy(struct_array)
 
-    # 3. Resample dose to CT grid (linear interpolation)
-    dose_resampled = sitk.Resample(
-        dose,
-        ct_resampled,              # reference image
-        sitk.Transform(),
-        sitk.sitkLinear,
-        0.0,
-        dose.GetPixelID(),
-    )
-    dose_array = sitk.GetArrayFromImage(dose_resampled) / float(num_fractions)
-    dose_tensor = torch.from_numpy(dose_array)
+    # # 3. Resample dose to CT grid (linear interpolation)
+    # dose_resampled = sitk.Resample(
+    #     dose,
+    #     ct_resampled,              # reference image
+    #     sitk.Transform(),
+    #     sitk.sitkLinear,
+    #     0.0,
+    #     dose.GetPixelID(),
+    # )
+    # dose_array = sitk.GetArrayFromImage(dose_resampled) / float(num_fractions)
+    # dose_tensor = torch.from_numpy(dose_array)
 
-    # 4. Convert CT to torch
-    ct_array = sitk.GetArrayFromImage(ct_resampled)  # (z, y, x)
-    CT = torch.from_numpy(ct_array)
+    # # 4. Convert CT to torch
+    # ct_array = sitk.GetArrayFromImage(ct_resampled)  # (z, y, x)
+    # CT = torch.from_numpy(ct_array)
 
-    # 5. Compute resolution and origin in your preferred order (z, x, y) or (z, y, x)
-    # SimpleITK: spacing/origin are always (x, y, z)
-    origin_xyz = ct_resampled.GetOrigin()
+    # # 5. Compute resolution and origin in your preferred order (z, x, y) or (z, y, x)
+    # # SimpleITK: spacing/origin are always (x, y, z)
+    # origin_xyz = ct_resampled.GetOrigin()
 
-    # If your tensors are (z, y, x), you usually want spacing/origin in (z, y, x) too:
-    origin = [origin_xyz[2], origin_xyz[1], origin_xyz[0]]
+    # # If your tensors are (z, y, x), you usually want spacing/origin in (z, y, x) too:
+    # origin = [origin_xyz[2], origin_xyz[1], origin_xyz[0]]
 
-    # If you *really* wanted (z, x, y) for some reason, you can change the index order above.
 
     # 6. Build the Patient object
-    patient = Patient(
-        ct_tensor=CT,
-        structures=resampled_structures_torch,
-        dose=dose_tensor,
-        resolution=new_spacing,
+    # patient = Patient(
+    #     ct_tensor=CT,
+    #     structures=resampled_structures_torch,
+    #     dose=dose_tensor,
+    #     resolution=new_spacing,
+    #     number_of_fractions=num_fractions
+    # )
+
+    rtmlc_pdrt_patient = Patient(
+        ct_tensor=torch.from_numpy(np.transpose(rtmlc_ct.GridData.data, (2, 1, 0))),
+        structures=rtmlc_structures_torch,
+        dose=torch.from_numpy(np.transpose(rtmlc_dose.GridData_dict[0].data, (2, 1, 0))),
+        resolution=tuple(np.array(rtmlc_dose.output_voxel_size).astype(np.float32)),
         number_of_fractions=num_fractions
-    )
-    
+    ).to(device).to(dtype)
 
     # Create BeamSequence from raw control points
-    beam_sequences = []
-    for key, (seq, _) in plans.items():
-        beam_sequence = BeamSequence.from_beams(seq).to(device).to(dtype)
+    # beam_sequences = []
+    # for key, (seq, _) in plans.items():
+    #     beam_sequence = BeamSequence.from_beams(seq).to(device).to(dtype)
 
-        if dose_ref in plans.keys():
-            if dose_ref != key:
-                continue
+    #     if dose_ref in plans.keys():
+    #         if dose_ref != key:
+    #             continue
 
-        beam_sequence.iso_center = tuple(np.array(beam_sequence.iso_center) - np.array(origin))
-        if use_delivery:
-            # Convert to delivery positions and update treatment config
-            beam_sequence = beam_sequence.to_delivery()
-        beam_sequences.append(beam_sequence)
+    #     beam_sequence.iso_center = tuple(np.array(beam_sequence.iso_center) - np.array(origin))
+    #     if use_delivery:
+    #         # Convert to delivery positions and update treatment config
+    #         beam_sequence = beam_sequence.to_delivery()
+    #     beam_sequences.append(beam_sequence)
 
-        
+    rtmlc_origin = np.array([rtmlc_dose.output_voxel_origin[2], rtmlc_dose.output_voxel_origin[1], rtmlc_dose.output_voxel_origin[0]])
+    rtmlc_beam_sequences = []
+    for beam in list(rtmlc_patient.cases[case_name].modality_handlers["RTPLAN"].values())[0].BeamSequence:
+        rtmlc_beam = BeamSequence.from_tensors(
+        leaf_positions=torch.from_numpy(np.stack([cp.PositionData["MLCX"] for cp in beam.ControlPoints])),
+        mus=torch.from_numpy(np.diff(beam.BeamInfo["BeamMeterset"] * np.stack([cp.CumulativeMetersetWeight for cp in beam.ControlPoints]), prepend=0.0)),
+        jaw_positions=torch.from_numpy(np.stack([cp.PositionData["ASYMY"] for cp in beam.ControlPoints])),
+        gantry_angles=torch.from_numpy(np.stack([np.deg2rad(cp.GantryAngle) for cp in beam.ControlPoints])),
+        collimator_angles=torch.from_numpy(np.stack([np.deg2rad(beam.BeamInfo["BeamLimitingDeviceAngle"]) for cp in beam.ControlPoints])),
+        iso_center=tuple(np.array([beam.Isocenter[2], beam.Isocenter[1], beam.Isocenter[0]]) - rtmlc_origin),
+        sid=1000,
+        field_size=(400, 400)
+        ).to(device).to(dtype)
+        rtmlc_beam_sequences.append(rtmlc_beam)
 
-    return patient, beam_sequences
+    return rtmlc_pdrt_patient, rtmlc_beam_sequences
+    # return patient, beam_sequences
 
 def resample_image_to_spacing(image, new_spacing, interpolator=sitk.sitkLinear):
     """
