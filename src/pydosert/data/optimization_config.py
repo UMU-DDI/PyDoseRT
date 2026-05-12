@@ -6,10 +6,21 @@ providing a clean API for programmatic setup and validation.
 """
 
 import json
+from importlib import resources
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 import numpy as np
 import torch
+
+
+def list_optimization_presets() -> list[str]:
+    """Return the names of all built-in optimization presets (without .json extension)."""
+    preset_dir = resources.files("pydosert.data").joinpath("optimization_presets")
+    return sorted(
+        p.name[:-5]  # strip .json
+        for p in preset_dir.iterdir()
+        if p.name.endswith(".json")
+    )
 
 
 class OptimizationConfig:
@@ -65,6 +76,44 @@ class OptimizationConfig:
         config = cls(prescription_gy=data.get("prescription_gy"))
         config.structures = data.get("structures", {})
 
+        return config
+
+    @classmethod
+    def from_preset(cls, name: str) -> 'OptimizationConfig':
+        """
+        Load a built-in optimization preset by name.
+
+        Works after ``pip install`` because the presets are bundled with the
+        package and resolved via ``importlib.resources``.
+
+        Args:
+            name: Preset name (with or without ``.json`` extension).
+                  Call ``list_optimization_presets()`` to see available names.
+
+        Returns:
+            OptimizationConfig instance
+
+        Example::
+
+            from pydosert.data import OptimizationConfig, list_optimization_presets
+            print(list_optimization_presets())   # ['gold-atlas', 'lund-probe', 'vienna']
+            config = OptimizationConfig.from_preset("vienna")
+        """
+        stem = Path(name).stem  # strips .json if present
+        filename = stem + ".json"
+        try:
+            preset_file = resources.files("pydosert.data").joinpath("optimization_presets").joinpath(filename)
+            data = json.loads(preset_file.read_text(encoding="utf-8"))
+        except (FileNotFoundError, TypeError):
+            available = list_optimization_presets()
+            raise ValueError(
+                f"Unknown optimization preset '{stem}'. "
+                f"Available built-in presets: {available}. "
+                "You can also use from_json() with an absolute path to a custom file."
+            )
+
+        config = cls(prescription_gy=data.get("prescription_gy"))
+        config.structures = data.get("structures", {})
         return config
 
     def to_json(self, path: Union[str, Path]):

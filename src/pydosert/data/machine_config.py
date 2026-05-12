@@ -1,9 +1,19 @@
 import json
+from importlib import resources
 from pathlib import Path
-from pydantic import Field, computed_field, model_validator
-from pydantic_settings import SettingsConfigDict, BaseSettings
-import numpy as np
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings
 from typing import Any, Optional
+
+
+def list_machine_presets() -> list[str]:
+    """Return the names of all built-in machine presets (without .json extension)."""
+    preset_dir = resources.files("pydosert.data").joinpath("machine_presets")
+    return sorted(
+        p.name[:-5]  # strip .json
+        for p in preset_dir.iterdir()
+        if p.name.endswith(".json")
+    )
 
 class MachineConfig(BaseSettings):
     preset: Optional[str] = Field(
@@ -108,20 +118,35 @@ class MachineConfig(BaseSettings):
 
     
     @staticmethod
-    def _load_preset_json(path_str: str) -> dict[str, Any]:
+    def _load_preset_json(name_or_path: str) -> dict[str, Any]:
         """
-        Read presets/{name}.json and return its dict. Raise a nice error if missing.
+        Load a preset by name or file path.
+
+        - If ``name_or_path`` is an existing file, load it directly.
+        - Otherwise treat it as a built-in preset name (with or without
+          the ``.json`` extension) and load from the bundled package data.
+          This works both during development and after ``pip install``.
         """
-        path = Path(path_str)
-        name = path.stem
-        if not path.is_file():
-            raise ValueError(
-                f"Unknown preset '{name}' at path '{path}'. "
-            )
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+        path = Path(name_or_path)
+        if path.is_file():
+            with path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            # Resolve as a built-in preset name
+            stem = path.stem  # strips .json if present
+            filename = stem + ".json"
+            try:
+                preset_file = resources.files("pydosert.data").joinpath("machine_presets").joinpath(filename)
+                data = json.loads(preset_file.read_text(encoding="utf-8"))
+            except (FileNotFoundError, TypeError):
+                available = list_machine_presets()
+                raise ValueError(
+                    f"Unknown machine preset '{stem}'. "
+                    f"Available built-in presets: {available}. "
+                    "You can also pass an absolute path to a custom JSON file."
+                )
         if not isinstance(data, dict):
-            raise ValueError(f"Preset file '{path}' must contain a JSON object at the top level.")
+            raise ValueError(f"Preset '{name_or_path}' must contain a JSON object at the top level.")
         return data
 
     @model_validator(mode="before")

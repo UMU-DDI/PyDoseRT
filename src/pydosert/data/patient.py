@@ -26,13 +26,23 @@ class Patient:
     dose: Optional[torch.Tensor] = None
     number_of_fractions: int = 1
 
-    def __init__(self, ct_tensor=None, attenuation_tensor = None, structures: Optional[dict[str, torch.Tensor]] = dict(), dose: torch.Tensor = None, resolution=None, number_of_fractions: int = 1) -> 'Patient':
+    def __init__(self, 
+                 ct_tensor=None, 
+                 attenuation_tensor = None,         
+                 structures: Optional[dict[str, torch.Tensor | np.ndarray]] = None,
+                 dose: torch.Tensor = None, 
+                 resolution=None, 
+                 number_of_fractions: int = 1) -> 'Patient':
         self.resolution = resolution
         self._ct_tensor = ct_tensor if ct_tensor is not None else None
         self._attenuation_tensor = attenuation_tensor if attenuation_tensor is not None else None
-        self.structures = structures
         self.dose = dose if dose is not None else None
         self.number_of_fractions = number_of_fractions
+
+        if structures is None:
+            self.structures = {}
+        else:
+            self.structures = structures
 
     def __post_init__(self):
         # Enforce that structures and dose have same shape as density_image

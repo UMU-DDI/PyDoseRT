@@ -31,9 +31,9 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype, iso_center=No
         X, Y, Z = iso_center
         rx, ry, rz = resolution
 
-        center_z = X / rx  # height dimension (z in voxel coords)
-        center_y = Y / ry  # depth dimension (y in voxel coords)
-        center_x = Z / rz  # width dimension (x in voxel coords)
+        center_z = X / rx + 0.5  # height dimension (z in voxel coords)
+        center_y = Y / ry + 0.5  # depth dimension (y in voxel coords)
+        center_x = Z / rz + 0.5  # width dimension (x in voxel coords)
     else:
         # Default to volume center if isocenter not specified
         center_x = W / 2.0
@@ -107,12 +107,14 @@ def rotate_2d_images(images, angles_rad, device, dtype):
     cos_a = torch.cos(angles_expanded)
     sin_a = torch.sin(angles_expanded)
 
-    # Create affine transformation matrices for rotation
-    # Note: negative angle for counter-clockwise rotation in image space
+    # Create affine transformation matrices for rotation.
+    # Aspect-correct off-diagonal terms so non-square images get a pure
+    # voxel-space rotation through affine_grid's normalized coordinates.
+    aspect_HW = H / W
     mats = torch.zeros((BG, 2, 3), device=device, dtype=dtype)
     mats[:, 0, 0] = cos_a
-    mats[:, 0, 1] = sin_a
-    mats[:, 1, 0] = -sin_a
+    mats[:, 0, 1] = sin_a * aspect_HW
+    mats[:, 1, 0] = -sin_a / aspect_HW
     mats[:, 1, 1] = cos_a
 
     # Generate rotation grids
@@ -145,10 +147,15 @@ def build_rotation_grids(input_shape, angles_rad, device, dtype, iso_center=None
 
     cos_a = torch.cos(a)
     sin_a = torch.sin(a)
+    # affine_grid works in normalized coords where each axis spans [-1, 1], so
+    # a 1-voxel step is 2/D along D and 2/W along W. For a pure rotation in
+    # voxel space we have to scale the off-diagonal terms by the D/W aspect
+    # ratio; otherwise non-square images get sheared instead of rotated.
+    aspect_DW = D / W
     mats = torch.zeros((G, 2, 3), device=device, dtype=dtype)
     mats[:, 0, 0] = cos_a
-    mats[:, 0, 1] = sin_a
-    mats[:, 1, 0] = -sin_a
+    mats[:, 0, 1] = sin_a * aspect_DW
+    mats[:, 1, 0] = -sin_a / aspect_DW
     mats[:, 1, 1] = cos_a
 
     # If isocenter is specified, adjust rotation to be around that point
@@ -166,13 +173,10 @@ def build_rotation_grids(input_shape, angles_rad, device, dtype, iso_center=None
         norm_cy = (2.0 * (center_y + 0.5) / D) - 1.0
         norm_cx = (2.0 * (center_x + 0.5) / W) - 1.0
 
-        # Adjust translation to rotate around the isocenter instead of the center
-        # Translation formula: t = center * (1 - cos) - other_coord * sin (for rotation in 2D)
-        # For rotation around (norm_cx, norm_cy):
-        # tx (corresponding to W/x): norm_cx * (1 - cos(θ)) - norm_cy * sin(θ)
-        # ty (corresponding to D/y): norm_cy * (1 - cos(θ)) + norm_cx * sin(θ)
-        mats[:, 0, 2] = norm_cx * (1.0 - cos_a) - norm_cy * sin_a
-        mats[:, 1, 2] = norm_cy * (1.0 - cos_a) + norm_cx * sin_a
+        # Translation that rotates around (norm_cx, norm_cy) using the
+        # aspect-corrected rotation matrix above.
+        mats[:, 0, 2] = norm_cx * (1.0 - cos_a) - norm_cy * sin_a * aspect_DW
+        mats[:, 1, 2] = norm_cy * (1.0 - cos_a) + norm_cx * sin_a / aspect_DW
 
     # Generate rotation grids for each angle
     grid2d = F.affine_grid(mats, size=(G, 1, D, W), align_corners=False)  # [G, 1, D, W, 2]

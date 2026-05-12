@@ -38,6 +38,12 @@ SHOW_PLOTS  = True
 VERBOSE     = True
 
 # ---------------------------------------------------------------------------
+# Kernel size
+# The dose engine kernel is commissioned with a large kernel size which vcan be used for computations with smaller kernel sizes. This is a known limitation, but has empirically shown good results.
+# ---------------------------------------------------------------------------
+KERNEL_SIZE_MM = 400.0
+
+# ---------------------------------------------------------------------------
 # Step 1 – geometric penumbra
 # Fits geometric_penumbra_mm to match the measured 20–80 % penumbra width
 # on the specified reference field and depth.
@@ -113,7 +119,7 @@ def main() -> int:
     toolkit = CommissioningToolkit(
         BASE_CONFIG,
         verbose=VERBOSE,
-        log_callback=plotter.log if SHOW_PLOTS else None,
+        log_callback=plotter.log if SHOW_PLOTS else None,        kernel_size_mm=KERNEL_SIZE_MM,
     )
 
     def log_section(title: str) -> None:

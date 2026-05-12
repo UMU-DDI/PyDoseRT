@@ -78,7 +78,7 @@ def rtp_data_dir(pytestconfig):
 def default_machine_config():
     """Fixture for the default MachineConfig"""
     return MachineConfig(
-        preset="src/pydosert/data/machine_presets/test.json",
+        preset="test",
 
         head_scatter_amplitude=None,
         head_scatter_sigma=None,

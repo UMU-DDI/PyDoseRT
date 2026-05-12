@@ -264,9 +264,11 @@ def result_validation(patient: Patient,
         
         # Calculate pass rate
         if "Body" in patient.structures.keys():
-            external_mask = binary_erosion(binary_fill_holes(patient.structures["Body"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=5)
+            external_mask = patient.structures["Body"].cpu().detach().numpy()
         else:
-            external_mask = binary_erosion(binary_fill_holes(patient.structures["External"].cpu().detach().numpy()), np.ones((3, 3, 3)), iterations=5)
+            external_mask = patient.structures["External"].cpu().detach().numpy()
+        external_mask = binary_erosion(binary_fill_holes(external_mask), np.ones((3, 3, 3)), iterations=5)
+
         gamma_valid = gamma_map[gamma_mask * external_mask]
         gamma_valid = gamma_valid[~np.isnan(gamma_valid)]
         pass_rate = np.sum(gamma_valid <= 1.0) / len(gamma_valid) * 100

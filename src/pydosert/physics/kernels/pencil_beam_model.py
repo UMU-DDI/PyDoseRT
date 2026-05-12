@@ -422,7 +422,7 @@ class PencilBeamModel:
         w = torch.arange(0, kernel_size[1], dtype=torch.int32)
         h -= kernel_size[0] // 2
         w -= kernel_size[1] // 2
-        w, h = torch.meshgrid(w, h, indexing="ij")
+        w, h = torch.meshgrid(h, w, indexing="ij")
 
         dh = torch.abs(h.to(torch.float32)) * self.res_h
         dw = torch.abs(w.to(torch.float32)) * self.res_w

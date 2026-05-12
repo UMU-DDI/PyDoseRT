@@ -67,9 +67,11 @@ def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_
     total_length = sum(leaf_widths)
 
     # leaf_widths
-    leaf_widths = torch.tensor(
-        leaf_widths, device=values.device, dtype=dtype
-    )
+    if isinstance(leaf_widths, torch.Tensor):
+        leaf_widths = leaf_widths.clone().detach().requires_grad_(True).to(values.device).to(dtype)
+    elif isinstance(leaf_widths, list):
+        leaf_widths = torch.tensor(leaf_widths, device=values.device, dtype=dtype, requires_grad=True)
+    
 
     # Compute start and end positions for each leaf along axis perpendicular to leaf movement
     start_positions = torch.cumsum(

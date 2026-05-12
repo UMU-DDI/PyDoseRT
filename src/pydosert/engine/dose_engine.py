@@ -8,7 +8,6 @@ multiple beams, and can optionally perform upsampling and debugging visualizatio
 import torch
 from torch import nn
 
-from pydosert.layers.BeamValidationLayer import BeamValidationLayer
 from pydosert.layers.FluenceMapLayer import FluenceMapLayer
 from pydosert.layers.FluenceVolumeLayer import FluenceVolumeLayer
 from pydosert.layers.RadiologicalDepthLayer import RadiologicalDepthLayer
@@ -51,8 +50,9 @@ class DoseEngine(nn.Module):
         kernel_size: int,
         dose_grid_spacing: tuple[float, float, float],
         dose_grid_shape: tuple[int, int, int],
-        beam_template: BeamSequence | Beam | None = None,
-        adjust_values: bool = False, # Move to nn.Module
+        beam_template: BeamSequence | Beam | None = None,        
+        auto_calibrate: bool = False,
+        adjust_values: bool = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype = None,
         verbose: bool = False,
@@ -64,9 +64,11 @@ class DoseEngine(nn.Module):
             machine_config: Machine physics and MLC specifications.
             kernel_size: Size of the pencil beam dose kernel.
             dose_grid_spacing: Voxel spacing in mm (depth, height, width).
-            dose_grid_shape: Shape of the output grid tensor (depth, height, width) in pixels.
-            beam_input: Beam or BeamSequence defining the treatment geometry.
-            adjust_values: Whether to validate and adjust parameter values (default: False).
+            dose_grid_shape: Shape of the output grid tensor (depth, height, width) in pixels.            
+            beam_template: Optional Beam or BeamSequence defining the treatment geometry.
+                If omitted, the engine is unconfigured until the first compute_dose call.
+            auto_calibrate: Run calibration immediately after construction (default: False).
+            adjust_values: Deprecated adjustment of beam parameters.
             device: PyTorch device for computation.
             dtype: Data type for tensors.
             verbose: Enable verbose output (default: False).
@@ -78,12 +80,18 @@ class DoseEngine(nn.Module):
         self.device = device
         self.dtype = dtype
         self.verbose = verbose
-        self._adjust_values = adjust_values
 
         self.machine_config = machine_config
         self.dose_grid_spacing = dose_grid_spacing
         self.dose_grid_shape = dose_grid_shape
-        self._initialize_layers(beam_template)
+        self._initialize_layers(beam_template)       
+
+        if adjust_values is not None:
+            raise ValueError("The `adjust_values` argument, together with the beam validation layer has been removed due to major limitations.")
+        
+        if auto_calibrate:
+            self.calibrate(verbose=verbose)
+            self._initialize_layers(beam_template)    
 
     def _set_device_dtype(self, device, dtype) -> None:
         if self.dtype is None:
@@ -94,12 +102,7 @@ class DoseEngine(nn.Module):
     def _initialize_layers(self, new_beam_data: BeamSequence | Beam, overwrite: bool = False) -> None:
         if new_beam_data is None:
             return
-        
-        if (self.number_of_beams is not None) and (not overwrite):
-            # TODO: Check should be performed to ensure that things match.
-            return
 
-        initialize_beam_validation_layer = not hasattr(self, 'beam_validation_layer')
         initialize_fluence_map_layer = not hasattr(self, 'fluence_map_layer')
         initialize_fluence_volume_layer = not hasattr(self, 'fluence_volume_layer')
         initialize_beam_wise_conv_layer = not hasattr(self, 'beam_wise_conv_layer')
@@ -136,7 +139,6 @@ class DoseEngine(nn.Module):
 
 
         if self.field_size is None or (self.field_size != new_beam_data.field_size):
-            initialize_beam_validation_layer = True
             initialize_fluence_map_layer = True
             initialize_fluence_volume_layer = True
         self.field_size = new_beam_data.field_size
@@ -160,14 +162,6 @@ class DoseEngine(nn.Module):
         if self.number_of_beams is None:
             return
         
-        if self._adjust_values and initialize_beam_validation_layer:
-            self.beam_validation_layer = BeamValidationLayer(
-                self.machine_config,
-                device = self.device,
-                dtype=self.dtype,
-                field_size=self.field_size,
-            )
-
         if initialize_fluence_map_layer:
             self.fluence_map_layer = FluenceMapLayer(
                 self.machine_config,
@@ -409,11 +403,6 @@ class DoseEngine(nn.Module):
                     B = fluence_maps.shape[0] // G
                     batched_fluence_maps = fluence_maps
             else:
-                if self._adjust_values:
-                    leaf_positions, jaw_positions, mus = self.beam_validation_layer(
-                        leaf_positions=leaf_positions, jaw_positions=jaw_positions, mus=mus
-                    )
-
                 batched_fluence_maps = self.fluence_map_layer(leaf_positions, jaw_positions)
                 B = leaf_positions.shape[0]
 
@@ -542,32 +531,52 @@ class DoseEngine(nn.Module):
         self._initialize_layers(beam_sequence, overwrite=True)
         return total_dose
 
-    def calibrate(self, 
+    def calibrate(self,                   
                   calibration_mu: float = None,
-                  original_beam_template: BeamSequence | None = None,
-                  verbose: bool = True) -> None: # Keep in dose engine
-        if not self.layers_initialized:
-            raise Exception("Layers must be fully initialized for calibration.")
+                  original_beam_template: BeamSequence | None = None, # Deprecated setting
+                  verbose: bool = True) -> None:
+        """
+        Calibrates the model by normalizing the output dose so that the pre-defined MU value corresponds to 1Gy.
 
+        Args:
+            calibration_mu: The MU where the delivered dose should correspond to 1Gy in water at 10cm depth.
+            original_beam_template: A depracated argument for setting the template back to the engine.
+            verbose: Enable verbose output (default: False).
+
+        Returns:
+            None
+        """
+        if self.machine_config is None:
+            raise Exception("machine_config must be set before calibration.")
+        if self.dose_grid_shape is None:
+            raise Exception("dose_grid_shape must be set before calibration.")
+        if self.dose_grid_spacing is None:
+            raise Exception("dose_grid_spacing must be set before calibration.")
+
+        # Apply defaults so calibration works even without a prior beam template
+        if self.device is None:
+            self.device = torch.device('cpu')
+        if self.dtype is None:
+            self.dtype = torch.float32
+            
+        if original_beam_template is not None:
+            print("The argument `original_beam_template` is now deprecated and will not be used for calibration")
         center_x, _, center_z = torch.tensor(self.dose_grid_spacing) * (torch.tensor(self.dose_grid_shape)) / 2
         iso_center = (center_x.item(), 100.0, center_z.item())
         beam = Beam.create(0.0, self.machine_config.number_of_leaf_pairs, 0.0, (100.0, 100.0), iso_center=iso_center, device=self.device, dtype=self.dtype)
         if calibration_mu is None:
             calibration_mu = self.machine_config.calibration_mu
+
         beam.mu = calibration_mu * beam.mu
         water_attenuation = torch.ones(self.dose_grid_shape).to(self.device).to(self.dtype)
 
         self.layers_initialized = False
-        old_kernel_size = self.kernel_size
-
-        self.kernel_size = max(self.dose_grid_shape)
 
         dose = self.compute_dose(
             beam,
             density_image=water_attenuation,
             overwrite=True
-            )
-
+        )
 
         # Get center dose (at 10cm depth - index 50 for 100 voxels)
         center_dose = dose[0, *self.iso_center_voxel].detach().cpu().numpy().item()
@@ -581,6 +590,5 @@ class DoseEngine(nn.Module):
                 print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
 
-        self.kernel_size = old_kernel_size
-        if original_beam_template is not None:
-            self._initialize_layers(original_beam_template, True)
+        # Reset layers to apply new beam sequence
+        self.layers_initialized = False

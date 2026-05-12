@@ -6,7 +6,7 @@ description = "A differentiable radiation therapy dose calculation engine for au
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 authors = [
-    { name="Attila Simkó", email="gerd.heilemann@meduniwien.ac.at" },
+    { name="Attila Simkó", email="attila.simko@umu.se" },
     { name="Gerd Heilemann", email="gerd.heilemann@meduniwien.ac.at" },
     { name="Josef Lundman", email="josef.lundman@regionvasterbotten.se" },
 ]
@@ -41,6 +41,9 @@ zip-safe = false
 where = ["src"]
 include = ["pydosert*"]
 exclude = ["pydosert.egg-info*"]
+
+[tool.setuptools.package-data]
+"pydosert" = ["data/machine_presets/*.json", "data/optimization_presets/*.json"]
 
 [build-system]
 requires = ["setuptools>=80", "setuptools-scm[simple]>=9.2"]
