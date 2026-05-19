@@ -56,7 +56,7 @@ def load_dicom(
     rtmlc_patient = RTMLCPatient(patient_id="Patient001")
     rtmlc_patient.add_case(Case.from_dicom(ct_folder, modalities=["CT", "RTDOSE", "RTSTRUCT", "RTPLAN"], roi_config_path="/home/bolo/Documents/rt_ai_preprocesssing/src/rtmlc/utils/dcm_roi_config.json"))
     
-    rtmlc_patient.preprocess_all(config_path="/home/bolo/Documents/rt_ai_preprocesssing/src/rtmlc/utils/config_small.json", isocenter="PTV")
+    rtmlc_patient.preprocess_all(config_path="/home/bolo/Documents/rt_ai_preprocesssing/src/rtmlc/utils/config_gold_atlas.json", isocenter="PTV")
     rtmlc_ct = list(rtmlc_patient.cases[case_name].modality_handlers["CT"].values())[0]
     rtmlc_dose = list(rtmlc_patient.cases[case_name].modality_handlers["RTDOSE"].values())[0]
 
@@ -83,7 +83,7 @@ def load_dicom(
     if plan_path is not None:
         plans = fetch_plan_data(plan_path[0])
     
-    new_spacing_sitk = (new_spacing[2], new_spacing[1], new_spacing[0])  # sitk uses (x,y,z)
+    # new_spacing_sitk = (new_spacing[2], new_spacing[1], new_spacing[0])  # sitk uses (x,y,z)
     dose_ref = list(doses.keys())[0]
     dose = doses[dose_ref]
     _, num_fractions = list(plans.values())[0]
