@@ -11,6 +11,7 @@ This changelog was introduced after releasing version 1.3.0.
 ### Added
 - Five new example files are now available through the repository. They are suitable for running in a T4 google colab environment.
 - The commissioning process has a new setting for kernel size, this will be used throughout. A known limitation when evaluating the engine with a smaller kernel, but it was shown to work well empirically.
+- `compute_dose` now accepts a `beam_chunk_size` argument (also settable on the `DoseEngine` constructor) that processes beams in gradient-checkpointed chunks to lower peak memory on large problems while retaining gradients. The per-chunk beam geometry is cached and reused across calls.
 ### Changed
 - Machine/Optimization configurations are now built-in to the package, and easier to access. To get a list of all available presets, run `list_machine_presets()` or `list_optimization_presets()`. All related tests have been updated. 
 - Changed commissioning pipeline to use json files
@@ -25,3 +26,4 @@ This changelog was introduced after releasing version 1.3.0.
 - Three unused examples have been removed.
 - **Breaking**: The beam validation layer has been removed, due to serious limitations. The `adjust_values` parameter is no longer available for initializing the dose engine.
 - **Breaking**: The calibration of the dose engine no longer requires the beam template. Calibration can also be performed automatically during the initialization of the dose engine using the `auto_calibrate` argument.
+- **Breaking**: `compute_dose_sequential` has been removed. Use `compute_dose(..., beam_chunk_size=N)` for memory-efficient, gradient-retaining dose computation (`beam_chunk_size=1` reproduces the old beam-by-beam behaviour).

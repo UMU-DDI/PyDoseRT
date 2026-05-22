@@ -121,7 +121,7 @@ PyDoseRT implements dose calculation as a series of differentiable PyTorch layer
 The `DoseEngine` class provides several computation methods:
 
 - **`compute_dose(beam_sequence, density_image)`** - Computes dose for a beam sequence in parallel (GPU memory intensive)
-- **`compute_dose_sequential(beam_sequence, density_image)`** - Processes beams sequentially to reduce memory usage
+- **`compute_dose(beam_sequence, density_image, beam_chunk_size=N)`** - Processes beams in gradient-checkpointed chunks of `N` to reduce peak memory while preserving gradients. The chunk geometry is cached and reused across calls. `beam_chunk_size` can also be set once on the `DoseEngine(...)` constructor.
 - **`calibrate(calibration_mu, original_beam_template)`** - Calibrates the engine to match expected dose output at reference conditions
 
 After initialization, the engine must be calibrated using a reference beam configuration to ensure accurate absolute dose values.

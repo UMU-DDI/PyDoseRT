@@ -7,6 +7,7 @@ multiple beams, and can optionally perform upsampling and debugging visualizatio
 """
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 from pydosert.layers.FluenceMapLayer import FluenceMapLayer
 from pydosert.layers.FluenceVolumeLayer import FluenceVolumeLayer
@@ -50,12 +51,13 @@ class DoseEngine(nn.Module):
         kernel_size: int,
         dose_grid_spacing: tuple[float, float, float],
         dose_grid_shape: tuple[int, int, int],
-        beam_template: BeamSequence | Beam | None = None,        
+        beam_template: BeamSequence | Beam | None = None,
         auto_calibrate: bool = False,
         adjust_values: bool = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype = None,
         verbose: bool = False,
+        beam_chunk_size: int | None = None,
     ) -> "DoseEngine":
         """
         Initializes the DoseEngine pipeline.
@@ -72,9 +74,17 @@ class DoseEngine(nn.Module):
             device: PyTorch device for computation.
             dtype: Data type for tensors.
             verbose: Enable verbose output (default: False).
+            beam_chunk_size: Default number of beams processed per gradient-checkpointed
+                chunk in compute_dose. None (default) processes all beams in a single
+                pass (lowest runtime, highest peak memory). Set a positive value to trade
+                runtime for lower peak memory on large problems; this can be overridden per
+                call. The per-chunk beam geometry is cached and reused across calls.
         """
         super().__init__()
         self.kernel_size = kernel_size
+        self.beam_chunk_size = beam_chunk_size
+        self._chunk_geometry_cache = None
+        self._chunk_geometry_cache_key = None
 
         # Handle device default
         self.device = device
@@ -379,18 +389,52 @@ class DoseEngine(nn.Module):
 
         self._assert_sizes(density_image, leaf_positions, jaw_positions, mus, fluence_maps=fluence_maps)
 
+        return self._forward_core(
+            leaf_positions,
+            mus,
+            jaw_positions,
+            density_image,
+            self.rad_depth_layer,
+            self.rotation_layer,
+            self.collimator_angles,
+            self.number_of_beams,
+            return_intermediates,
+            fluence_maps,
+        )
+
+    def _forward_core(
+        self,
+        leaf_positions: torch.Tensor | None,
+        mus: torch.Tensor | None,
+        jaw_positions: torch.Tensor | None,
+        density_image: torch.Tensor,
+        rad_depth_layer: nn.Module,
+        rotation_layer: nn.Module,
+        collimator_angles: torch.Tensor,
+        number_of_beams: int,
+        return_intermediates: bool = False,
+        fluence_maps: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Run the dose pipeline for a (possibly partial) set of beams.
+
+        The geometry-dependent layers (radiological depth and rotation) and the
+        beam count are passed in so the same pipeline can serve both the full beam
+        set and individual chunks. All other layers are beam-count-agnostic and read
+        from self.
+        """
         with torch.amp.autocast(self.device.type, dtype=self.dtype):
             if density_image.dim() == 3:
                 density_image = density_image.unsqueeze(0)
             with torch.no_grad():
-                batched_radiological_depths = self.rad_depth_layer(density_image).detach()
+                batched_radiological_depths = rad_depth_layer(density_image).detach()
                 batched_kernels = self.pencil_beam_kernel_layer(batched_radiological_depths).detach()
 
             if not(return_intermediates):
                 del batched_radiological_depths
             H, D, W = self.dose_grid_shape
 
-            G = self.number_of_beams
+            G = number_of_beams
 
             if fluence_maps is not None:
                 # Use provided fluence maps directly, skipping the FluenceMapLayer
@@ -408,10 +452,10 @@ class DoseEngine(nn.Module):
 
             # Apply collimator rotation (beam limiting device angle)
             # This rotates the fluence map in-plane before projection to 3D
-            if (self.collimator_angles != 0.0).any():
+            if (collimator_angles != 0.0).any():
                 batched_fluence_maps = rotate_2d_images(
                     batched_fluence_maps,
-                    self.collimator_angles,
+                    collimator_angles,
                     device=self.device,
                     dtype=self.dtype
                 )  # [B*G, H, W]
@@ -432,7 +476,7 @@ class DoseEngine(nn.Module):
             if mus is not None:
                 batched_accumulated_dose.mul_(mus[:, :, None, None, None])
 
-            batched_accumulated_dose = self.rotation_layer(batched_accumulated_dose)
+            batched_accumulated_dose = rotation_layer(batched_accumulated_dose)
 
             batched_accumulated_dose = batched_accumulated_dose.sum(dim=1).to(self.dtype)
 
@@ -448,6 +492,7 @@ class DoseEngine(nn.Module):
         return_intermediates: bool = False,
         overwrite: bool = False,
         fluence_maps: torch.Tensor | None = None,
+        beam_chunk_size: int | None = None,
     ) -> torch.Tensor:
         """
         Compute dose from a BeamSequence or Beam.
@@ -461,6 +506,12 @@ class DoseEngine(nn.Module):
             fluence_maps: Optional pre-computed fluence maps [1, G, H, W] or [G, H, W].
                 If provided, the FluenceMapLayer is skipped and leaf/jaw positions from
                 beam_input are ignored. G must equal the number of beams in beam_input.
+            beam_chunk_size: Number of beams per gradient-checkpointed chunk for this call,
+                overriding the engine default set at construction. When set (and the beam
+                count exceeds it) the beams are processed in chunks whose intermediates are
+                recomputed one chunk at a time during backward, lowering peak memory while
+                preserving gradients. The per-chunk geometry is cached and reused across
+                calls with the same beam layout. Ignored when return_intermediates is True.
 
         Returns:
             Dose tensor [1, D, H, W].
@@ -488,6 +539,22 @@ class DoseEngine(nn.Module):
         if fluence_maps is not None and fluence_maps.dim() == 3:
             fluence_maps = fluence_maps.unsqueeze(0)  # [G, H, W] -> [1, G, H, W]
 
+        chunk_size = beam_chunk_size if beam_chunk_size is not None else self.beam_chunk_size
+        if (
+            chunk_size is not None
+            and not return_intermediates
+            and self.number_of_beams > chunk_size
+        ):
+            return self._compute_dose_chunked(
+                leaf_positions=leaf_positions,
+                mus=mus,
+                jaw_positions=jaw_positions,
+                density_image=ct_tensor,
+                fluence_maps=fluence_maps,
+                chunk_size=chunk_size,
+                overwrite=overwrite,
+            )
+
         return self.forward(
             leaf_positions=leaf_positions,
             mus=mus,
@@ -497,39 +564,94 @@ class DoseEngine(nn.Module):
             fluence_maps=fluence_maps,
         )
 
-    def compute_dose_sequential(
+    def _chunk_geometry_key(self, chunk_size: int) -> tuple:
+        """Cache key for the per-chunk geometry layers."""
+        return (
+            chunk_size,
+            self.number_of_beams,
+            tuple(self.gantry_angles.detach().cpu().tolist()),
+            tuple(self.iso_center),
+            tuple(self.dose_grid_shape),
+            tuple(self.dose_grid_spacing),
+            str(self.device),
+            str(self.dtype),
+        )
+
+    def _build_chunk_geometry(self, chunk_size: int) -> list[tuple[int, int, nn.Module, nn.Module]]:
+        """
+        Build the geometry-dependent layers (radiological depth and rotation) for each
+        beam chunk. These carry no learnable parameters and are the expensive part to
+        recompute, so they are cached and reused across calls.
+        """
+        chunks = []
+        for start in range(0, self.number_of_beams, chunk_size):
+            end = min(start + chunk_size, self.number_of_beams)
+            gantry_angles = self.gantry_angles[start:end]
+            rad_depth_layer = RadiologicalDepthLayer(
+                self.machine_config,
+                device=self.device,
+                dtype=self.dtype,
+                resolution=self.dose_grid_spacing,
+                ct_array_shape=self.dose_grid_shape,
+                gantry_angles=gantry_angles,
+                iso_center=self.iso_center,
+                verbose=self.verbose,
+            )
+            rotation_layer = BeamRotationLayer(
+                self.machine_config,
+                device=self.device,
+                dtype=self.dtype,
+                ct_array_shape=self.dose_grid_shape,
+                gantry_angles=gantry_angles,
+                iso_center=self.iso_center,
+                resolution=self.dose_grid_spacing,
+                verbose=self.verbose,
+            )
+            chunks.append((start, end, rad_depth_layer, rotation_layer))
+        return chunks
+
+    def _compute_dose_chunked(
         self,
-        beam_sequence: BeamSequence,
-        density_image: torch.Tensor | None = None
+        leaf_positions: torch.Tensor,
+        mus: torch.Tensor,
+        jaw_positions: torch.Tensor | None,
+        density_image: torch.Tensor,
+        fluence_maps: torch.Tensor | None,
+        chunk_size: int,
+        overwrite: bool,
     ) -> torch.Tensor:
         """
-        Compute dose by processing beams sequentially or in batches (memory efficient).
+        Compute dose in beam chunks to limit backward-pass peak memory.
 
-        Args:
-            beam_sequence: BeamSequence containing all control points
-            density_image: CT image tensor [1, D, H, W]
-
-        Returns:
-            Accumulated dose tensor [1, H, D, W]
+        Each chunk is independently checkpointed, so only one chunk's intermediates
+        are recomputed at a time during backward. The per-chunk geometry layers are
+        cached so they are not rebuilt on every call.
         """
-        self._initialize_layers(beam_sequence)
-        total_dose = None
+        key = self._chunk_geometry_key(chunk_size)
+        if overwrite or self._chunk_geometry_cache_key != key:
+            self._chunk_geometry_cache = self._build_chunk_geometry(chunk_size)
+            self._chunk_geometry_cache_key = key
 
-        # Process beams one by one
-        for beam in beam_sequence:
-            beam_dose = self.compute_dose(
-                beam,
-                density_image=density_image,
-                overwrite=True
+        dose = None
+        for start, end, rad_depth_layer, rotation_layer in self._chunk_geometry_cache:
+            jaw_chunk = jaw_positions[:, start:end] if jaw_positions is not None else None
+            fluence_chunk = fluence_maps[:, start:end] if fluence_maps is not None else None
+            chunk_dose = checkpoint(
+                self._forward_core,
+                leaf_positions[:, start:end],
+                mus[:, start:end],
+                jaw_chunk,
+                density_image,
+                rad_depth_layer,
+                rotation_layer,
+                self.collimator_angles[start:end],
+                end - start,
+                False,
+                fluence_chunk,
+                use_reentrant=False,
             )
-
-            if total_dose is None:
-                total_dose = beam_dose
-            else:
-                total_dose = total_dose + beam_dose
-
-        self._initialize_layers(beam_sequence, overwrite=True)
-        return total_dose
+            dose = chunk_dose if dose is None else dose + chunk_dose
+        return dose
 
     def calibrate(self,                   
                   calibration_mu: float = None,
