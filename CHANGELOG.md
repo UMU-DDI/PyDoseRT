@@ -9,6 +9,13 @@ This changelog was introduced after releasing version 1.3.0.
 ## [Unreleased]
 
 ### Added
+### Changed
+### Fixed
+### Removed
+
+## [1.4.0]
+
+### Added
 - Five new example files are now available through the repository. They are suitable for running in a T4 google colab environment.
 - The commissioning process has a new setting for kernel size, this will be used throughout. A known limitation when evaluating the engine with a smaller kernel, but it was shown to work well empirically.
 - `compute_dose` now accepts a `beam_chunk_size` argument (also settable on the `DoseEngine` constructor) that processes beams in gradient-checkpointed chunks to lower peak memory on large problems while retaining gradients. The per-chunk beam geometry is cached and reused across calls.
