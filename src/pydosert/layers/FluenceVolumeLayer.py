@@ -36,12 +36,16 @@ class FluenceVolumeLayer(nn.Module):
     Attributes:
         machine_config (MachineConfig): Configuration object containing machine parameters.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
-        dtype (type): Data type for tensors.
+        dtype (torch.dtype): Data type for tensors.
         verbose (bool): Flag to enable verbose logging.
-        SID (float): Source-to-isocenter distance.
-        resolution (tuple): Voxel spacing in mm.
-        profile_corrections (torch.Tensor): Precomputed profile corrections for each depth.
-        sampling_grids (torch.Tensor): Precomputed ray sampling grids for mapping MLC plane to CT volume.
+        SID (float): Source-to-isocenter distance in mm.
+        resolution (tuple[float, float, float]): Voxel spacing in mm (dH, dD, dW).
+        ct_array_shape (tuple[int, int, int]): Shape of the CT array as (H, D, W) in voxels.
+        iso_center (tuple[float, float, float]): Isocenter position in mm (H, D, W).
+        field_size (tuple[int, int]): Fluence-map field size (H, W) in pixels.
+        D (int): Number of depth slices (the D axis of ct_array_shape).
+        profile_corrections (torch.Tensor): Inverse-square depth corrections, shape [D].
+        sampling_grids (torch.Tensor): Precomputed ray sampling grids mapping the MLC plane to the CT volume, shape [D, W, H, 2].
     """
 
     def __init__(self, machine_config: MachineConfig, 
@@ -160,11 +164,14 @@ class FluenceVolumeLayer(nn.Module):
         Projects the 2D fluence map into the 3D CT volume, applying geometric and profile corrections.
 
         Args:
-            fluence_map (torch.Tensor): Input fluence map of shape [B*G,1,H_field,W_field].
-            bbox (h_min_idx, h_max_idx, w_min_idx, w_max_idx) (int): Crop indices for output volume.
+            fluence_map (torch.Tensor): Input fluence map of shape [B*G, H_field, W_field]
+                (a channel dim of 1 is inserted internally before grid sampling).
+            bbox (tuple[int, int, int, int]): Crop indices (h_min_idx, h_max_idx, w_min_idx,
+                w_max_idx) into the CT (H, W) plane; None entries default to the full extent.
 
         Returns:
-            torch.Tensor: 3D volume grid of shape [B*G, D, cropped_W, cropped_H, 1] representing the projected fluence.
+            torch.Tensor: Projected 3D volume of shape [B*G, D, cropped_H, cropped_W, 1],
+            where cropped_H and cropped_W follow from bbox.
         """
         B = fluence_map.shape[0]
         fluence_map = fluence_map.unsqueeze(1)

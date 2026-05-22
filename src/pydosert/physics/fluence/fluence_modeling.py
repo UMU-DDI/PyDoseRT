@@ -18,15 +18,15 @@ def compute_profile_ratios(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute ratios of measured/modelled profiles at specific radial distances.
-    
+
     Args:
-        measured_profile: 1D array of measured intensity values
-        modelled_profile: 1D array of modelled intensity values
-        x_scale_mm: 1D array of x-positions in mm corresponding to profiles
-        sample_points_mm: List of radial distances (mm) where ratios should be sampled
-        
+        measured_profile (np.ndarray): Measured intensity values, shape [P].
+        modelled_profile (np.ndarray): Modelled intensity values, shape [P].
+        x_scale_mm (np.ndarray): X-positions in mm for each profile point, shape [P].
+        sample_points_mm (List[float]): Radial distances (mm) where ratios are sampled, length S.
+
     Returns:
-        Tuple of (sample_points_mm as array, corresponding ratio values)
+        Tuple[np.ndarray, np.ndarray]: (sample points [S], sampled ratio values [S]).
     """
     # Compute the ratio
     ratio = measured_profile / (modelled_profile + 1e-10)  # Small epsilon to avoid division by zero
@@ -48,21 +48,16 @@ def compute_profile_ratios(
 
 def precompute_head_scatter_kernel(sigma_cm, resolution_cm, kernel_half_width=5):
     """
-    Create a 1D Gaussian kernel for convolution.
-    
-    Parameters:
-    -----------
-    sigma_cm : float
-        Standard deviation in cm
-    resolution_cm : float
-        Pixel resolution in cm
-    kernel_half_width : float
-        Number of sigmas to extend the kernel on each side
-        
+    Create a normalized 1D Gaussian kernel for convolution.
+
+    Args:
+        sigma_cm (float): Standard deviation in cm.
+        resolution_cm (float): Pixel resolution in cm.
+        kernel_half_width (float): Number of sigmas to extend the kernel on each side. Default 5.
+
     Returns:
-    --------
-    kernel : numpy array
-        Normalized 1D Gaussian kernel
+        torch.Tensor: Normalized 1D Gaussian kernel, shape [K] where
+            K = 2 * ceil(kernel_half_width * sigma_cm / resolution_cm) + 1.
     """
     # Convert sigma to pixels
     sigma_pixels = sigma_cm / resolution_cm
@@ -82,7 +77,22 @@ def precompute_head_scatter_kernel(sigma_cm, resolution_cm, kernel_half_width=5)
     return torch.from_numpy(kernel)
 
 def get_output_factor(field_size_mlc_mm, field_size_jaw_mm, output_factors):
+    """
+    Compute the output factor by averaging MLC- and JAW-defined field-size lookups.
 
+    Linearly interpolates a tabulated output-factor curve at the MLC and JAW
+    field sizes and returns their mean.
+
+    Args:
+        field_size_mlc_mm (torch.Tensor): MLC-defined field size in mm, arbitrary shape [...].
+        field_size_jaw_mm (torch.Tensor): JAW-defined field size in mm, same shape as field_size_mlc_mm [...].
+        output_factors (Sequence): Length-2 sequence where output_factors[0] are the
+            tabulated field sizes (mm, ascending, length L) and output_factors[1] the
+            corresponding output factors (length L).
+
+    Returns:
+        torch.Tensor: Averaged output factors, same shape as field_size_mlc_mm [...].
+    """
     x = torch.Tensor(output_factors[0]).to(field_size_mlc_mm.device).to(field_size_mlc_mm.dtype)
     y = torch.Tensor(output_factors[1]).to(field_size_mlc_mm.device).to(field_size_mlc_mm.dtype)
 
@@ -129,17 +139,17 @@ def create_radial_correction_map(
 ) -> torch.Tensor:
     """
     Create a 2D radial correction map from 1D sampled ratios.
-    
+
     Args:
-        sample_distances_mm: 1D array of radial distances in mm
-        sample_ratios: 1D array of ratio values at corresponding distances
-        image_shape: Tuple of (height, width) for output image
-        pixel_size_mm: Physical size of each pixel in mm
-        center: Optional tuple of (y_center, x_center) in pixels. 
-                If None, uses image center.
-        
+        sample_distances_mm (np.ndarray): Radial distances in mm, shape [S].
+        sample_ratios (np.ndarray): Ratio values at corresponding distances, shape [S].
+        image_shape (Tuple[int, int]): Output image size (height, width) = (H, W).
+        pixel_size_mm (float): Physical size of each pixel in mm.
+        center (Optional[Tuple[float, float]]): (y_center, x_center) in pixels.
+            If None, uses image center.
+
     Returns:
-        torch.Tensor of shape image_shape with radially interpolated ratios
+        torch.Tensor: Radially interpolated correction map, shape [H, W].
     """
     height, width = image_shape
     
@@ -192,14 +202,14 @@ def torch_interp1d(
 ) -> torch.Tensor:
     """
     1D linear interpolation in PyTorch (similar to numpy.interp).
-    
+
     Args:
-        x: 1D tensor of x-coordinates (must be sorted)
-        y: 1D tensor of y-coordinates
-        x_new: 1D tensor of new x-coordinates to interpolate at
-        
+        x (torch.Tensor): X-coordinates, must be sorted ascending, shape [L].
+        y (torch.Tensor): Y-coordinates, shape [L].
+        x_new (torch.Tensor): X-coordinates to interpolate at, arbitrary shape [...].
+
     Returns:
-        Interpolated y values at x_new positions
+        torch.Tensor: Interpolated y values at x_new, same shape as x_new [...].
     """
     # Ensure x is sorted
     if not torch.all(x[1:] >= x[:-1]):
@@ -237,8 +247,15 @@ class LearnableFluenceKernel(nn.Module):
     - Any calibration errors
     """
     def __init__(self, kernel_size=15):
+        """
+        Initialize the learnable fluence kernel.
+
+        Args:
+            kernel_size (int): Side length K of the square convolution kernel. Default 15.
+                The kernel is initialized as a delta (identity) of shape [1, 1, K, K].
+        """
         super().__init__()
-        
+
         # Initialize as delta function (no smoothing)
         kernel = torch.zeros(kernel_size, kernel_size)
         kernel[kernel_size//2, kernel_size//2] = 1.0
@@ -251,13 +268,13 @@ class LearnableFluenceKernel(nn.Module):
     
     def forward(self, fluence_map):
         """
-        Apply learned kernel to fluence map.
-        
+        Apply the learned (normalized) kernel and scale to a fluence map.
+
         Args:
-            fluence_map: [B*G, H, W] fluence map
-        
+            fluence_map (torch.Tensor): Fluence map, shape [B*G, H, W].
+
         Returns:
-            corrected_fluence: [B*G, H, W]
+            torch.Tensor: Corrected fluence map, shape [B*G, H, W].
         """
         # Normalize kernel to sum to 1 (preserve total fluence)
         kernel_normalized = (self.kernel / (self.kernel.sum() + 1e-8)).to(fluence_map.device)
@@ -288,12 +305,13 @@ def precompute_source_penumbra_kernel(desired_penumbra_fwhm_mm: float,
     in millimeters at the isocenter plane.
 
     Args:
-        desired_penumbra_fwhm_mm: Penumbra width (FWHM) in mm, typically 2–4 mm.
-        device: Device to create kernel on.
-        dtype: Torch dtype.
+        desired_penumbra_fwhm_mm (float): Penumbra width (FWHM) in mm, typically 2-4 mm.
+        device (torch.device): Device to create kernel on.
+        dtype (torch.dtype): Torch dtype.
 
     Returns:
-        kernel: [1, 1, 1, K] separable 1D convolution kernel.
+        torch.Tensor: Separable 1D convolution kernel, shape [1, 1, 1, K] where
+            K = 6 * round(fwhm / 2.355) + 1 (forced odd).
     """
 
     # Convert physical FWHM to Gaussian sigma in pixel units
@@ -328,14 +346,15 @@ def precompute_directional_source_penumbra_kernels(
     due to different geometric factors, leaf design, and collimator characteristics.
 
     Args:
-        penumbra_fwhm_mlc_mm: Penumbra width (FWHM) in MLC direction (horizontal/width) in mm.
-        penumbra_fwhm_jaw_mm: Penumbra width (FWHM) in JAW direction (vertical/height) in mm.
-        device: Device to create kernels on.
-        dtype: Torch dtype.
+        penumbra_fwhm_mlc_mm (float): Penumbra width (FWHM) in MLC direction (horizontal/width) in mm.
+        penumbra_fwhm_jaw_mm (float): Penumbra width (FWHM) in JAW direction (vertical/height) in mm.
+        device (torch.device): Device to create kernels on.
+        dtype (torch.dtype): Torch dtype.
 
     Returns:
-        kernel_mlc: [1, 1, 1, K_mlc] 1D convolution kernel for MLC direction (horizontal)
-        kernel_jaw: [1, 1, K_jaw, 1] 1D convolution kernel for JAW direction (vertical)
+        Tuple[torch.Tensor, torch.Tensor]:
+            kernel_mlc, shape [1, 1, 1, K_mlc], 1D kernel for the MLC direction (horizontal);
+            kernel_jaw, shape [1, 1, K_jaw, 1], 1D kernel for the JAW direction (vertical).
     """
     # MLC direction kernel (horizontal)
     sigma_mlc_pixels = penumbra_fwhm_mlc_mm / 2.355
@@ -384,13 +403,13 @@ def apply_directional_precomputed_kernel(
     which is physically accurate since MLC and JAW geometries differ.
 
     Args:
-        fluence: [B, 1, H, W] fluence map
-        kernel_mlc: [1, 1, 1, K_mlc] 1D convolution kernel for MLC direction (horizontal/width)
-        kernel_jaw: [1, 1, K_jaw, 1] 1D convolution kernel for JAW direction (vertical/height)
-        padding_mode: Padding mode for convolution
+        fluence (torch.Tensor): Fluence map, shape [B, 1, H, W].
+        kernel_mlc (torch.Tensor): 1D convolution kernel for MLC direction (horizontal/width), shape [1, 1, 1, K_mlc].
+        kernel_jaw (torch.Tensor): 1D convolution kernel for JAW direction (vertical/height), shape [1, 1, K_jaw, 1].
+        padding_mode (str): Padding mode for convolution. Default 'replicate'.
 
     Returns:
-        fluence_convolved: [B, 1, H, W] convolved fluence map
+        torch.Tensor: Convolved fluence map, shape [B, 1, H, W].
     """
     # Apply MLC direction convolution (horizontal, along width dimension)
     kernel_mlc_size = kernel_mlc.shape[-1]
@@ -415,12 +434,12 @@ def estimate_field_size_1d(fluence_1d: torch.Tensor, pixel_size_mm: float = 1.0,
     Uses the width at threshold (default 50%) to determine field size.
 
     Args:
-        fluence_1d: [B, W] 1D fluence profile
-        pixel_size_mm: Pixel size in mm
-        threshold: Threshold for field edge detection (fraction of max)
+        fluence_1d (torch.Tensor): 1D fluence profile, shape [B, W].
+        pixel_size_mm (float): Pixel size in mm. Default 1.0.
+        threshold (float): Threshold for field edge detection (fraction of max). Default 0.5.
 
     Returns:
-        field_size_cm: [B] effective field size in cm
+        torch.Tensor: Effective field size in mm (pixel_size_mm units), shape [B].
     """
     B, W = fluence_1d.shape
 
@@ -435,14 +454,30 @@ def estimate_field_size_1d(fluence_1d: torch.Tensor, pixel_size_mm: float = 1.0,
     return width_pixels * pixel_size_mm
 
 def make_interpolator(point_dict):
+    """
+    Build a 1D linear interpolation function from tabulated (x, y) pairs.
+
+    Args:
+        point_dict (Sequence): Iterable of length-L of (x, y) pairs; x values
+            must be ascending. Pair element [0] is x, element [1] is y.
+
+    Returns:
+        Callable[[torch.Tensor], torch.Tensor]: A function mapping an input
+            tensor of arbitrary shape to interpolated values of the same shape.
+    """
     # Sort keys and values into tensors
     xs = torch.tensor([vals[0] for vals in point_dict], dtype=torch.float32)
     ys = torch.tensor([vals[1] for vals in point_dict], dtype=torch.float32)
 
     def interpolate(x):
         """
-        x: tensor of any shape
-        returns: tensor of same shape with interpolated values
+        Linearly interpolate the tabulated curve at the given points.
+
+        Args:
+            x (torch.Tensor): Query points, arbitrary shape [...].
+
+        Returns:
+            torch.Tensor: Interpolated values, same shape as x [...].
         """
 
         # Ensure xs, ys are on the same device as x
@@ -472,25 +507,21 @@ def apply_head_scatter_kernels(fluence_map, kernel_x, kernel_y):
     Apply 2D separable head-scatter convolution to the fluence map.
 
     Convolves the aperture with a wide Gaussian kernel (separable, X then Y)
-    to produce the scatter fluence component.  The caller is responsible for
-    the weighted combination::
+    to produce the scatter fluence component. The caller is responsible for
+    the weighted combination ``total = (1 - w) * primary + w * scatter``.
 
-        total = (1 - w) * primary + w * scatter
+    Args:
+        fluence_map (torch.Tensor): Aperture / primary fluence map, shape
+            [N, C, H, W], [N, H, W], or [H, W]; lower-rank inputs are promoted
+            to 4D internally.
+        kernel_x (torch.Tensor or np.ndarray): 1D Gaussian kernel for the
+            horizontal (MLC leaf-motion / width) direction, shape [Kx].
+        kernel_y (torch.Tensor or np.ndarray): 1D Gaussian kernel for the
+            vertical (jaw / inline / height) direction, shape [Ky].
 
-    Parameters
-    ----------
-    fluence_map : torch.Tensor
-        Aperture / primary fluence map, shape ``[N, C, H, W]``, ``[N, H, W]``,
-        or ``[H, W]``.
-    kernel_x : torch.Tensor or np.ndarray
-        1-D Gaussian kernel for the horizontal (MLC leaf-motion) direction.
-    kernel_y : torch.Tensor or np.ndarray
-        1-D Gaussian kernel for the vertical (jaw / inline) direction.
-
-    Returns
-    -------
-    torch.Tensor
-        Blurred scatter map with the same shape as the input.
+    Returns:
+        torch.Tensor: Blurred scatter map, shape [N, C, H, W] (always 4D
+            regardless of input rank).
     """
     device = fluence_map.device
     dtype = fluence_map.dtype
@@ -535,7 +566,7 @@ def compute_sc_output_factor(
     Compute the collimator scatter factor Sc analytically.
 
     Sc is modelled as the integral of a 2-D Gaussian extended source over the
-    jaw opening, normalised to a 10 × 10 cm² reference field:
+    jaw opening, normalised to a 10 x 10 cm reference field:
 
     .. math::
 
@@ -544,25 +575,16 @@ def compute_sc_output_factor(
             \\operatorname{erf}\\!\\left(\\frac{H}{2\\sqrt{2}\\sigma_y}\\right)}
             {S_{c,\\mathrm{ref}}}
 
-    Parameters
-    ----------
-    jaw_w_mm : torch.Tensor
-        Jaw opening in the crossline (X) direction, shape ``[B]``, in mm.
-    jaw_h_mm : torch.Tensor
-        Jaw opening in the inline (Y) direction, shape ``[B]``, in mm.
-    sc_amplitude : float
-        Head-scatter amplitude ``A`` typically 0.03 – 0.15).
-    sigma_x_mm : float
-        Effective source sigma at isocentre in the X direction, in mm.
-    sigma_y_mm : float
-        Effective source sigma at isocentre in the Y direction, in mm.
-    ref_field_mm : float
-        Side length of the reference square field in mm (default 100 mm = 10 cm).
+    Args:
+        jaw_w_mm (torch.Tensor): Jaw opening in the crossline (X) direction in mm, shape [B].
+        jaw_h_mm (torch.Tensor): Jaw opening in the inline (Y) direction in mm, shape [B].
+        sc_amplitude (float): Head-scatter amplitude A (typically 0.03 - 0.15).
+        sigma_x_mm (float): Effective source sigma at isocentre in the X direction, in mm.
+        sigma_y_mm (float): Effective source sigma at isocentre in the Y direction, in mm.
+        ref_field_mm (float): Side length of the reference square field in mm (default 100 mm = 10 cm).
 
-    Returns
-    -------
-    torch.Tensor
-        Sc values, shape ``[B]``, normalised so Sc = 1 for the reference field.
+    Returns:
+        torch.Tensor: Sc values, shape [B], normalised so Sc = 1 for the reference field.
     """
     sqrt2 = 2.0 ** 0.5
 

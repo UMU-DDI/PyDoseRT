@@ -15,6 +15,14 @@ from scipy.ndimage import gaussian_filter
 from matplotlib.lines import Line2D
 
 def overlay_mask_outline(mask_slice, color="red", linewidth=1, sigma=2.0):
+    """Draw the smoothed contour of a 2D binary mask onto the current axes.
+
+    Args:
+        mask_slice (np.ndarray): 2D binary mask slice [H, W] to outline.
+        color (str): Matplotlib color for the contour line.
+        linewidth (float): Width of the contour line.
+        sigma (float): Gaussian smoothing sigma applied before contouring.
+    """
     # Smooth the binary mask to produce clean contour boundaries
     smoothed = gaussian_filter(mask_slice.astype(float), sigma=sigma)
 
@@ -32,24 +40,26 @@ def print_paper_plot(
     isodose_percent_levels=(20, 40, 60, 80, 90, 95, 100, 105, 107, 110),
     cmap_dose="turbo",
 ):
-    """Updated plotting routine for publication-ready figures.
+    """Render a publication figure: axial + sagittal isodose washes and a DVH.
 
-    Minimal changes from the original function but with a few cleanups:
-      - avoids deprecated ndimage.measurements
-      - adds isodose contours (percent levels by default)
-      - uses a cleaner colormap and a shared colorbar for dose panels
-      - small style tweaks (font sizes, line widths) for publication
+    Draws CT background, ROI outlines and filled isodose bands for the predicted
+    dose on axial and sagittal panels centred on the first structure's center of
+    mass, plus a DVH panel for the predicted dose.
 
-    Parameters
-    ----------
-    experiment, treatment, patient, dose_pred, out_path
-        same meaning as in the original function
-    dose_alpha : float
-        alpha for overlaying dose prediction over the background CT
-    isodose_percent_levels : sequence of int
-        isodose percent levels to draw on the dose panels (e.g. [95,80,50,...])
-    cmap_dose : str
-        matplotlib colormap used for dose wash
+    Args:
+        experiment: Logging experiment (e.g. comet); if not None, the saved
+            figure is logged via experiment.log_figure. May be None.
+        treatment (object): Treatment/optimization config providing
+            structures (name -> dict with "color") and prescription metadata.
+        patient (object): Patient providing _ct_tensor [D, H, W], dose [D, H, W],
+            structures (name -> mask [D, H, W]) and number_of_fractions.
+        dose_pred (torch.Tensor): Predicted per-fraction dose [D, H, W].
+        out_path (str | None): Output image path; if None, logs to experiment
+            (saving to out/paper.png) or shows the figure interactively.
+        dose_alpha (float): Alpha for overlaying dose prediction over the CT.
+        isodose_percent_levels (Sequence[int]): Isodose percent levels drawn on
+            the dose panels.
+        cmap_dose (str): Matplotlib colormap used for the dose wash.
     """
 
     # --- style tweaks for publication
@@ -64,14 +74,30 @@ def print_paper_plot(
     dose_max = patient.number_of_fractions * float(max(patient.dose.max(), dose_pred.max()).item())
 
     def _hide_ticks(ax):
+        """Remove tick marks and labels from a matplotlib axes.
+
+        Args:
+            ax: Matplotlib axes to strip of ticks.
+        """
         ax.set_xticks([])
         ax.set_yticks([])
         ax.tick_params(bottom=False, left=False)
 
     def _imshow_fullwidth(ax, img, *, cmap='gray', vmin=None, vmax=None, alpha=1.0):
-        """
-        Show any array so it fills the axes horizontally and uses a fixed panel height.
+        """Show a 2D array filling the axes width with a fixed panel height.
+
         Keeping data coordinates unchanged ensures overlays (contours) stay aligned.
+
+        Args:
+            ax: Matplotlib axes to draw on.
+            img (np.ndarray): 2D image [H, W] to display.
+            cmap (str): Matplotlib colormap.
+            vmin (float | None): Lower color limit.
+            vmax (float | None): Upper color limit.
+            alpha (float): Image opacity.
+
+        Returns:
+            matplotlib.image.AxesImage: The created image artist.
         """
         im = ax.imshow(
             img,
@@ -103,9 +129,31 @@ def print_paper_plot(
     coronal_yend = CoM[1] + 40
 
     def _dose_slice_axial(arr, z=44, y_start=0, y_end=256, x_start=0, x_end=256):
+        """Extract an axial sub-slice from a [D, H, W] volume.
+
+        Args:
+            arr (np.ndarray): Volume [D, H, W].
+            z (int): Depth index of the axial slice.
+            y_start, y_end (int): Row (H) crop bounds.
+            x_start, x_end (int): Column (W) crop bounds.
+
+        Returns:
+            np.ndarray: Cropped axial slice [y_end-y_start, x_end-x_start].
+        """
         return arr[z, y_start:y_end, x_start:x_end]
 
     def _dose_slice_coronal(arr, x=128, y_start=0, y_end=256, z_start=0, z_end=256):
+        """Extract a vertically-flipped sagittal/coronal sub-slice from [D, H, W].
+
+        Args:
+            arr (np.ndarray): Volume [D, H, W].
+            x (int): Column (W) index of the slice.
+            y_start, y_end (int): Row (H) crop bounds.
+            z_start, z_end (int): Depth (D) crop bounds.
+
+        Returns:
+            np.ndarray: Flipped slice [z_end-z_start, y_end-y_start].
+        """
         return np.flipud(arr[z_start:z_end, y_start:y_end, x])
 
     # draw axial panel (CT background + dose wash + isodose contours + structure outlines)
@@ -284,24 +332,24 @@ def print_comparison_plot(
     isodose_percent_levels=(20, 40, 60, 80, 90, 95, 100, 105, 107, 110),
     cmap_dose="turbo",
 ):
-    """Updated plotting routine for publication-ready figures.
+    """Render a side-by-side reference-vs-predicted axial isodose comparison figure.
 
-    Minimal changes from the original function but with a few cleanups:
-      - avoids deprecated ndimage.measurements
-      - adds isodose contours (percent levels by default)
-      - uses a cleaner colormap and a shared colorbar for dose panels
-      - small style tweaks (font sizes, line widths) for publication
+    Left panel shows the reference TPS dose (patient.dose) axial isodose wash,
+    middle panel the predicted dose axial isodose wash, both centred on the first
+    structure's center of mass; the right column shows lateral and AP dose profiles
+    comparing prediction against reference.
 
-    Parameters
-    ----------
-    experiment, treatment, patient, dose_pred, out_path
-        same meaning as in the original function
-    dose_alpha : float
-        alpha for overlaying dose prediction over the background CT
-    isodose_percent_levels : sequence of int
-        isodose percent levels to draw on the dose panels (e.g. [95,80,50,...])
-    cmap_dose : str
-        matplotlib colormap used for dose wash
+    Args:
+        treatment (object): Treatment/optimization config providing structures
+            (name -> dict with "color") and prescription_gy.
+        patient (object): Patient providing _ct_tensor [D, H, W], dose [D, H, W],
+            structures (name -> mask [D, H, W]) and number_of_fractions.
+        dose_pred (torch.Tensor): Predicted per-fraction dose [D, H, W].
+        out_path (str | None): Output image path; the figure is only saved when
+            this is not None.
+        isodose_percent_levels (Sequence[int]): Isodose percent levels drawn on
+            the dose panels.
+        cmap_dose (str): Matplotlib colormap used for the dose wash.
     """
 
     # --- style tweaks for publication
@@ -316,14 +364,30 @@ def print_comparison_plot(
     dose_max = treatment.prescription_gy
 
     def _hide_ticks(ax):
+        """Remove tick marks and labels from a matplotlib axes.
+
+        Args:
+            ax: Matplotlib axes to strip of ticks.
+        """
         ax.set_xticks([])
         ax.set_yticks([])
         ax.tick_params(bottom=False, left=False)
 
     def _imshow_fullwidth(ax, img, *, cmap='gray', vmin=None, vmax=None, alpha=1.0):
-        """
-        Show any array so it fills the axes horizontally and uses a fixed panel height.
+        """Show a 2D array filling the axes width with a fixed panel height.
+
         Keeping data coordinates unchanged ensures overlays (contours) stay aligned.
+
+        Args:
+            ax: Matplotlib axes to draw on.
+            img (np.ndarray): 2D image [H, W] to display.
+            cmap (str): Matplotlib colormap.
+            vmin (float | None): Lower color limit.
+            vmax (float | None): Upper color limit.
+            alpha (float): Image opacity.
+
+        Returns:
+            matplotlib.image.AxesImage: The created image artist.
         """
         im = ax.imshow(
             img,
@@ -350,6 +414,17 @@ def print_comparison_plot(
     axial_yend = CoM[1] + 64
 
     def _dose_slice_axial(arr, z=44, y_start=0, y_end=256, x_start=0, x_end=256):
+        """Extract an axial sub-slice from a [D, H, W] volume.
+
+        Args:
+            arr (np.ndarray): Volume [D, H, W].
+            z (int): Depth index of the axial slice.
+            y_start, y_end (int): Row (H) crop bounds.
+            x_start, x_end (int): Column (W) crop bounds.
+
+        Returns:
+            np.ndarray: Cropped axial slice [y_end-y_start, x_end-x_start].
+        """
         return arr[z, y_start:y_end, x_start:x_end]
 
 
@@ -542,16 +617,53 @@ def print_results(
     preset="varian_10MV",
     out_path=None
 ):
+    """Render a full diagnostic figure: machine parameters, dose slices and DVH.
+
+    Stacks ten panels in a single column: jaw/MLC/MU machine parameters, predicted
+    and reference (ground-truth) dose distributions in axial and coronal views with
+    optional CT background and ROI outlines, and a DVH comparing predicted (solid)
+    against reference (dashed) dose. Slice locations are chosen per preset.
+
+    Args:
+        experiment: Logging experiment (e.g. comet); if not None, the saved
+            figure is logged via experiment.log_figure. May be None.
+        treatment (OptimizationConfig): Config providing structures
+            (name -> dict with "color").
+        patient (Patient): Patient providing _ct_tensor [D, H, W], dose [D, H, W],
+            density_image [D, H, W], structures (name -> mask [D, H, W]) and
+            number_of_fractions.
+        beam_sequence (BeamSequence): Sequence providing leaf_positions [CP, N, 2],
+            mus [CP] and jaw_positions [CP, 2].
+        dose_pred (torch.Tensor): Predicted per-fraction dose [D, H, W].
+        title (str): Figure suptitle.
+        plot_ct (bool): If True, overlay dose on a CT background for the GT panels.
+        preset (str): Slice-location preset ("lund", "varian_10MV" or "gold-atlas").
+        out_path (str | None): Output image path; if None, logs to experiment
+            (saving to out/exp.png) or shows the figure interactively.
+    """
     dose_max = patient.number_of_fractions * max(patient.dose.max(), dose_pred.max()).item()
     def _hide_ticks(ax):
+        """Remove tick marks and labels from a matplotlib axes.
+
+        Args:
+            ax: Matplotlib axes to strip of ticks.
+        """
         ax.set_xticks([])
         ax.set_yticks([])
         ax.tick_params(bottom=False, left=False)
 
     def _imshow_fullwidth(ax, img, *, cmap='gray', vmin=None, vmax=None, alpha=1.0):
-        """
-        Show any array so it fills the axes horizontally and uses a fixed panel height.
+        """Show a 2D array filling the axes width with a fixed panel height.
+
         Keeping data coordinates unchanged ensures overlays (contours) stay aligned.
+
+        Args:
+            ax: Matplotlib axes to draw on.
+            img (np.ndarray): 2D image [H, W] to display.
+            cmap (str): Matplotlib colormap.
+            vmin (float | None): Lower color limit.
+            vmax (float | None): Upper color limit.
+            alpha (float): Image opacity.
         """
         ax.imshow(
             img,
@@ -672,9 +784,30 @@ def print_results(
     # If overlay_mask_outline expects already-sliced 2D arrays (as in your original code),
     # use these two helpers instead:
     def _dose_slice_axial(arr, z=44, x_start=0, x_end=256):
+        """Extract an axial sub-slice from a [D, H, W] volume.
+
+        Args:
+            arr (np.ndarray): Volume [D, H, W].
+            z (int): Depth index of the axial slice.
+            x_start, x_end (int): Row (H) crop bounds.
+
+        Returns:
+            np.ndarray: Axial slice [x_end-x_start, W].
+        """
         return arr[z, x_start:x_end, :]
 
     def _dose_slice_coronal(arr, x=128, y_start=0, y_end=256, z_start=0, z_end=256):
+        """Extract a vertically-flipped coronal sub-slice from a [D, H, W] volume.
+
+        Args:
+            arr (np.ndarray): Volume [D, H, W].
+            x (int): Column (W) index of the slice.
+            y_start, y_end (int): Row (H) crop bounds.
+            z_start, z_end (int): Depth (D) crop bounds.
+
+        Returns:
+            np.ndarray: Flipped slice [z_end-z_start, y_end-y_start].
+        """
         # coronal view, transpose to show (z, y) or (y, z) consistently
         # matching your original "np.transpose(...[0, 64:198, 128, :])"
         return np.flipud(arr[z_start:z_end, y_start:y_end,x])
@@ -781,8 +914,24 @@ def make_animation(experiment,
                    beam_sequence: BeamSequence, 
                    dose_max=50.0,
                    out_path=None):
-    """
-    Modified version with tight square layout - two squares stacked vertically
+    """Render an MP4 animation stepping through the beam sequence control points.
+
+    For each control point, computes the dose with the engine and draws a three-panel
+    frame: a central radiological-depth profile, the beam's-eye-view fluence map, and an
+    axial CT slice (at the first structure's center-of-mass depth) with the cumulative
+    dose overlaid and ROI outlines. Frames are written to a video file.
+
+    Args:
+        experiment: Logging experiment (e.g. comet); if not None, the saved video is
+            logged via experiment.log_video. May be None.
+        patient_data (Patient): Patient providing _ct_tensor [D, H, W],
+            density_image [D, H, W], number_of_fractions and structures
+            (name -> mask [D, H, W], must include "External").
+        dose_layer (DoseEngine): Engine used to compute per-control-point dose; provides
+            iso_center_voxel [3] (D, H, W).
+        beam_sequence (BeamSequence): Sequence of control points to iterate over.
+        dose_max (float): Upper color limit (Gy) for the dose overlay.
+        out_path (str | None): Output video path; defaults to "out/animation.mp4".
     """
     density_image = (patient_data.density_image * patient_data.structures["External"]).unsqueeze(0)
 
@@ -914,6 +1063,21 @@ def make_animation(experiment,
 
 
 def quick_plot(patient, dose_pred, title, show_ct: bool = False, out_path = None):
+    """Render a 3x3 grid of reference, predicted and difference dose slices.
+
+    For each of the three volume axes (D, H, W), takes the slice at the first
+    structure's center of mass and shows three panels: reference dose, predicted
+    dose, and their signed difference, optionally over a CT background.
+
+    Args:
+        patient (object): Patient providing _ct_tensor [D, H, W], dose [D, H, W],
+            structures (name -> mask [D, H, W]) and number_of_fractions.
+        dose_pred (torch.Tensor): Predicted per-fraction dose [D, H, W].
+        title (str): Title placed over the predicted-dose panels.
+        show_ct (bool): If True, overlay the dose slices on a CT background.
+        out_path (str | None): Output image path; if None, shows the figure
+            interactively.
+    """
     dose_max = patient.number_of_fractions * max(patient.dose.max(), dose_pred.max()).item()
     ct_volume = patient._ct_tensor.cpu().detach().numpy()
     dose_volume = patient.number_of_fractions * patient.dose.cpu().detach().numpy()

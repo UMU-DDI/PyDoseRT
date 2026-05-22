@@ -50,7 +50,7 @@ class OptimizationConfig:
         Initialize optimization config.
 
         Args:
-            prescription_gy: Prescription dose in Gy
+            prescription_gy (Optional[float]): Prescription dose in Gy.
         """
         self.prescription_gy = prescription_gy
         self.structures: Dict[str, Dict[str, Any]] = {}
@@ -61,10 +61,11 @@ class OptimizationConfig:
         Load configuration from JSON file.
 
         Args:
-            path: Path to JSON file
+            path (Union[str, Path]): Path to JSON file.
 
         Returns:
-            OptimizationConfig instance
+            OptimizationConfig: Instance populated from the file's
+                ``prescription_gy`` and ``structures`` entries.
         """
         path = Path(path)
         if not path.is_file():
@@ -87,11 +88,12 @@ class OptimizationConfig:
         package and resolved via ``importlib.resources``.
 
         Args:
-            name: Preset name (with or without ``.json`` extension).
+            name (str): Preset name (with or without ``.json`` extension).
                   Call ``list_optimization_presets()`` to see available names.
 
         Returns:
-            OptimizationConfig instance
+            OptimizationConfig: Instance populated from the preset's
+                ``prescription_gy`` and ``structures`` entries.
 
         Example::
 
@@ -121,7 +123,7 @@ class OptimizationConfig:
         Save configuration to JSON file.
 
         Args:
-            path: Path to save JSON file
+            path (Union[str, Path]): Path to save JSON file.
         """
         path = Path(path)
         data = {
@@ -144,13 +146,13 @@ class OptimizationConfig:
         Add a structure with optimization constraints.
 
         Args:
-            name: Structure name
-            color: Color for plotting
-            lower_bound_gy: Minimum dose constraint (Gy)
-            higher_bound_gy: Maximum dose constraint (Gy)
-            lower_bound_target_percent: % of volume that must receive >= lower_bound_gy
-            higher_bound_target_percent: % of volume that must be <= higher_bound_gy
-            weight: Optimization weight
+            name (str): Structure name.
+            color (Optional[str]): Color for plotting.
+            lower_bound_gy (float): Minimum dose constraint (Gy).
+            higher_bound_gy (float): Maximum dose constraint (Gy).
+            lower_bound_target_percent (float): % of volume that must receive >= lower_bound_gy.
+            higher_bound_target_percent (float): % of volume that must be <= higher_bound_gy.
+            weight (float): Optimization weight.
         """
         self.structures[name] = {
             "color": color,
@@ -175,14 +177,14 @@ class OptimizationConfig:
         Add a clinical criterion to a structure.
 
         Args:
-            structure: Structure name
-            criterion_type: 'dose_at_volume', 'dose_at_volume_cc', or 'volume_at_dose'
-            constraint_type: 'at_least' or 'at_most'
-            dose_gy: Dose in Gy (absolute)
-            dose_percent: Dose as % of prescription
-            volume_percent: Volume percentage (0-100)
-            volume_cc: Volume in cubic centimeters
-            description: Human-readable description
+            structure (str): Structure name.
+            criterion_type (str): 'dose_at_volume', 'dose_at_volume_cc', or 'volume_at_dose'.
+            constraint_type (str): 'at_least' or 'at_most'.
+            dose_gy (Optional[float]): Dose in Gy (absolute).
+            dose_percent (Optional[float]): Dose as % of prescription.
+            volume_percent (Optional[float]): Volume percentage (0-100).
+            volume_cc (Optional[float]): Volume in cubic centimeters.
+            description (Optional[str]): Human-readable description.
         """
         if structure not in self.structures:
             raise ValueError(f"Structure '{structure}' not found. Add it first with add_structure().")
@@ -200,7 +202,17 @@ class OptimizationConfig:
         self.structures[structure]["clinical_criteria"].append(criterion)
 
     def get_parameters(self, parameter_name: str) -> Dict[str, float]:
-        """Get weights for all structures as a dict."""
+        """
+        Collect one named parameter value across all structures.
+
+        Args:
+            parameter_name (str): Structure field to read (e.g. "weight",
+                "lower_bound_gy").
+
+        Returns:
+            Dict[str, float]: Mapping of structure name to that field's value
+                (None for structures lacking the field).
+        """
         return {name: struct.get(parameter_name)
                 for name, struct in self.structures.items()}
 
@@ -209,8 +221,11 @@ class OptimizationConfig:
         Validate predicted dose against clinical criteria.
 
         Args:
-            pred_dose: Predicted dose distribution (Gy), shape (1, D, H, W) or (D, H, W)
-            patient: Patient object with structure masks
+            pred_dose (Union[np.ndarray, torch.Tensor]): Predicted dose
+                distribution (Gy), shape [1, D, H, W] or [D, H, W]; a leading
+                batch axis of 1 is squeezed out internally.
+            patient: Patient object exposing ``.resolution`` (mm voxel spacing)
+                and ``.structures`` (name -> [D, H, W] mask).
 
         Returns:
             Dictionary with structure names as keys, containing:
@@ -346,13 +361,15 @@ class OptimizationConfig:
         Evaluate a single clinical criterion.
 
         Args:
-            dose: 3D dose distribution (Gy)
-            structure_mask: 3D binary mask
-            criterion: Criterion dictionary
-            voxel_volume_cc: Voxel volume in cc
+            dose (np.ndarray): 3D dose distribution (Gy), shape [D, H, W].
+            structure_mask (np.ndarray): 3D binary mask, shape [D, H, W].
+            criterion (Dict): Criterion dictionary (criterion_type,
+                constraint_type, and the relevant dose/volume keys).
+            voxel_volume_cc (float): Volume of a single voxel in cubic centimetres.
 
         Returns:
-            Dictionary with evaluation results
+            Dict: Evaluation result with keys 'type', 'description', 'value',
+                'threshold', 'ratio', 'passed'.
         """
         from ..objectives.metrics import (
             dose_at_volume_percent,
@@ -365,6 +382,16 @@ class OptimizationConfig:
 
         # Resolve dose threshold
         def get_dose_threshold() -> float:
+            """Resolve the criterion's dose threshold in Gy.
+
+            Returns:
+                float: ``dose_percent`` scaled by ``prescription_gy``, else the
+                    absolute ``dose_gy``.
+
+            Raises:
+                ValueError: If neither ``dose_gy`` nor ``dose_percent`` is given,
+                    or ``dose_percent`` is used without ``prescription_gy`` set.
+            """
             if criterion.get("dose_percent") is not None:
                 if self.prescription_gy is None:
                     raise ValueError("Criterion uses dose_percent but prescription_gy not set")

@@ -105,6 +105,12 @@ class PhotonBaseEngine(nn.Module):
             self._initialize_layers(beam_template)
 
     def _set_device_dtype(self, device, dtype) -> None:
+        """Adopt the given device/dtype for whichever of the two is still unset.
+
+        Args:
+            device (torch.device): Device inferred from the first input tensor.
+            dtype (torch.dtype): Dtype inferred from the first input tensor.
+        """
         if self.dtype is None:
             self.dtype = dtype
         if self.device is None:
@@ -112,6 +118,12 @@ class PhotonBaseEngine(nn.Module):
 
     @property
     def iso_center_voxel(self) -> tuple[int, int, int]:
+        """Isocenter location as clamped voxel indices.
+
+        Returns:
+            tuple[int, int, int]: Isocenter index (ix, iy, iz) into the
+                [D, H, W] dose grid, or None if no isocenter has been set.
+        """
         if self.iso_center is None:
             return None
 
@@ -133,7 +145,22 @@ class PhotonBaseEngine(nn.Module):
         return (ix, iy, iz)
 
     def _assert_sizes(self, density_image, leaf_positions, jaw_positions, mus, fluence_maps=None):
-        """Validate input tensor sizes."""
+        """Validate input tensor shapes, devices and dtypes for a forward pass.
+
+        Args:
+            density_image (torch.Tensor): CT/density volume [B, D, H, W].
+            leaf_positions (torch.Tensor | None): Leaf positions [B, G, N, 2].
+                Required unless fluence_maps is provided.
+            jaw_positions (torch.Tensor | None): Jaw positions [B, G, 2], or None.
+            mus (torch.Tensor | None): Monitor units [B, G]. Optional when
+                fluence_maps is provided.
+            fluence_maps (torch.Tensor | None): Pre-computed fluence maps
+                [B, G, H, W] or [B*G, H, W]. When given, leaf/jaw positions are
+                not validated.
+
+        Where B is the batch size, G the number of beams, N the number of leaf
+        pairs, and (D, H, W) the dose-grid shape.
+        """
 
         G = self.number_of_beams
 
@@ -352,7 +379,15 @@ class PhotonBaseEngine(nn.Module):
         )
 
     def _chunk_geometry_key(self, chunk_size: int) -> tuple:
-        """Cache key for the per-chunk geometry contexts."""
+        """Build the cache key identifying the per-chunk geometry contexts.
+
+        Args:
+            chunk_size (int): Number of beams per chunk.
+
+        Returns:
+            tuple: Hashable key combining chunk size, beam count, gantry angles,
+                isocenter, dose-grid shape/spacing, device and dtype.
+        """
         return (
             chunk_size,
             self.number_of_beams,
@@ -380,6 +415,18 @@ class PhotonBaseEngine(nn.Module):
         Each chunk is independently checkpointed, so only one chunk's intermediates
         are recomputed at a time during backward. The per-chunk geometry contexts are
         cached so they are not rebuilt on every call.
+
+        Args:
+            leaf_positions (torch.Tensor): Leaf positions [B, G, N, 2].
+            mus (torch.Tensor): Monitor units [B, G].
+            jaw_positions (torch.Tensor | None): Jaw positions [B, G, 2], or None.
+            density_image (torch.Tensor): CT/density volume [B, D, H, W].
+            fluence_maps (torch.Tensor | None): Pre-computed fluence maps [B, G, H, W], or None.
+            chunk_size (int): Number of beams processed per checkpointed chunk.
+            overwrite (bool): Force a rebuild of the cached per-chunk geometry.
+
+        Returns:
+            torch.Tensor: Dose tensor [B, D, H, W] summed over all beams.
         """
         key = self._chunk_geometry_key(chunk_size)
         if overwrite or self._chunk_geometry_cache_key != key:

@@ -38,6 +38,18 @@ class DoseEngine(PhotonBaseEngine):
     """
 
     def _initialize_layers(self, new_beam_data: BeamSequence | Beam, overwrite: bool = False) -> None:
+        """Build or refresh the pencil-beam pipeline layers from a beam template.
+
+        Sets the geometry attributes the base class relies on (number_of_beams,
+        gantry_angles, collimator_angles, field_size, SID, iso_center) and rebuilds
+        only the layers whose defining inputs changed. No-op when new_beam_data is None.
+
+        Args:
+            new_beam_data (BeamSequence | Beam | None): Beam template defining the
+                treatment geometry. A single Beam is treated as one beam (G=1).
+            overwrite (bool): Reserved flag for forcing re-initialization; the rebuild
+                decision is currently driven by changes to the beam geometry.
+        """
         if new_beam_data is None:
             return
 
@@ -174,6 +186,14 @@ class DoseEngine(PhotonBaseEngine):
         Build the geometry-dependent layers (radiological depth and rotation) for each
         beam chunk. These carry no learnable parameters and are the expensive part to
         recompute, so they are cached and reused across calls.
+
+        Args:
+            chunk_size (int): Number of beams per chunk.
+
+        Returns:
+            list[tuple[int, int, tuple[nn.Module, nn.Module]]]: One
+                (start, end, (rad_depth_layer, rotation_layer)) entry per chunk,
+                where [start, end) indexes into the full set of beams.
         """
         chunks = []
         for start in range(0, self.number_of_beams, chunk_size):
@@ -221,6 +241,25 @@ class DoseEngine(PhotonBaseEngine):
         beam count are passed in so the same pipeline can serve both the full beam
         set and individual chunks. All other layers are beam-count-agnostic and read
         from self.
+
+        Args:
+            leaf_positions (torch.Tensor | None): Leaf positions [B, G, N, 2].
+                Ignored when fluence_maps is provided.
+            mus (torch.Tensor | None): Monitor units [B, G]. If None, fluence is used unscaled.
+            jaw_positions (torch.Tensor | None): Jaw positions [B, G, 2], or None.
+            density_image (torch.Tensor): CT/density volume [B, D, H, W].
+            geometry (tuple[nn.Module, nn.Module]): The (radiological-depth, rotation)
+                layers for these beams.
+            collimator_angles (torch.Tensor): Collimator angles [G].
+            number_of_beams (int): Number of beams G in this call.
+            return_intermediates (bool): If True, also return intermediate tensors.
+            fluence_maps (torch.Tensor | None): Pre-computed fluence maps [B, G, H, W]
+                or [B*G, H, W]; skips the FluenceMapLayer when given.
+
+        Returns:
+            torch.Tensor: Dose tensor [B, D, H, W] summed over the given beams. If
+                return_intermediates is True, returns a tuple (radiological_depths,
+                fluence_maps, fluence_volumes, dose).
         """
         rad_depth_layer, rotation_layer = geometry
         with torch.amp.autocast(self.device.type, dtype=self.dtype):

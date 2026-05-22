@@ -34,8 +34,8 @@ class BeamWiseConvolutionalLayer(nn.Module):
         Initializes the BeamWiseConvolutionalLayer.
 
         Args:
-            device (torch.device): Device for computation (CPU or CUDA).
-            dtype (type): Data type for tensors.
+            device (torch.device | str | None, optional): Device for computation. Defaults to CUDA if available, else CPU.
+            dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
             verbose (bool, optional): If True, enables verbose output for debugging. Defaults to False.
         """
         super().__init__()
@@ -54,11 +54,11 @@ class BeamWiseConvolutionalLayer(nn.Module):
         Performs grouped 2D convolution on batched fluence volumes using provided kernels for each beam/group.
 
         Args:
-            fluence_vol (torch.Tensor): Input tensor of shape [B*G, D, W, H, 1]
-            kernels (torch.Tensor): Kernel tensor of shape [kH, kW, B*G, D]
+            fluence_vol (torch.Tensor): Input fluence volume of shape [B*G, D, H, W, 1].
+            kernels (torch.Tensor): Per-(beam, depth) kernel tensor of shape [kH, kW, B*G, D].
 
         Returns:
-            torch.Tensor: Output tensor of shape [B*G, D, H, W, 1], representing the convolved volumes.
+            torch.Tensor: Convolved volume of shape [B*G, D, H, W, 1].
         """
 
         BG, D, H, W, _ = fluence_vol.shape
