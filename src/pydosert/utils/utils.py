@@ -24,6 +24,9 @@ def find_patient_paths(patient_base: str | Path):
       - RTSTRUCT (first found)
       - CT folder (directory whose files are CT dicoms; choose the one with most slices)
 
+    Args:
+        patient_base (str | Path): Patient directory to search recursively.
+
     Returns:
         ct_folder: Path
         rtplan_paths: list[Path]
@@ -104,10 +107,16 @@ def find_patient_paths(patient_base: str | Path):
     return ct_folder, rtplan_paths, rtdose_paths, rtstruct_path
 
 def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
-    """
-    Finds scalar c that minimizes MAE(||c*A - P||_1).
-    A, P : numpy arrays of same shape (3D or any shape)
-    mask : optional boolean array (same shape) to include only specific voxels
+    """Find the scalar c minimizing the weighted MAE ||c*A - P||_1 (weighted median of P/A).
+
+    Args:
+        A (np.ndarray): Source array of any shape (e.g. [D, H, W]).
+        P (np.ndarray): Target array, same shape as A.
+        mask (np.ndarray | None): Optional boolean array, same shape as A, selecting
+            the voxels to include.
+
+    Returns:
+        (float): Optimal scale factor c.
     """
     if mask is not None:
         A = A[mask]
@@ -135,6 +144,21 @@ def mae_optimal_scale(A: np.ndarray, P: np.ndarray, mask=None):
     return c
 
 def get_shapes(machine: MachineConfig, ct_shape: tuple[int, int, int] = None, number_of_beams: int = None, kernel_size: int = None, field_size: tuple[int, int] = None):
+    """Build a dict of expected tensor shapes for the engine's plan/dose arrays.
+
+    Args:
+        machine (MachineConfig): Machine config providing number_of_leaf_pairs.
+        ct_shape (tuple[int, int, int] | None): CT grid shape (D, H, W).
+        number_of_beams (int | None): Number of beams G; returns None if not given.
+        kernel_size (int | None): Convolution kernel size.
+        field_size (tuple[int, int] | None): Fluence-map field size (rows, cols).
+
+    Returns:
+        (dict[str, tuple] | None): Named shapes, e.g. MLCs [1, G, N, 2], jaws [1, G, 2],
+            MUs [1, G], fluence_volumes [G, D, H, W, 1], radiological_depths [G, H, 1],
+            kernels [kernel_size, kernel_size, G, H], fluence_maps [G, field_size[0],
+            field_size[1]]. None if number_of_beams is None.
+    """
     shapes = dict()
     if number_of_beams is None:
         return
@@ -153,11 +177,16 @@ def get_shapes(machine: MachineConfig, ct_shape: tuple[int, int, int] = None, nu
     return shapes
 
 def sample_tensor_nearest(dose_calc, voxel_size, iso_center, xyz_mm):
-    """
-    dose_calc: torch.Tensor, shape (Z, Y, X)
-    voxel_size: (dx, dy, dz) in mm
-    xyz_mm: np.ndarray of shape (N, 3) with columns [X, Y, Z] in mm
-    returns: torch.Tensor of shape (N,) with calculated dose at those points
+    """Sample a dose volume at given physical points using nearest-voxel lookup.
+
+    Args:
+        dose_calc (torch.Tensor): Dose volume, [Z, Y, X].
+        voxel_size (Sequence[float]): Voxel spacing (dx, dy, dz) in mm.
+        iso_center (Sequence[float]): Isocenter voxel index (cx, cy, cz).
+        xyz_mm (np.ndarray): Query points, [N, 3] with columns [X, Y, Z] in mm.
+
+    Returns:
+        (np.ndarray): Sampled dose at each point, [N].
     """
     Z, Y, X = dose_calc.shape
     dx, dy, dz = voxel_size
@@ -186,19 +215,18 @@ def sample_tensor_nearest(dose_calc, voxel_size, iso_center, xyz_mm):
 
 def export_plan(treatment: OptimizationConfig, input_plan_path, output_plan_path, scaling=400, beam_number="1"):
 
-    """
-    Writes MLC positions and MU values to a new RTPLAN DICOM file.
- 
+    """Write MLC positions, jaw positions and MU values to a new RTPLAN DICOM file.
+
+    Leaf/jaw/MU arrays are taken from ``treatment[0]`` (batch index 0).
+
     Args:
-        input_plan_path: Path to the original RTPLAN file to use as template
-        output_plan_path: Path where the new RTPLAN file will be saved
-        leafs: MLC leaf positions, shape (1, 2, num_control_points, num_leaves)
-               where dim 1 is [higher, lower] banks
-        jaws: Jaw positions, shape (1, 2, num_control_points)
-              where dim 1 is [lower, higher]
-        mus: MU values, shape (1, num_control_points)
-        scaling: Scaling factor to convert normalized positions back to mm
-        beam_number: Beam number to modify (default "1")
+        treatment (OptimizationConfig): Indexable plan; ``treatment[0]`` provides
+            leaf_positions [num_cp, 2, num_leaves], jaw_positions [num_cp, 2] and
+            mus [num_cp].
+        input_plan_path: Path to the original RTPLAN file used as a template.
+        output_plan_path: Path where the new RTPLAN file is saved.
+        scaling (float): Scaling factor to convert normalized positions back to mm.
+        beam_number (str): Beam number to modify (default "1").
     """
     # Load the original plan
     ds = pydicom.dcmread(input_plan_path)
@@ -275,6 +303,17 @@ def export_plan(treatment: OptimizationConfig, input_plan_path, output_plan_path
     print(f"Plan saved to {output_plan_path}")
 
 def get_model_input(patient: Patient, machine: MachineConfig):
+    """Stack the CT and per-structure bound/weight matrices into a model input.
+
+    Args:
+        patient (Patient): Provides ct_array [D, H, W] and structures masks [D, H, W].
+        machine (MachineConfig): Provides per-structure lower/higher bound (Gy and %)
+            and weight maps.
+
+    Returns:
+        (np.ndarray): Stacked input, [6, D, H, W]; channels are scaled CT, lower/higher
+            bound Gy, lower/higher bound percent, and weights.
+    """
     structures = patient.structures
     lower_bound_gys = create_bound_weight_matrix(structures, machine.lower_bound_gys)
     higher_bound_gys = create_bound_weight_matrix(structures, machine.higher_bound_gys)
@@ -289,6 +328,15 @@ def get_model_input(patient: Patient, machine: MachineConfig):
                      weights])
 
 def create_bound_weight_matrix(structures, bound):
+    """Paint per-structure scalar bounds/weights into a single voxel matrix.
+
+    Args:
+        structures (dict[str, np.ndarray]): Structure masks keyed by id, each [D, H, W].
+        bound (dict[str, float]): Per-structure scalar value to assign within its mask.
+
+    Returns:
+        (np.ndarray): Accumulated value matrix, [D, H, W].
+    """
     first_structure = next(iter(structures.values()))
     bound_matrix = np.zeros_like(first_structure, dtype=np.float32)
     for structure_id, array in structures.items():
@@ -297,6 +345,14 @@ def create_bound_weight_matrix(structures, bound):
     return bound_matrix
 
 def prune_patients(patient_list):
+    """Filter patient directories to those containing CT.npy and StructureSet.npy.
+
+    Args:
+        patient_list (Iterable[str]): Candidate patient directory paths.
+
+    Returns:
+        (list[str]): Directories that exist and contain both required files.
+    """
     pruned_list = []
     for patient in patient_list:
         if not os.path.isdir(patient):
@@ -309,10 +365,11 @@ def prune_patients(patient_list):
 def normalize_weights(constraints, sum_value=100):  #
     """
     Normalizes the values in the 'weight' sub-dictionary of the constraints
-    so that their sum is 100.
+    so that their sum equals sum_value.
 
     Args:
         constraints (dict): The constraints dictionary containing the 'weight' key.
+        sum_value (float): Target sum for the normalized weights (default 100).
 
     Returns:
         dict: The modified constraints dictionary with normalized weights.
@@ -333,6 +390,11 @@ def normalize_weights(constraints, sum_value=100):  #
     return constraints
 
 def get_initial_weights():
+    """Return the default (currently all-zero) loss-term weight dict.
+
+    Returns:
+        (dict[str, float]): Initial scalar weight per machine-regularization loss term.
+    """
     min_int_range = -3
     max_int_range = 2
     weights = {

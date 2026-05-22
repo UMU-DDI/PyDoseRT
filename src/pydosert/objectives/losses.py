@@ -6,6 +6,15 @@ from pydosert.utils.utils import get_model_input, create_bound_weight_matrix
 import math
 
 def scale_loss(loss, weight):
+    """Scale a loss term by a scalar weight.
+
+    Args:
+        loss (torch.Tensor): Scalar loss tensor.
+        weight (float): Multiplicative weight.
+
+    Returns:
+        (torch.Tensor): Scalar weighted loss.
+    """
     return loss * weight
 
 
@@ -18,9 +27,21 @@ def constraint_loss(
     region_weights=None,
     number_regions=1,
 ):
-    """
-    Computes the constraint loss for a predicted dose distribution.
-    Assumes dose_pred and bounds are [B, 1, D, H, W] or [B, D, H, W] (broadcastable).
+    """Compute squared lower/upper dose-bound violation losses over masked regions.
+
+    Penalizes dose below ``lower_bound_gy`` and above ``higher_bound_gy``,
+    summed across all structure masks.
+
+    Args:
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W] or [B, D, H, W].
+        lower_bound_gy (torch.Tensor): Per-voxel lower bound (Gy), broadcastable to dose_pred.
+        higher_bound_gy (torch.Tensor): Per-voxel upper bound (Gy), broadcastable to dose_pred.
+        masks (dict[str, torch.Tensor]): Structure masks, each broadcastable to dose_pred.
+        region_weights (torch.Tensor | None): Per-voxel weight matrix broadcastable to dose_pred.
+        number_regions (int): Unused; retained for signature compatibility.
+
+    Returns:
+        (tuple[torch.Tensor, torch.Tensor]): Scalar (lower-bound loss, upper-bound loss).
     """
     penalty_lower = F.relu(lower_bound_gy - dose_pred) ** 2
     penalty_upper = F.relu(dose_pred - higher_bound_gy) ** 2
@@ -42,11 +63,19 @@ def constraint_loss(
 # l2 loss
 # ======================================================================================
 def compute_l2_loss(dose_pred, masks, region_weights=None, number_regions=1):
-    """
-    Computes the L2 loss for a set of regions, encouraging the predicted dose to be near 0.
-    This is intended for regions where a low dose is desired (e.g. OARs).
-    dose_pred: [B, 1, D, H, W]
-    masks: dict of [B, 1, D, H, W]
+    """Compute an L2 loss driving dose toward zero in non-target regions (OARs/background).
+
+    PTV/CTV structures are skipped.
+
+    Args:
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W].
+        masks (dict[str, torch.Tensor]): Structure masks keyed by region name, each [B, 1, D, H, W].
+        region_weights (dict[str, float] | torch.Tensor | None): Per-region weight, or a
+            per-voxel weight matrix [B, 1, D, H, W].
+        number_regions (int): Scalar multiplier applied to the summed loss.
+
+    Returns:
+        (torch.Tensor): Scalar total L2 loss.
     """
     loss_list = []
     for region, mask in masks.items():
@@ -70,7 +99,26 @@ def compute_l2_loss(dose_pred, masks, region_weights=None, number_regions=1):
 # mu loss
 # ======================================================================================
 def mus_loss(mus, config):
+    """Compute MU delivery-rate and complexity regularization losses.
+
+    Args:
+        mus (torch.Tensor): Monitor units per beam/control point, [B, G].
+        config (MachineConfig): Machine config providing maximum_dose_rate,
+            gantry_diff_deg and minimum_gantry_angle_speed.
+
+    Returns:
+        (tuple[torch.Tensor, torch.Tensor]): Scalar (MU-rate loss, MU-complexity loss).
+    """
     def mu_rate_reg(mus, reg_mus):
+        """Penalize squared MU increments between consecutive beams exceeding reg_mus.
+
+        Args:
+            mus (torch.Tensor): Monitor units, [B, G].
+            reg_mus (float): Maximum allowed MU delta per step.
+
+        Returns:
+            (torch.Tensor): Scalar penalty.
+        """
         diffs = mus[:, 1:] - mus[:, :-1]
         violation = torch.clamp(diffs - reg_mus, min=0.0)
         penalty = torch.mean(violation**2)
@@ -90,7 +138,28 @@ def mus_loss(mus, config):
 # leaf loss
 # ======================================================================================
 def leafs_loss(leafs, config):
+    """Compute MLC leaf speed and complexity regularization losses.
+
+    Args:
+        leafs (torch.Tensor): Leaf parameters, [B, 2, G, N], where dim 1 is
+            (center position, opening width), G beams/control points, N leaf pairs.
+        config (MachineConfig): Machine config providing maximum_leaf_speed,
+            resolution, field_size, gantry_diff_deg and minimum_gantry_angle_speed.
+
+    Returns:
+        (tuple[torch.Tensor, torch.Tensor]): Scalar (leaf-speed reg loss, leaf-complexity loss).
+    """
     def leaf_speed_reg(leafs, leaf_rate, huge_penalty=1):
+        """Penalize squared leaf-tip displacements between consecutive beams exceeding leaf_rate.
+
+        Args:
+            leafs (torch.Tensor): Leaf parameters, [B, 2, G, N] (center, width).
+            leaf_rate (float): Maximum allowed normalized tip movement per step.
+            huge_penalty (float): Multiplier on the squared violations.
+
+        Returns:
+            (torch.Tensor): Scalar penalty.
+        """
         left_positions = leafs[:, 0, :, :] - (leafs[:, 1, :, :] / 2)
         right_positions = leafs[:, 0, :, :] + (leafs[:, 1, :, :] / 2)
 
@@ -122,7 +191,28 @@ def leafs_loss(leafs, config):
 # jaws loss
 # ======================================================================================
 def jaws_loss(jaws, config):
+    """Compute jaw speed and complexity regularization losses.
+
+    Args:
+        jaws (torch.Tensor): Jaw parameters, [B, 2, G], where dim 1 is
+            (center position, opening width) and G beams/control points.
+        config (MachineConfig): Machine config providing maximum_jaw_speed,
+            resolution, field_size, gantry_diff_deg and minimum_gantry_angle_speed.
+
+    Returns:
+        (tuple[torch.Tensor, torch.Tensor]): Scalar (jaw-speed reg loss, jaw-complexity loss).
+    """
     def jaw_speed_reg(jaws, jaw_rate, huge_penalty=1):
+        """Penalize squared jaw-edge displacements between consecutive beams exceeding jaw_rate.
+
+        Args:
+            jaws (torch.Tensor): Jaw parameters, [B, 2, G] (center, width).
+            jaw_rate (float): Maximum allowed normalized edge movement per step.
+            huge_penalty (float): Multiplier on the squared violations.
+
+        Returns:
+            (torch.Tensor): Scalar penalty.
+        """
         lower_positions = jaws[:, 0, :] - (jaws[:, 1, :] / 2)
         upper_positions = jaws[:, 0, :] + (jaws[:, 1, :] / 2)
 
@@ -155,7 +245,26 @@ def jaws_loss(jaws, config):
 # total loss
 # ======================================================================================
 def dose_loss(x, dose_pred, constraints, masks, region_weights=None, loss_weights=0):
-    # masks: [B, 7, D, H, W]
+    """Aggregate dose-bound constraint losses and the OAR/background L2 loss.
+
+    Splits the per-structure mask stack into a name-keyed dict and applies the
+    constraint and L2 losses. DVH target losses are currently returned as zero.
+
+    Args:
+        x (torch.Tensor): Stacked model input, [B, 6, D, H, W]; channel 1 is the
+            lower bound (Gy) and channel 2 the upper bound (Gy).
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W].
+        constraints (OptimizationConfig): Provides ``structures`` whose order maps
+            to the mask channels.
+        masks (torch.Tensor): Per-structure masks, [B, S, D, H, W] (S structures).
+        region_weights (torch.Tensor | None): Per-voxel weight matrix, [B, 1, D, H, W].
+        loss_weights (int): Unused; retained for signature compatibility.
+
+    Returns:
+        (tuple[torch.Tensor, ...]): Five scalar losses (lower-bound Gy, upper-bound Gy,
+            lower-bound target, upper-bound target, OAR/background L2).
+    """
+    # masks: [B, S, D, H, W]
     masks_dict = dict()
     for idx, const in enumerate(constraints.structures):
         masks_dict[const.name] = masks[:, idx : idx + 1, ...]
@@ -193,9 +302,16 @@ def dose_loss(x, dose_pred, constraints, masks, region_weights=None, loss_weight
     )
 
 def create_sphere_mask(center, radius, shape=(64, 64, 64)):
-    """
-    Create a spherical binary mask given a center and radius.
-    Returns [1, 1, D, H, W] for PyTorch convention.
+    """Create a spherical binary mask given a center and radius.
+
+    Args:
+        center (Sequence[float]): Sphere center index (length 3, ordered as the
+            axes of ``shape``).
+        radius (float): Sphere radius in voxels.
+        shape (tuple[int, int, int]): Volume shape (D, H, W).
+
+    Returns:
+        (torch.Tensor): Float binary mask, [1, 1, D, H, W].
     """
     grid = np.indices(shape).transpose(1, 2, 3, 0)  # shape: [H, W, D, 3]
     dist = np.sqrt(np.sum((grid - np.array(center)) ** 2, axis=-1))
@@ -205,7 +321,26 @@ def create_sphere_mask(center, radius, shape=(64, 64, 64)):
 
 
 def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
+    """Build a LambdaLR scheduler with linear warmup then cosine decay.
+
+    Args:
+        optimizer (torch.optim.Optimizer): Optimizer whose default lr sets the floor ratio.
+        warmup_steps (int): Number of linear-warmup steps.
+        total_steps (int): Total number of scheduled steps.
+        min_lr (float): Minimum learning rate.
+
+    Returns:
+        (torch.optim.lr_scheduler.LambdaLR): Configured scheduler.
+    """
     def lr_lambda(current_step):
+        """Compute the lr multiplier for the given step (warmup then cosine decay).
+
+        Args:
+            current_step (int): Current optimization step.
+
+        Returns:
+            (float): Learning-rate multiplier.
+        """
         if current_step < warmup_steps:
             # Linear warmup
             return float(current_step) / float(max(1, warmup_steps))
@@ -221,7 +356,24 @@ def cosine_warmup_scheduler(optimizer, warmup_steps, total_steps, min_lr=1e-6):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_mus, leafs, pred_jaws, weights, masks, _masks):
+    """Compute and weight all dose, MU, leaf and jaw loss terms for a plan.
 
+    Args:
+        patient (Patient): Patient providing structures used to build region weights and input.
+        treatment (OptimizationConfig): Optimization config (structures, weights, device).
+        machine_config (MachineConfig): Machine constraints for MU/leaf/jaw regularization.
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W].
+        dose_true (torch.Tensor): Reference dose (unused here), [B, 1, D, H, W].
+        pred_mus (torch.Tensor): Predicted monitor units, [B, G].
+        leafs (torch.Tensor): Predicted leaf parameters, [B, 2, G, N].
+        pred_jaws (torch.Tensor): Predicted jaw parameters, [B, 2, G].
+        weights (dict[str, float]): Scalar weight per named loss term.
+        masks (torch.Tensor): Per-structure masks, [B, S, D, H, W].
+        _masks: Unused; retained for signature compatibility.
+
+    Returns:
+        (list[torch.Tensor]): Scalar weighted loss terms.
+    """
     region_weights = torch.from_numpy(create_bound_weight_matrix(patient.structures, treatment.weights))
     region_weights = region_weights.to(treatment.device)
 
@@ -254,6 +406,23 @@ def compute_loss(patient, treatment, machine_config, dose_pred, dose_true, pred_
     return all_losses
 
 def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true, beam_sequence, weights):
+    """Compute per-structure mean-absolute DVH objective losses (prostate plan presets).
+
+    Targets are pulled toward 42.7 Gy; OARs are pulled toward 0. ``dose_pred`` is
+    scaled by 7 (fractions) before evaluation.
+
+    Args:
+        patient (Patient): Provides boolean ``structures`` masks used to index the dose.
+        optimization (OptimizationConfig): Provides per-structure ``weight`` values.
+        machine_config (MachineConfig): Machine constraints (unused in active path).
+        dose_pred (torch.Tensor): Predicted dose, [B, D, H, W]; structure masks share (D, H, W).
+        dose_true (torch.Tensor): Reference dose (unused), [B, D, H, W].
+        beam_sequence (BeamSequence): Beam sequence (unused in active path).
+        weights (dict[str, float]): Scalar weights for machine regularization (unused in active path).
+
+    Returns:
+        (list[torch.Tensor]): Scalar weighted per-structure losses.
+    """
     dose_pred = dose_pred * 7
     raw_losses = []
     # PTV_Prostata_gol_4270
@@ -280,6 +449,20 @@ def compute_dvh_loss(patient, optimization, machine_config, dose_pred, dose_true
     return raw_losses
 
 def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, beam_sequence, weights):
+    """Compute per-structure weighted dose MAE plus leaf complexity/range losses.
+
+    Args:
+        patient (Patient): Provides boolean ``structures`` masks, each [D, H, W].
+        treatment (OptimizationConfig): Provides per-structure ``weights``.
+        machine_config (MachineConfig): Provides maximum_leaf_tip_overlap.
+        dose_pred (torch.Tensor): Predicted dose, [B, D, H, W] (indexed at batch 0).
+        dose_true (torch.Tensor): Reference dose, [B, D, H, W].
+        beam_sequence (BeamSequence): Provides leaf_positions [G, 2, N] and field_size.
+        weights (dict[str, float]): Scalar weights for leaf loss terms.
+
+    Returns:
+        (list[torch.Tensor]): Scalar weighted loss terms.
+    """
     losses = []
     for name, mask in patient.structures.items():
         losses.append(treatment.weights[name] * torch.mean(torch.abs(dose_true - dose_pred)[0, mask]))
@@ -292,13 +475,16 @@ def compute_mae_loss(patient, treatment, machine_config, dose_pred, dose_true, b
     return losses
 
 def leaf_range_loss(leafs, field_size=400, threshold_mm=150.0):
-    """
-    Penalize leaf tip differences (max - min) that exceed threshold.
+    """Penalize per-bank leaf-tip range (max - min) exceeding a threshold.
 
     Args:
-        leafs: [B, 2, CP, num_leafs] - leaf positions (normalized 0-1)
-        config: machine config with field_size
-        threshold_mm: maximum allowed range in mm (default 150.0)
+        leafs (torch.Tensor): Normalized (0-1) leaf positions, [..., 2]; the last
+            axis indexes the two leaf banks.
+        field_size (float): Field size in mm, used to normalize the threshold.
+        threshold_mm (float): Maximum allowed leaf-tip range in mm.
+
+    Returns:
+        (torch.Tensor): Scalar summed violation penalty for both banks.
     """
     # Convert threshold from mm to normalized units
     threshold_normalized = threshold_mm / field_size
@@ -329,21 +515,20 @@ def dvh_percentile_objective(
     volume_percent: float,
     p_norm: float = 1.0,
 ) -> torch.Tensor:
-    """
-    Pure objective for D_p% (dose at p% volume).
+    """Pure objective for D_p% (dose at p% volume), returning D_p^p_norm.
 
-    Returns:
-        D_p^p_norm  (scalar tensor)
-
-    You control direction with a sign outside:
-        - to push D_p UP:   use   loss += -w * dvh_percentile_objective(...)
-        - to push D_p DOWN: use   loss += +w * dvh_percentile_objective(...)
+    Direction is controlled by the caller's sign: subtract to push D_p up, add to
+    push it down.
 
     Args:
-        dose_pred:       [B, 1, D, H, W] or [B, D, H, W] or [D, H, W]
-        structure_mask:  same shape (0/1 or bool)
-        volume_percent:  p in [0,100], e.g. 99 -> D99%, 0 -> D0% (≈ Dmax)
-        p_norm:          exponent on D_p (1.0 = linear, 2.0 = quadratic, etc.)
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W], [B, D, H, W] or [D, H, W];
+            promoted internally to [B, 1, D, H, W].
+        structure_mask (torch.Tensor): Mask matching dose_pred's spatial shape (0/1 or bool).
+        volume_percent (float): p in [0, 100], e.g. 99 -> D99%, 0 -> D0% (approx Dmax).
+        p_norm (float): Exponent on D_p (1.0 linear, 2.0 quadratic, etc.).
+
+    Returns:
+        (torch.Tensor): Scalar D_p ** p_norm (0 if the structure is empty).
     """
     # Ensure channel dimension
     if dose_pred.ndim == 3:
@@ -382,22 +567,21 @@ def dvh_volume_objective(
     temperature: float = 10.0,
     p_norm: float = 1.0,
 ) -> torch.Tensor:
-    """
-    Pure objective for V_x (volume receiving at least x Gy).
+    """Pure objective for V_x (volume % receiving at least x Gy), returning V_x^p_norm.
 
-    Returns:
-        V_x^p_norm  where V_x is in %, averaged over batch.
-
-    Again, direction is controlled outside:
-        - to push V_x DOWN: loss += +w * dvh_volume_objective(...)
-        - to push V_x UP:   loss += -w * dvh_volume_objective(...)
+    Direction is controlled by the caller's sign: subtract to push V_x up, add to
+    push it down.
 
     Args:
-        dose_pred:       [B, 1, D, H, W] or [B, D, H, W] or [D, H, W]
-        structure_mask:  same shape
-        dose_threshold:  x in V_x Gy (float, Gy)
-        temperature:     sigmoid slope (softness around dose_threshold)
-        p_norm:          exponent on V_x (%)
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W], [B, D, H, W] or [D, H, W];
+            promoted internally to [B, 1, D, H, W].
+        structure_mask (torch.Tensor): Mask matching dose_pred's spatial shape (0/1 or bool).
+        dose_threshold (float): x in V_x, the dose level in Gy.
+        temperature (float): Sigmoid slope (softness around dose_threshold).
+        p_norm (float): Exponent on V_x (in %).
+
+    Returns:
+        (torch.Tensor): Scalar V_x ** p_norm (V_x in %, averaged over batch).
     """
     # Ensure channel dimension
     if dose_pred.ndim == 3:
@@ -440,30 +624,25 @@ def dvh_percentile_loss_with_threshold(
     p_norm: float = 1.0,     # exponent on Dp, e.g. 1.0 or 2.0
     slope: float = 0.1,      # 0 < slope <= 1: strength after constraint is satisfied
 ) -> torch.Tensor:
-    """
-    Hybrid DVH percentile objective:
+    """Hybrid DVH percentile objective on D_p% with a soft constraint threshold.
 
-        D_p% := dose at given volume_percent (e.g. 99 -> D99, 0 -> Dmax)
-        base_objective = D_p^p_norm
+    base_objective = D_p^p_norm, where D_p% is the dose at the given volume_percent
+    (e.g. 99 -> D99, 0 -> Dmax). The sign of alpha sets the push direction (positive
+    pushes D_p down, negative pushes it up); the objective weight drops from 1 to
+    ``slope`` once the bound_value constraint is satisfied (no hinge / sign flip).
 
-    Direction:
-        alpha > 0  => minimizing loss pushes D_p DOWN (toward 0 Gy)
-        alpha < 0  => minimizing loss pushes D_p UP   (toward large dose)
-
-    Threshold logic with bound_value (in Gy):
-        - If alpha > 0 (push down), we interpret bound_value as an *upper bound*:
-              D_p >  bound_value  => full strength (scale = 1)
-              D_p <= bound_value  => weakened strength (scale = slope)
-        - If alpha < 0 (push up), we interpret bound_value as a *lower bound*:
-              D_p <  bound_value  => full strength (scale = 1)
-              D_p >= bound_value  => weakened strength (scale = slope)
-
-    No hinge / no sign flip at the threshold:
-        The objective always pushes in the same direction given by alpha,
-        but its *weight* changes once the constraint is satisfied.
+    Args:
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W], [B, D, H, W] or [D, H, W];
+            promoted internally to [B, 1, D, H, W].
+        structure_mask (torch.Tensor): Mask matching dose_pred's spatial shape (0/1 or bool).
+        volume_percent (float): p in [0, 100] selecting D_p%.
+        alpha (float): Direction/weight; +1 pushes D_p down, -1 pushes D_p up, 0 -> no loss.
+        bound_value (float): Constraint dose (Gy); upper bound if alpha>0, lower bound if alpha<0.
+        p_norm (float): Exponent on D_p.
+        slope (float): Weakened scale (0 < slope <= 1) applied once the constraint is satisfied.
 
     Returns:
-        Scalar loss tensor.
+        (torch.Tensor): Scalar loss (0 if the structure is empty or alpha == 0).
     """
     # Ensure channel dimension
     if dose_pred.ndim == 3:
@@ -537,29 +716,26 @@ def dvh_volume_loss_with_threshold(
     p_norm: float = 1.0,          # exponent on Vx
     slope: float = 0.1,           # scale factor once constraint satisfied
 ) -> torch.Tensor:
-    """
-    Hybrid DVH volume-at-dose objective:
+    """Hybrid DVH volume-at-dose objective on V_x with a soft constraint threshold.
 
-        V_x := volume fraction (%) of structure receiving >= dose_threshold
+    base_objective = V_x^p_norm, where V_x is the volume fraction (%) of the structure
+    receiving >= dose_threshold. The sign of alpha sets the push direction (positive
+    pushes V_x down, negative pushes it up); the objective weight drops from 1 to
+    ``slope`` once the volume_bound_percent constraint is satisfied (no hinge / sign flip).
 
-        base_objective = V_x^p_norm
-
-    Direction:
-        alpha > 0  => minimizing loss pushes V_x DOWN  (less volume ≥ x Gy)
-        alpha < 0  => minimizing loss pushes V_x UP    (more volume ≥ x Gy)
-
-    Threshold logic with volume_bound_percent (in %):
-        - If alpha > 0 (push down), interpret volume_bound_percent as *upper bound*:
-              V_x >  bound  => full strength
-              V_x <= bound  => scaled by slope
-        - If alpha < 0 (push up), interpret volume_bound_percent as *lower bound*:
-              V_x <  bound  => full strength
-              V_x >= bound  => scaled by slope
-
-    Always pushes in same direction (no hinge), weight just changes after threshold.
+    Args:
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W], [B, D, H, W] or [D, H, W];
+            promoted internally to [B, 1, D, H, W].
+        structure_mask (torch.Tensor): Mask matching dose_pred's spatial shape (0/1 or bool).
+        dose_threshold (float): x in V_x, the dose level in Gy.
+        alpha (float): Direction/weight; +1 pushes V_x down, -1 pushes V_x up, 0 -> no loss.
+        volume_bound_percent (float): Constraint volume (%); upper bound if alpha>0, lower bound if alpha<0.
+        temperature (float): Sigmoid slope on dose.
+        p_norm (float): Exponent on V_x.
+        slope (float): Weakened scale (0 < slope <= 1) applied once the constraint is satisfied.
 
     Returns:
-        Scalar loss tensor.
+        (torch.Tensor): Scalar loss (0 if alpha == 0).
     """
     # Ensure channel dimension
     if dose_pred.ndim == 3:
@@ -623,9 +799,20 @@ def dvh_Dp_loss(
     violation_weight=10,
     slack_weight=0.1
 ):
-    """
-    Smooth hinge loss on D_p%.
-    Extremely stable. Always converges.
+    """Smooth squared-hinge loss on D_p% toward a target dose.
+
+    Args:
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W], [B, D, H, W] or [D, H, W];
+            promoted internally to [B, 1, D, H, W].
+        mask (torch.Tensor): Structure mask matching dose_pred's spatial shape (0/1 or bool).
+        p (float): Percentile in [0, 100] selecting D_p%.
+        target (float): Target dose in Gy.
+        direction (str): "at_least" (penalize D_p below target) or "at_most" (above target).
+        violation_weight (float): Weight on the squared constraint violation.
+        slack_weight (float): Weight on the squared slack (satisfied side).
+
+    Returns:
+        (torch.Tensor): Scalar loss (0 if the structure is empty).
     """
     # Extract structure
     if dose_pred.ndim == 3: dose_pred = dose_pred.unsqueeze(0).unsqueeze(0)
@@ -664,9 +851,21 @@ def dvh_Vx_loss(
     violation_weight=10,
     slack_weight=0.1
 ):
-    """
-    Smooth hinge loss on V_x%.
-    Very stable, differentiable, converges well.
+    """Smooth squared-hinge loss on V_x% toward a target volume.
+
+    Args:
+        dose_pred (torch.Tensor): Predicted dose, [B, 1, D, H, W], [B, D, H, W] or [D, H, W];
+            promoted internally to [B, 1, D, H, W].
+        mask (torch.Tensor): Structure mask matching dose_pred's spatial shape (0/1 or bool).
+        x (float): Dose threshold in Gy defining V_x.
+        target_volume_percent (float): Target volume in %.
+        direction (str): "at_least" (penalize V_x below target) or "at_most" (above target).
+        temperature (float): Sigmoid slope on dose.
+        violation_weight (float): Weight on the squared constraint violation.
+        slack_weight (float): Weight on the squared slack (satisfied side).
+
+    Returns:
+        (torch.Tensor): Scalar loss.
     """
     # Ensure shape
     if dose_pred.ndim == 3: dose_pred = dose_pred.unsqueeze(0).unsqueeze(0)

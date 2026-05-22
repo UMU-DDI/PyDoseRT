@@ -169,6 +169,39 @@ def result_validation(patient: Patient,
                       gamma_threshold_dose: float = 3.0,
                       gamma_threshold_distance: float = 3.0
                       ) -> Dict[str, float]:
+    """
+    Validate a predicted plan against clinical criteria, dose-difference, DVH,
+    gamma and machine-deliverability checks.
+
+    Parameters:
+    -----------
+    patient : Patient
+        Patient with reference dose [D, H, W] and boolean structure masks [D, H, W].
+    machine_config : MachineConfig
+        Machine constraints (minimum_leaf_opening, etc.).
+    beam_sequence : BeamSequence
+        Predicted beam sequence; leaf_positions [2, G, N], mus [G], jaw_positions [2, G].
+    pred_dose : torch.Tensor
+        Predicted dose, [D, H, W] (matches structure mask spatial shape).
+    optimization_config : OptimizationConfig, optional
+        Provides prescription_gy and validate(); required if compute_clinical_criteria.
+    compute_gamma : bool
+        If True, compute gamma pass rate (requires the optional pymedphys dependency).
+    compute_clinical_criteria : bool
+        If True, compute clinical-criteria, Dice, dose-difference and DVH metrics.
+    global_normalisation : float, optional
+        Reference dose for global gamma; defaults to the reference max dose.
+    gamma_threshold_dose : float
+        Gamma dose-difference threshold (%).
+    gamma_threshold_distance : float
+        Gamma distance-to-agreement threshold (mm).
+
+    Returns:
+    --------
+    Dict[str, float]
+        Metric name to value, including clinical criteria, Dice, dose differences,
+        per-structure DVH metrics, optional gamma stats and deliverability checks.
+    """
     results = {}
     patient = patient.to('cpu')
     
