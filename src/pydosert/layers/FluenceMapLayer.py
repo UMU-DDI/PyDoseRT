@@ -45,9 +45,16 @@ class FluenceMapLayer(nn.Module):
     and overlap calculations required for accurate dose modeling.
 
     Attributes:
-        config (MachineConfig): Configuration object containing field size, leaf sizes, and number of leafs.
+        machine_config (MachineConfig): Configuration object containing field size, leaf sizes, and number of leafs.
         verbose (bool): Flag to enable verbose logging.
         device (torch.device): Device on which computations are performed (CPU or CUDA).
+        dtype (torch.dtype): Data type for tensors.
+        field_size (tuple[int, int]): Field size (H, W) in pixels.
+        pixel_size_mm (float): Physical size of one fluence-map pixel in mm.
+        training_sharpness (float): Sharpness parameter for smooth gradients during training.
+        leaf_widths (torch.Tensor): Per-leaf-pair widths, shape [N].
+        depth_indices (torch.Tensor): Pixel-center positions in mm along W per leaf, shape [1, W, N].
+        jaw_indices (torch.Tensor): Pixel-center positions in mm along H, shape [1, 1, H].
     """
 
     def __init__(
@@ -63,13 +70,14 @@ class FluenceMapLayer(nn.Module):
         """
         Initializes the FluenceMapLayer.
 
-        Args:            
+        Args:
             machine_config (MachineConfig): Configuration object with machine parameters.
-            field_size (tuple[int, int]): Field size (width, height) in pixels.
-            device (torch.device): Device on which computations are performed.
-            dtype (type): Data type for tensors.
+            field_size (tuple[int, int]): Field size (H, W) in pixels.
+            device (torch.device | str | None, optional): Device on which computations are performed. Defaults to CUDA if available, else CPU.
+            dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
             verbose (bool, optional): If True, enables verbose output. Defaults to False.
             training_sharpness (float, optional): Sharpness parameter for smooth gradients during training. Defaults to 10.0.
+            pixel_size_mm (float, optional): Physical size of one fluence-map pixel in mm; scales the precomputed depth/jaw indices so leaf/jaw positions (mm) are directly comparable. Defaults to 1.0.
         """
         super().__init__()
 

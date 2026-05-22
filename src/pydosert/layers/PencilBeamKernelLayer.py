@@ -31,11 +31,13 @@ class PencilBeamKernelLayer(nn.Module):
     dose calculation in radiotherapy planning.
 
     Attributes:
-        config (MachineConfig): Configuration object.
-        kernel_size (int): Size of the dose kernel.
+        machine_config (MachineConfig): Configuration object.
+        kernel_size (tuple[int, int]): Size of the dose kernel (kH, kW).
         verbose (bool): Verbosity flag.
         device (torch.device): Device for computation (CPU or CUDA).
-        pbm: PencilBeamModel instance for kernel calculation.
+        dtype (torch.dtype): Data type for tensors.
+        resolution (tuple[float, float, float]): Voxel spacing in mm.
+        pbm (PencilBeamModel): PencilBeamModel instance for kernel calculation.
     """
     def __init__(self, 
                  machine_config: MachineConfig, 
@@ -50,9 +52,10 @@ class PencilBeamKernelLayer(nn.Module):
         Args:
             machine_config (MachineConfig): Configuration object with CT and beam parameters.
             resolution (tuple[float, float, float]): Voxel spacing in mm.
-            kernel_size (tuple[int, int]): Size of the dose kernel (height, width).
-            device (torch.device): Device for computation (CPU or CUDA).
-            dtype (type): Data type for tensors.
+            kernel_size (tuple[int, int]): Size of the dose kernel (kH, kW).
+            device (torch.device | str | None, optional): Device for computation. Defaults to CUDA if available, else CPU.
+            dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
+            verbose (bool, optional): If True, enables verbose output. Defaults to False.
         """
         super().__init__()
 
@@ -75,7 +78,8 @@ class PencilBeamKernelLayer(nn.Module):
         Generates pencil beam dose kernels for each voxel based on radiological depth.
 
         Args:
-            radiological_depth (torch.Tensor): Tensor of shape [B*G, P, 1] representing radiological depth for each voxel.
+            radiological_depth (torch.Tensor): Radiological depth per ray point, shape [B*G, P, 1],
+                where P is the number of depth points along each ray (P == D).
 
         Returns:
             torch.Tensor: Dose kernels of shape [kH, kW, B*G, D].

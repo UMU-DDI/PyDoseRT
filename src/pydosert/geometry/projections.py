@@ -2,7 +2,18 @@ import torch
 import torch.nn.functional as F
 
 def soft_max(a, b, sharpness=10.0):
-    """Smooth approximation of max(a, b) using LogSumExp with broadcasting support."""
+    """
+    Smooth approximation of max(a, b) using LogSumExp with broadcasting support.
+
+    Args:
+        a (torch.Tensor): First operand, any shape broadcastable with ``b``.
+        b (torch.Tensor): Second operand, any shape broadcastable with ``a``.
+        sharpness (float): Larger values give a closer approximation to the hard
+            max (default 10.0).
+
+    Returns:
+        torch.Tensor: Element-wise smooth max, broadcast shape of ``a`` and ``b``.
+    """
     a_scaled = a * sharpness
     b_scaled = b * sharpness
     # Manual LogSumExp: log(exp(a) + exp(b)) with numerical stability
@@ -10,7 +21,18 @@ def soft_max(a, b, sharpness=10.0):
     return (max_val + torch.log(torch.exp(a_scaled - max_val) + torch.exp(b_scaled - max_val))) / sharpness
  
 def soft_min(a, b, sharpness=10.0):
-    """Smooth approximation of min(a, b) using LogSumExp with broadcasting support."""
+    """
+    Smooth approximation of min(a, b) using LogSumExp with broadcasting support.
+
+    Args:
+        a (torch.Tensor): First operand, any shape broadcastable with ``b``.
+        b (torch.Tensor): Second operand, any shape broadcastable with ``a``.
+        sharpness (float): Larger values give a closer approximation to the hard
+            min (default 10.0).
+
+    Returns:
+        torch.Tensor: Element-wise smooth min, broadcast shape of ``a`` and ``b``.
+    """
     # min(a, b) = -max(-a, -b)
     return -soft_max(-a, -b, sharpness)
 
@@ -30,12 +52,19 @@ def fractional_box_overlap(d, left, right, min_value=0.0, max_value=1.0, pixel_s
     position.
 
     Args:
-        d: Pixel centre positions (mm).
-        left: Left edge of aperture (mm).
-        right: Right edge of aperture (mm).
-        min_value: Floor value (e.g. MLC transmission, default 0).
-        max_value: Ceiling value (default 1).
-        pixel_size: Physical pixel width in mm (default 1.0).
+        d (torch.Tensor): Pixel centre positions (mm), any shape broadcastable
+            with ``left``/``right`` (e.g. [1, W, N]).
+        left (torch.Tensor): Left edge of aperture (mm), broadcastable with ``d``
+            (e.g. [B*G, W, N]).
+        right (torch.Tensor): Right edge of aperture (mm), broadcastable with ``d``
+            (e.g. [B*G, W, N]).
+        min_value (float): Floor value (e.g. MLC transmission, default 0).
+        max_value (float): Ceiling value (default 1).
+        pixel_size (float): Physical pixel width in mm (default 1.0).
+
+    Returns:
+        torch.Tensor: Fractional overlap per pixel, broadcast shape of the
+            inputs, clamped to ``[min_value, max_value]``.
     """
     half_w = pixel_size / 2
     bin_start = d - half_w
@@ -57,10 +86,16 @@ def resample_fluence_map(values: torch.Tensor, leaf_widths: torch.Tensor, field_
     Now one bin equals one pixel in the output fluence map.
 
     Args:
-        values (torch.Tensor): Input fluence values of shape [B*G, W, N, 1].
+        values (torch.Tensor): Input fluence values of shape [B*G, W, N, 1],
+            where N is the number of leaf pairs along the leaf-bank axis.
+        leaf_widths (torch.Tensor): Per-leaf widths (mm), shape [N]; also accepts
+            a list of N floats.
+        field_size (int): Number of output bins H along the leaf-bank axis.
+        dtype (type): torch dtype for the computation and output.
 
     Returns:
-        torch.Tensor: Resampled fluence map of shape [B*G, W, H, 1].
+        torch.Tensor: Resampled fluence map of shape [B*G, W, H, 1], where the N
+            leaf-pair stripes have been rebinned into H equal-width output bins.
     """
     B, W, N, _ = values.shape
     H = field_size

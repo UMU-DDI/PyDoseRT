@@ -27,7 +27,15 @@ ROI_SYNONYM_CONFIG = {
     }
 
 def load_ct_images(folder_path):
-    """Loads all CT DICOM files from a specified folder."""
+    """
+    Load all CT-modality DICOM datasets from a folder.
+
+    Args:
+        folder_path (str): Folder containing DICOM files.
+
+    Returns:
+        list[pydicom.Dataset]: Datasets whose Modality is "CT" (unsorted).
+    """
     ct_images = []
 
     for filename in os.listdir(folder_path):
@@ -46,6 +54,20 @@ def load_ct_images(folder_path):
     return ct_images
 
 def load_ct_series(ct_folder):
+    """
+    Load a CT series into a SimpleITK volume, applying rescale slope/intercept.
+
+    Slices are sorted by Z position and stacked; the resulting array is
+    transposed to (z, y, x) before being wrapped as a SimpleITK image with
+    spacing, origin and direction set from the DICOM metadata.
+
+    Args:
+        ct_folder (str): Folder containing CT DICOM files.
+
+    Returns:
+        tuple[sitk.Image, pydicom.Dataset]: The CT volume (HU, axes z, y, x) and
+            the first (reference) slice dataset.
+    """
     # Load and sort CT slices
     slices = load_ct_images(ct_folder)
     slices.sort(key=lambda s: float(s.ImagePositionPatient[2]))  # sort by Z position
@@ -83,7 +105,22 @@ def load_ct_series(ct_folder):
     return sitk_img, slices[0]
 
 def fetch_plan_data(plan_path: str) -> str:
-    """Summarizes the RTPLAN beam information in the dataset."""
+    """
+    Parse an RTPLAN into per-beam control-point Beam objects.
+
+    For each MLCX control point a Beam is built: leaf_positions [N, 2] from the
+    split LeafJawPositions (left, right), jaw_positions [2] from the ASYMY jaw,
+    a scalar incremental mu (difference of cumulative meterset weights), gantry
+    and collimator angles in radians, plus isocenter (z, y, x) and SID/SSD.
+
+    Args:
+        plan_path (str): Path to the RTPLAN DICOM file.
+
+    Returns:
+        dict[str, tuple[list[Beam], int]]: Keyed by
+            "{SOPInstanceUID}_{BeamNumber}", each value is the list of per
+            control-point Beam objects and the planned number of fractions.
+    """
     ds = pydicom.dcmread(plan_path)
     data = dict()
     beam_metersets = dict()
@@ -139,7 +176,23 @@ def fetch_plan_data(plan_path: str) -> str:
     return parameters
 
 def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[str] | None = None):
-    
+    """
+    Load RTSTRUCT ROIs as SimpleITK masks resampled onto the CT grid.
+
+    Requested names are matched against available ROI names by substring, then
+    by the ROI_SYNONYM_CONFIG synonym table; unmatched names are skipped.
+
+    Args:
+        ct_series (sitk.Image): Reference CT volume (z, y, x) for origin,
+            direction and spacing.
+        ct_folder_path (str): Folder of CT DICOM files (for RTStructBuilder).
+        struct_path (str | None): Path to the RTSTRUCT file; None returns {}.
+        struct_names (List[str] | None): Requested structure names; None loads all.
+
+    Returns:
+        dict[str, sitk.Image]: Mask images keyed by requested name, each (z, y, x)
+            on the CT grid.
+    """
     masks = dict()
     if struct_path is not None:
         rtstruct = RTStructBuilder.create_from(
@@ -197,6 +250,17 @@ def load_structures(ct_series, ct_folder_path, struct_path, struct_names: List[s
     return masks
 
 def load_dose(path):
+    """
+    Load an RTDOSE file and apply its DoseGridScaling.
+
+    Args:
+        path (str | Path): Path to the RTDOSE DICOM file.
+
+    Returns:
+        tuple[sitk.Image, str]: The scaled dose volume (z, y, x) and a beam name
+            built from the referenced RTPLAN SOPInstanceUID (suffixed with the
+            referenced beam number when available).
+    """
     # Load with pydicom for DoseGridScaling
     dataset = pydicom.dcmread(path)
     scaling = float(dataset.DoseGridScaling)
@@ -223,8 +287,11 @@ def safe_get_beam_number(ds):
          -> ReferencedBeamSequence[0]
             -> ReferencedBeamNumber
 
+    Args:
+        ds (pydicom.Dataset): RTDOSE dataset.
+
     Returns:
-        int | None
+        int | None: Referenced beam number, or None if any link is missing.
     """
     try:
         rtplan_seq = getattr(ds, "ReferencedRTPlanSequence", None)

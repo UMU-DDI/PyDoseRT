@@ -27,19 +27,20 @@ def load_dicom(
     Load DICOM data and create Patient and BeamSequence.
     
     Args:
-        ct_folder: Path to folder containing CT DICOM files
-        dose_paths: Path to RTDOSE file(s)
-        plan_path: Path to RTPLAN file        
-        struct_path: Path to RTSTRUCT file
-        struct_names: List of structure names to load (None = all)
-        treatment_preset: Path to treatment preset JSON
-        recenter: Whether to recenter to isocenter
-        use_delivery: If True (default), configure for delivery positions (N averaged).
-                      If False, configure for raw control points (N+1 from DICOM).
-                device: Device for BeamSequence tensors
-        dtype: Data type for BeamSequence tensors
+        ct_folder (Path): Path to folder containing CT DICOM files.
+        dose_path (List[Path] | Path | None): Path(s) to RTDOSE file(s).
+        plan_path (Path | None): Path to RTPLAN file.
+        struct_path (Path | None): Path to RTSTRUCT file.
+        struct_names (List[str] | None): List of structure names to load (None = all).
+        use_delivery (bool): If True, configure for delivery positions (N averaged).
+            If False (default), configure for raw control points (N+1 from DICOM).
+        new_spacing (tuple[float, float, float]): Target voxel spacing (z, y, x) in mm.
+        crop_volume (bool): If True, center-crop the axial plane to 40 cm.
+        device (torch.device | str): Device for BeamSequence tensors.
+        dtype (torch.dtype): Data type for BeamSequence tensors.
     Returns:
-        (Patient, List[BeamSequence]): Patient data and list of beam sequences
+        tuple[Patient, list[BeamSequence]]: Patient (CT/dose/structure tensors of
+            shape [D, H, W]) and the list of per-beam BeamSequence objects.
     Note:
         When use_delivery=True:
         - BeamSequence contains N delivery positions (averaged from N+1 control points)
@@ -151,7 +152,13 @@ def load_dicom(
 def resample_image_to_spacing(image, new_spacing, interpolator=sitk.sitkLinear):
     """
     Resample a SimpleITK image to a new spacing, keeping the same physical extent.
-    new_spacing should be a 3-tuple (sx, sy, sz) in mm.
+    
+    Args:
+        image (sitk.Image): Image to resample.
+        new_spacing (tuple[float, float, float]): Target spacing (sx, sy, sz) in mm.
+        interpolator: SimpleITK interpolator (default sitk.sitkLinear).
+    Returns:
+        sitk.Image: Resampled image with the requested spacing.
     """
     original_spacing = image.GetSpacing()   # (sx, sy, sz)
     original_size = image.GetSize()         # (nx, ny, nz)
@@ -232,18 +239,16 @@ def load_asc_measurements(path: str,
     """
     Load a BDS-style .asc file and split it into measurements.
 
-    coord_map:
-        Mapping from engine (x,y,z) to ASC axes.
-        Each entry must be one of "X", "Y", "Z".
-
-        Example:
-            coord_map=("X", "Z", "Y")
-            -> engine_x = ASC.X
-               engine_y = ASC.Z
-               engine_z = ASC.Y
-
+    Args:
+        path (str): Path to the .asc measurement file.
+        coord_map (Tuple[str, str, str]): Mapping from engine (x, y, z) to ASC
+            axes; must be a permutation of ("X", "Y", "Z"). For example
+            coord_map=("X", "Z", "Y") maps engine_x=ASC.X, engine_y=ASC.Z,
+            engine_z=ASC.Y.
+    Raises:
+        ValueError: If coord_map is not a permutation of ("X", "Y", "Z").
     Returns:
-        measurements: list of dicts, each with:
+        list[dict]: One dict per measurement, each with:
             - 'measurement_number': int or None
             - 'header_dict': parsed % / : lines, e.g. {'DAT': '09-07-2015', ...}
             - 'header_lines': raw header lines

@@ -24,10 +24,13 @@ def convert_HU_to_density(
     """
     Interpolates HU values to densities using a lookup table (LUT).
 
-    Args:
-        hu_tensor (torch.Tensor): Tensor of HU values [B, M, N] (can be any shape).
+    Args:        
+        hu_tensor (torch.Tensor): HU values of arbitrary shape [...].
+        lut_table (torch.Tensor): LUT of shape [L, 2]; column 0 = HU values
+            (ascending), column 1 = corresponding densities. Defaults to a
+            built-in tissue calibration curve.
     Returns:
-        torch.Tensor: Tensor of the same shape as hu_tensor.
+        torch.Tensor: Interpolated densities, same shape as hu_tensor [...].
     """
     lut_table = lut_table.to(hu_tensor.dtype).to(hu_tensor.device)
 

@@ -10,16 +10,19 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype, iso_center=No
     with uniform voxel spacing in the rotated coordinate frame. Returns exactly D points per ray.
 
     Args:
-        input_shape: (H, D, W) - shape of CT volume in voxels
-        angles_rad: list/tensor of rotation angles in radians
-        dtype: torch dtype for output
-        iso_center: (X, Y, Z) - isocenter in physical coordinates (mm), where X=height, Y=depth, Z=width
-        resolution: (rx, ry, rz) - voxel spacing in mm, where rx=res_height, ry=res_depth, rz=res_width
+        input_shape (tuple): (H, D, W) - shape of CT volume in voxels.
+        angles_rad (Sequence[float] | torch.Tensor): G rotation angles in radians,
+            iterated over to produce one ray per angle.
+        dtype (type): torch dtype for the output coordinates.
+        iso_center (Optional[tuple]): (X, Y, Z) isocenter in physical coordinates (mm),
+            where X=height, Y=depth, Z=width. Defaults to the volume centre when None.
+        resolution (Optional[tuple]): (rx, ry, rz) voxel spacing in mm, where rx=res_height,
+            ry=res_depth, rz=res_width. Only used together with iso_center.
 
     Returns:
-        indices: [1, G, D, 3] - floating point coordinates (x, y, z) for sampling
-                 where x∈[0,W-1], y∈[0,D-1], z∈[0,H-1]
-                 Each ray has exactly D points
+        torch.Tensor: Floating-point sampling coordinates of shape [1, G, D, 3], last
+            axis ordered (x, y, z) with x in [0, W-1], y in [0, D-1], z in [0, H-1].
+            Each ray has exactly D points.
     """
     H, D, W = input_shape
 
@@ -79,13 +82,17 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype, iso_center=No
 def rotate_2d_images(images, angles_rad, device, dtype):
     """
     Rotate 2D images by given angles using affine transformation.
+
     Args:
-        images: [B*G, H, W] - batch of 2D images
-        angles_rad: [G] - rotation angles in radians (one per control point)
-        device: torch device
-        dtype: torch dtype
+        images (torch.Tensor): Batch of 2D images, shape [B*G, H, W].
+        angles_rad (Sequence[float] | torch.Tensor): G rotation angles in radians
+            (one per control point), shape [G] or [B, G]; a 2D tensor is flattened
+            and the per-beam angles are repeated B times to match B*G images.
+        device: torch device for the computation.
+        dtype: torch dtype for the computation.
+
     Returns:
-        rotated_images: [B*G, H, W] - rotated images
+        torch.Tensor: Rotated images of shape [B*G, H, W].
     """
     BG, H, W = images.shape
 
@@ -129,18 +136,21 @@ def rotate_2d_images(images, angles_rad, device, dtype):
 
 def build_rotation_grids(input_shape, angles_rad, device, dtype, iso_center=None, resolution=None):
     """
-    Build rotation grids for rotating D×W images by given angles around a specified point.
+    Build rotation grids for rotating D×W slices by given angles around a specified point.
 
     Args:
-        input_shape: (B, G, D, H, W)
-        angles_rad: Tensor of G rotation angles in radians
-        device: torch device
-        dtype: torch dtype
-        iso_center: (X, Y, Z) - isocenter in physical coordinates (mm), where X=height, Y=depth, Z=width
-        resolution: (rx, ry, rz) - voxel spacing in mm, where rx=res_height, ry=res_depth, rz=res_width
+        input_shape: (B, G, D, H, W) - shape of the dose volume to rotate. Only G,
+            D, W are used to build the grid; B and H are broadcast by the caller.
+        angles_rad (torch.Tensor): G rotation angles in radians, shape [G].
+        device: torch device for the output grid.
+        dtype: torch dtype for the output grid.
+        iso_center: (X, Y, Z) - isocenter in physical coordinates (mm), where X=height, Y=depth, Z=width. Rotation is centred at the volume centre when None.
+        resolution: (rx, ry, rz) - voxel spacing in mm, where rx=res_height, ry=res_depth, rz=res_width. Only used together with iso_center.
 
     Returns:
-        grid2d: [B*G*H, D, W, 2] sampling grid for grid_sample
+        grid2d (torch.Tensor): Sampling grid for grid_sample of shape
+            [1, G, 1, D, W, 2], one rotation field per beam. The caller expands
+            the leading and H dimensions and reshapes to [B*G*H, D, W, 2].
     """
     B, G, D, H, W = input_shape
     a = angles_rad.to(device=device, dtype=dtype)
