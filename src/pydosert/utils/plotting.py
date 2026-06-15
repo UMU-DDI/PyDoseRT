@@ -29,6 +29,8 @@ def plot_overview(
     out_path=None,
     *,
     views=("axial", "sagittal"),
+    crop=True,
+    dvh=True,
     isodose_percent_levels=(20, 40, 60, 80, 90, 95, 100, 105, 107, 110),
     cmap_dose="turbo",
 ):
@@ -40,6 +42,13 @@ def plot_overview(
     * only ``dose_pred``     -> a single predicted-dose column
     * both                   -> reference and predicted columns plus an
                                 error (prediction - reference) column
+
+    ``crop`` zooms the panels to the body (External/Body structure) and the
+    irradiated depth range; set ``crop=False`` to show the full slices. With no
+    body/External structure present, the panels are shown uncropped regardless.
+
+    ``dvh=False`` drops the DVH panel (and its column), leaving just the dose
+    maps -- handy for phantoms where the DVH is not interesting.
 
     Pass ``dose_pred=None`` to plot just the reference dose. ``views`` picks the
     orthogonal planes to stack (one row each) -- any one or two of ``"axial"``,
@@ -131,17 +140,16 @@ def plot_overview(
         if "body" in low or "external" in low:
             body_mask = mask
             break
-    if body_mask is None:
-        body_mask = reference_mask
 
     geom_dose = pred if pred is not None else gt
     com = np.array(ndimage.center_of_mass(reference_mask), dtype=np.int32)
     axial_z = int(np.clip(com[0], 0, ct.shape[0] - 1))
     sagittal_x = int(np.argmax(geom_dose.sum(axis=(0, 1))))
 
-    body_slice = body_mask[axial_z] > 0
-    ys, xs = np.where(body_slice)
-    if ys.size > 0 and xs.size > 0:
+    # In-plane crop to the body; only when requested and a body mask exists.
+    body_slice = body_mask[axial_z] > 0 if body_mask is not None else None
+    if crop and body_slice is not None and body_slice.any():
+        ys, xs = np.where(body_slice)
         y0 = max(int(ys.min()) - 8, 0)
         y1 = min(int(ys.max()) + 9, ct.shape[1])
         x0 = max(int(xs.min()) - 8, 0)
@@ -153,19 +161,17 @@ def plot_overview(
         x0 = min(max(x0 + trim_x, 0), ct.shape[2] - 2)
         x1 = max(min(x1 - trim_x, ct.shape[2]), x0 + 2)
     else:
-        y0 = max(int(com[1]) - 64, 0)
-        y1 = min(int(com[1]) + 64, ct.shape[1])
-        x0 = max(int(com[2]) - 64, 0)
-        x1 = min(int(com[2]) + 64, ct.shape[2])
+        y0, y1 = 0, ct.shape[1]
+        x0, x1 = 0, ct.shape[2]
 
+    # Depth crop to the irradiated slices; full extent when crop is disabled.
     dose_per_z = geom_dose.sum(axis=(1, 2))
-    if dose_per_z.max() > 0:
+    if crop and dose_per_z.max() > 0:
         z_with_dose = np.where(dose_per_z > 0.01 * dose_per_z.max())[0]
         z0 = max(int(z_with_dose.min()) - 5, 0)
         z1 = min(int(z_with_dose.max()) + 6, ct.shape[0])
     else:
-        z0 = max(int(com[0]) - 40, 0)
-        z1 = min(int(com[0]) + 40, ct.shape[0])
+        z0, z1 = 0, ct.shape[0]
 
     coronal_y = int(np.clip(np.argmax(geom_dose.sum(axis=(0, 2))), y0, y1 - 1))
 
@@ -223,13 +229,21 @@ def plot_overview(
         image_cols.append(("Error (PyDoseRT - TPS)", error, "error"))
 
     n_img = len(image_cols)
-    fig = plt.figure(figsize=(5.6 * n_img + 6.5, 4.6 * n_rows))
-    # Columns: isodose legend | image columns | spacer | DVH.
-    gs = gridspec.GridSpec(
-        n_rows, n_img + 3, figure=fig,
-        width_ratios=[0.5] + [1.0] * n_img + [0.35, 1.7],
-        height_ratios=[1] * n_rows, wspace=0.12, hspace=0.16,
-    )
+    # Columns: isodose legend | image columns | (spacer | DVH, only when dvh).
+    if dvh:
+        fig = plt.figure(figsize=(5.6 * n_img + 6.5, 4.6 * n_rows))
+        gs = gridspec.GridSpec(
+            n_rows, n_img + 3, figure=fig,
+            width_ratios=[0.5] + [1.0] * n_img + [0.35, 1.7],
+            height_ratios=[1] * n_rows, wspace=0.12, hspace=0.16,
+        )
+    else:
+        fig = plt.figure(figsize=(4.6 * n_img + 1.5, 4.6 * n_rows))
+        gs = gridspec.GridSpec(
+            n_rows, n_img + 1, figure=fig,
+            width_ratios=[0.5] + [1.0] * n_img,
+            height_ratios=[1] * n_rows, wspace=0.12, hspace=0.16,
+        )
 
     err_mappable = None
     err_axes = []
@@ -272,44 +286,45 @@ def plot_overview(
         cbar.set_label("Prediction - reference (Gy)")
 
     # --- DVH: predicted solid, reference dashed (or a single solid set).
-    ax_dvh = fig.add_subplot(gs[:, n_img + 2])
-    dvh_upper = max(dose_max, abs_max)
-    bins = np.linspace(0, dvh_upper, 1000)
+    if dvh:
+        ax_dvh = fig.add_subplot(gs[:, n_img + 2])
+        dvh_upper = max(dose_max, abs_max)
+        bins = np.linspace(0, dvh_upper, 1000)
 
-    def _plot_dvh(dose_vol, linestyle, with_label):
-        for struct_name, struct_cfg, roi in _iter_plot_structures(skip_body=False):
-            vals = dose_vol[roi > 0.0]
-            if vals.size == 0:
-                continue
-            hist, edges = np.histogram(vals, bins=bins, density=False)
-            cum = np.cumsum(hist[::-1])[::-1]
-            cum = cum / cum.max() if cum.max() > 0 else cum
-            ax_dvh.plot(edges[:-1], cum, linestyle=linestyle,
-                        label=struct_name if with_label else None,
-                        color=_structure_color(struct_name, struct_cfg), linewidth=2.0)
+        def _plot_dvh(dose_vol, linestyle, with_label):
+            for struct_name, struct_cfg, roi in _iter_plot_structures(skip_body=False):
+                vals = dose_vol[roi > 0.0]
+                if vals.size == 0:
+                    continue
+                hist, edges = np.histogram(vals, bins=bins, density=False)
+                cum = np.cumsum(hist[::-1])[::-1]
+                cum = cum / cum.max() if cum.max() > 0 else cum
+                ax_dvh.plot(edges[:-1], cum, linestyle=linestyle,
+                            label=struct_name if with_label else None,
+                            color=_structure_color(struct_name, struct_cfg), linewidth=2.0)
 
-    if has_error:
-        _plot_dvh(pred, "solid", True)
-        _plot_dvh(gt, "dashed", False)
-    else:
-        _plot_dvh(present[0], "solid", True)
+        if has_error:
+            _plot_dvh(pred, "solid", True)
+            _plot_dvh(gt, "dashed", False)
+        else:
+            _plot_dvh(present[0], "solid", True)
 
-    ax_dvh.set_xlabel("Dose (Gy)")
-    ax_dvh.set_ylabel("Volume Fraction")
-    ax_dvh.set_title("Dose Volume Histogram (DVH)")
-    ax_dvh.set_xlim(0.0, dvh_upper * 1.03 if dvh_upper > 0 else 1.0)
-    ax_dvh.set_ylim(0.0, 1.05)
-    ax_dvh.grid(True, linestyle=":", linewidth=0.7)
-    struct_legend = ax_dvh.legend(loc="lower left", frameon=False)
-    if has_error:
-        ax_dvh.add_artist(struct_legend)
-        ax_dvh.legend(
-            handles=[
-                Line2D([0], [0], color="k", linestyle="solid", label="Prediction"),
-                Line2D([0], [0], color="k", linestyle="dashed", label="Reference"),
-            ],
-            loc="upper right", frameon=False,
-        )
+        ax_dvh.set_xlabel("Dose (Gy)")
+        ax_dvh.set_ylabel("Volume Fraction")
+        ax_dvh.set_title("Dose Volume Histogram (DVH)")
+        ax_dvh.set_xlim(0.0, dvh_upper * 1.03 if dvh_upper > 0 else 1.0)
+        ax_dvh.set_ylim(0.0, 1.05)
+        ax_dvh.grid(True, linestyle=":", linewidth=0.7)
+        struct_legend = ax_dvh.legend(loc="lower left", frameon=False)
+        if has_error:
+            ax_dvh.add_artist(struct_legend)
+            ax_dvh.legend(
+                handles=[
+                    Line2D([0], [0], color="k", linestyle="solid", label="Prediction"),
+                    Line2D([0], [0], color="k", linestyle="dashed", label="Reference"),
+                ],
+                loc="upper right", frameon=False,
+            )
 
     if out_path is None:
         plt.show()
