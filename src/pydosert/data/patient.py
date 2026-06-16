@@ -128,12 +128,12 @@ class Patient:
     @property
     def device(self) -> torch.device:
         """Device of the underlying density image tensor."""
-        return self.density_image.attenuation.data.device
+        return self.density_image.device
 
     @property
     def dtype(self) -> type:
         """Data type of the underlying density image tensor."""
-        return self.density_image.attenuation.data.dtype
+        return self.density_image.dtype
 
 
     @property
