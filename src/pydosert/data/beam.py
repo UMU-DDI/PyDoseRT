@@ -18,6 +18,59 @@ if TYPE_CHECKING:
     from pydosert.engine.dose_engine import DoseEngine
 
 
+# ---------------------------------------------------------------------------
+# Beam-parameter conditioning
+# ---------------------------------------------------------------------------
+# Differentiable map from unconstrained optimization variables to physical beam parameters,
+# shared by direct optimization and deep-learning workflows so both condition identically.
+
+
+def make_ordered_pairs(x: torch.Tensor, min_opening: float = 0.0,
+                       max_opening: float = 100.0) -> torch.Tensor:
+    """
+    x: [..., 2]
+    Interprets:
+      x[..., 0] = center
+      x[..., 1] = raw width parameter
+
+    Returns:
+      ordered pairs [..., 2] where:
+        left  = center - width/2
+        right = center + width/2
+      and width >= min_opening
+
+    Uses sigmoid — it saturates less aggressively in absolute terms than
+    tanh (at raw x=3: sigmoid output is 95% of max, tanh is 99.5%), so the
+    gradient stays usable across the full output range.
+    """
+    center = (max_opening * torch.sigmoid(x[..., 0])) - max_opening / 2.0
+    width = min_opening + ((max_opening - min_opening) * torch.sigmoid(x[..., 1]))
+
+    left = center - 0.5 * width
+    right = center + 0.5 * width
+
+    return torch.stack([left, right], dim=-1)
+
+
+def condition_beam_params(leafs_raw, mus_raw, jaws_raw, normalize_mu=True, mu_ref_total=1000.0):
+    """Shared parameterization for beam parameters.
+
+    Maps unconstrained variables (leafs_raw, mus_raw, jaws_raw) to physical, ordered leaf/jaw
+    pairs and positive MUs — used identically by direct optimization and deep learning.
+
+    ``normalize_mu`` (default True): scale the MU by ``mu_ref_total / num_cps`` so the
+    physical MU magnitude (which grows as ~1/num_cps for a fixed total) is built into the
+    conditioning rather than chased with a per-group MU learning rate. ``num_cps`` is read
+    from ``mus_raw.shape[-1]``, so it adapts to the geometry automatically and raw_mu stays
+    ~O(1). Set False for the legacy unit-scale behaviour.
+    """
+    leafs = make_ordered_pairs(leafs_raw, min_opening=1.0)
+    mu_scale = (mu_ref_total / mus_raw.shape[-1]) if normalize_mu else 1.0
+    mus = mu_scale * torch.nn.functional.softplus(mus_raw) + 0.1
+    jaws = make_ordered_pairs(jaws_raw, min_opening=1.0, max_opening=150.0)
+    return leafs, mus, jaws
+
+
 @dataclass
 class Beam:
     """
