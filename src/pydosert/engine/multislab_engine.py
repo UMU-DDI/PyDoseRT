@@ -91,6 +91,39 @@ def divergent_radiological_depth(bev_density: torch.Tensor, sad_mm: float,
     return d_rad.reshape(B, G, D, H, W)
 
 
+def _gaussian_blur_lateral(x: torch.Tensor, sigma_vox: float) -> torch.Tensor:
+    """Separable 2D Gaussian blur over the lateral (H, W) axes of [B, G, D, H, W]."""
+    if sigma_vox < 0.3:
+        return x
+    k = int(2 * round(3 * sigma_vox) + 1)
+    c = torch.arange(k, device=x.device, dtype=x.dtype) - k // 2
+    g = torch.exp(-0.5 * (c / sigma_vox) ** 2)
+    g = g / g.sum()
+    B, G, D, H, W = x.shape
+    xf = x.reshape(B * G * D, 1, H, W)
+    xf = F.conv2d(xf, g.view(1, 1, k, 1), padding=(k // 2, 0))
+    xf = F.conv2d(xf, g.view(1, 1, 1, k), padding=(0, k // 2))
+    return xf.reshape(B, G, D, H, W)
+
+
+def lateral_scatter_correction(dose_bev: torch.Tensor, bev_density: torch.Tensor,
+                               lat_sigma_mm: float, res_lat_mm: float,
+                               lat_cap_mm: float = None) -> torch.Tensor:
+    """Density-scaled lateral scatter for a BEV dose [B, G, D, H, W]: spread the dose in
+    low-density regions with an extra Gaussian ~ sigma*(1/rho - 1) (electron range grows
+    as 1/density), optionally capped. Dose-conserving. Shared by MultislabEngine and the
+    training CorrectedDoseEngine so both apply identical physics."""
+    out = dose_bev
+    for rho, lo, hi in ((0.30, 0.0, 0.45), (0.60, 0.45, 0.75), (0.85, 0.75, 0.92)):
+        m = ((bev_density >= lo) & (bev_density < hi)).to(dose_bev.dtype)
+        d_bin = dose_bev * m
+        extra_sigma_mm = lat_sigma_mm * (1.0 / rho - 1.0)
+        if lat_cap_mm is not None:
+            extra_sigma_mm = min(extra_sigma_mm, lat_cap_mm)
+        out = out - d_bin + _gaussian_blur_lateral(d_bin, extra_sigma_mm / res_lat_mm)
+    return out
+
+
 class MultislabEngine(DoseEngine):
     """Pencil-beam engine + per-voxel radiological-depth heterogeneity correction.
 
@@ -101,41 +134,18 @@ class MultislabEngine(DoseEngine):
 
     def __init__(self, *args, mu_eff: float = 0.05, cf_clamp: tuple = (0.3, 3.0),
                  ray_supersample: int = 1, lateral_scatter: bool = False,
-                 lat_sigma_mm: float = 3.0, **kwargs):
+                 lat_sigma_mm: float = 3.0, lat_cap_mm: float = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.mu_eff = mu_eff                 # effective linear attenuation [/cm water]
         self.cf_clamp = cf_clamp             # clamp the correction factor for stability
         self.ray_supersample = ray_supersample   # lateral ray-grid oversampling factor
         self.lateral_scatter = lateral_scatter   # density-scaled lateral scatter broadening
         self.lat_sigma_mm = lat_sigma_mm     # base lateral scatter sigma in water (mm)
-
-    @staticmethod
-    def _gaussian_lateral(x: torch.Tensor, sigma_vox: float) -> torch.Tensor:
-        """Separable 2D Gaussian blur over the lateral (H, W) axes of [B,G,D,H,W]."""
-        if sigma_vox < 0.3:
-            return x
-        k = int(2 * round(3 * sigma_vox) + 1)
-        c = torch.arange(k, device=x.device, dtype=x.dtype) - k // 2
-        g = torch.exp(-0.5 * (c / sigma_vox) ** 2)
-        g = (g / g.sum())
-        B, G, D, H, W = x.shape
-        xf = x.reshape(B * G * D, 1, H, W)
-        xf = F.conv2d(xf, g.view(1, 1, k, 1), padding=(k // 2, 0))
-        xf = F.conv2d(xf, g.view(1, 1, 1, k), padding=(0, k // 2))
-        return xf.reshape(B, G, D, H, W)
+        self.lat_cap_mm = lat_cap_mm         # cap on the extra lateral sigma (mm); None = uncapped
 
     def _lateral_scatter(self, dose_bev: torch.Tensor, bev_density: torch.Tensor) -> torch.Tensor:
-        """Density-scaled lateral scatter: spread the dose in low-density regions with
-        an extra Gaussian ~ sigma*(1/rho - 1) (electron range grows as 1/density).
-        Dose-conserving (each density bin's dose is replaced by its blurred version)."""
-        res_lat = self.dose_grid_spacing[0]      # mm/voxel (isotropic lateral assumed)
-        out = dose_bev
-        for rho, lo, hi in ((0.30, 0.0, 0.45), (0.60, 0.45, 0.75), (0.85, 0.75, 0.92)):
-            m = ((bev_density >= lo) & (bev_density < hi)).to(dose_bev.dtype)
-            d_bin = dose_bev * m
-            extra_sigma_vox = (self.lat_sigma_mm * (1.0 / rho - 1.0)) / res_lat
-            out = out - d_bin + self._gaussian_lateral(d_bin, extra_sigma_vox)
-        return out
+        return lateral_scatter_correction(dose_bev, bev_density, self.lat_sigma_mm,
+                                          self.dose_grid_spacing[0], self.lat_cap_mm)
 
     # --- density -> beam's-eye-view (inverse of BeamRotationLayer) ---
     def _inverse_rotation_grid(self, gantry_angles: torch.Tensor) -> torch.Tensor:
