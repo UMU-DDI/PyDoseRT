@@ -134,6 +134,15 @@ class CollapsedConeEngine(MultislabEngine):
             dose = dose + self._rotate(Dr, inv[i])
         return dose.reshape(B, G, D, H, W)
 
+    def bev_dose(self, psi_bev, bev_density):
+        """CCC dose in BEV [B, G, D, H, W] from a precomputed primary fluence volume and BEV
+        density — for use as a correction baseline (the corrector operates in BEV). Includes
+        the gain so the output lands on the GT x1e5 scale. No final rotation-to-patient."""
+        d_rad = divergent_radiological_depth(bev_density, self.SID, self.dose_grid_spacing,
+                                             self.iso_center, supersample=self.ray_supersample)
+        terma = psi_bev * torch.exp(-self.mu_att * d_rad)
+        return self._ccc_dose(terma, bev_density) * self.gain
+
     def _forward_core(self, leaf_positions, mus, jaw_positions, density_image,
                       geometry, collimator_angles, number_of_beams,
                       return_intermediates: bool = False, fluence_maps=None):
