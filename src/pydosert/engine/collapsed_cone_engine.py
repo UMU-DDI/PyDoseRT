@@ -42,12 +42,13 @@ def _orthonormal_basis(d):
 class CollapsedConeEngine(MultislabEngine):
     def __init__(self, *args, mu_att: float = 0.06, n_azimuth: int = 4,
                  primary_taps: int = 6, het_gamma: float = 1.0, gain: float = 33.56,
-                 prune_frac: float = 0.005, **kwargs):
+                 prune_frac: float = 0.005, axial_primary: bool = False, **kwargs):
         # strip MultislabEngine-only knobs we don't use
         kwargs.pop("lateral_scatter", None)
         super().__init__(*args, **kwargs)
         self.gain = gain                # output scale so dose lands on GT x1e5 (fit on all 75 patients)
         self.prune_frac = prune_frac    # drop cones carrying < this fraction of total kernel energy
+        self.axial_primary = axial_primary  # transport the primary along +D (no grid_sample) -> sharper core
         self.mu_att = mu_att            # primary attenuation for TERMA (/cm water)
         self.n_azimuth = n_azimuth
         self.primary_taps = primary_taps
@@ -112,26 +113,35 @@ class CollapsedConeEngine(MultislabEngine):
         thetas, fwd, inv, A, a, Bc, b = self._cone_setup(D, H, W, dev)
         E = energy.reshape(B * G, 1, D, H, W).float()
         rho = bev_density.reshape(B * G, 1, D, H, W).float()
-        # short-range primary taps (water steps along the cone axis)
-        kdz = torch.arange(self.primary_taps, device=dev, dtype=torch.float32) * dz_cm
         dose = torch.zeros_like(E)
+        if self.axial_primary:
+            # PRIMARY transported straight down the beam axis (+D = dim 1 of [N,D,H,W]) with NO
+            # grid_sample -> keeps the sharp core (the rotate-transport-rotate round trip on every
+            # cone is what low-passes it). Summed over cones (azimuthal weights fold in). Scatter
+            # still goes through the rotated cones below.
+            rho_ax = rho[:, 0]
+            ds_ax = rho_ax * dz_cm
+            s_ax = torch.cumsum(rho_ax.clamp(min=1e-3) ** self.het_gamma * dz_cm, dim=1)
+            src_ax = (E[:, 0] * ds_ax).double()
+            s64 = s_ax.double()
+            pr = torch.zeros_like(E[:, 0])
+            for i in range(fwd.shape[0]):
+                ai = float(a[i]); eas = torch.exp(ai * s64)
+                pr = pr + (float(A[i]) * torch.exp(-ai * s64) * torch.cumsum(src_ax * eas, dim=1)).to(E.dtype)
+            dose[:, 0] = dose[:, 0] + pr
         for i in range(fwd.shape[0]):
             Er = self._rotate(E, fwd[i])[:, 0]               # [N,D,H,W]
             rr = self._rotate(rho, fwd[i])[:, 0].clamp(min=0)
             ds = rr * dz_cm                                   # released-energy weight (T*rho*dz)
             s = torch.cumsum(rr.clamp(min=1e-3) ** self.het_gamma * dz_cm, dim=1)  # kernel radiological distance
-            # scatter (long range, small b): stable cumsum recurrence
             bb = float(b[i]); ebs = torch.exp((bb * s).clamp(max=30.0))
-            # D_sc[z] = B * exp(-b s[z]) * sum_{j<=z} E[j] ds[j] exp(b s[j])  (b small -> stable)
-            Dsc = float(Bc[i]) * torch.exp(-bb * s) * torch.cumsum(Er * ds * ebs, dim=1)
-            # primary (large a, radiological range): exact cumsum recurrence in float64
-            # (a*s <~ 150 so exp(a*s) is finite in double), captures the full lung electron range
-            src = Er * ds                                     # T * ds_rad  [N,D,H,W]
-            ai = float(a[i]); Ai = float(A[i])
-            s64 = s.double(); eas = torch.exp(ai * s64)
-            Dpr = (Ai * torch.exp(-ai * s64) * torch.cumsum(src.double() * eas, dim=1)).to(Er.dtype)
-            Dr = (Dpr + Dsc).unsqueeze(1)
-            dose = dose + self._rotate(Dr, inv[i])
+            Dr = float(Bc[i]) * torch.exp(-bb * s) * torch.cumsum(Er * ds * ebs, dim=1)    # scatter
+            if not self.axial_primary:
+                # primary via the cone (float64 exact cumsum) — default behaviour
+                src = Er * ds
+                ai = float(a[i]); s64 = s.double(); eas = torch.exp(ai * s64)
+                Dr = Dr + (float(A[i]) * torch.exp(-ai * s64) * torch.cumsum(src.double() * eas, dim=1)).to(Er.dtype)
+            dose = dose + self._rotate(Dr.unsqueeze(1), inv[i])
         return dose.reshape(B, G, D, H, W)
 
     def bev_dose(self, psi_bev, bev_density):
