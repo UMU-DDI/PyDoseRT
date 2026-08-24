@@ -182,32 +182,25 @@ class FluenceVolumeLayer(nn.Module):
         w_min_idx = 0 if w_min_idx is None else w_min_idx
         w_max_idx = W - 1 if w_max_idx is None else w_max_idx
         
-        vol_slices = []
-        open_volumes = torch.sum(fluence_map, [1, 2, 3], keepdims=True)
-        for d in range(self.D):
-            # Get the precomputed sampling grid of the slice, crop to region
-            grid = (
-                self.sampling_grids[d][
-                    w_min_idx : w_max_idx + 1, h_min_idx : h_max_idx + 1, :
-                ]
-                .unsqueeze(0)
-                .repeat(B, 1, 1, 1)
-            ).to(fluence_map.dtype)
-            # Use the grid to sample the 2D fluence map into the slice
-            sampled = F.grid_sample(
-                fluence_map,
-                grid,
-                mode="bilinear",
-                padding_mode="zeros",
-                align_corners=False,
-            )
-            sampled = sampled.permute(0, 2, 3, 1)  # [B*G,cropped_W,cropped_H,1]
-            # Apply correction
-            corr = self.profile_corrections[d].unsqueeze(0).unsqueeze(-1)
-            # corr = (open_volumes / torch.sum(sampled, (1, 2, 3), keepdims=True)).to(self.dtype)
-            vol_slices.append(sampled * corr)
-        volume_grid = torch.stack(vol_slices, dim=1)  # [B*G,D,cropped_W,cropped_H,1]
-        del sampled, fluence_map, grid, corr, vol_slices, open_volumes
+        # All depth planes in one grid_sample: sampling_grids and
+        # profile_corrections are precomputed per plane, so a per-plane loop
+        # adds D launches and D grid copies without changing the result.
+        # expand (not repeat) keeps both operands as broadcast views.
+        grid = self.sampling_grids[
+            :, w_min_idx : w_max_idx + 1, h_min_idx : h_max_idx + 1, :
+        ].to(fluence_map.dtype)                              # [D, Wc, Hc, 2]
+        D_, Wc, Hc, _ = grid.shape
+        grid = grid.unsqueeze(0).expand(B, -1, -1, -1, -1).reshape(B * D_, Wc, Hc, 2)
+        fm = fluence_map.unsqueeze(1).expand(
+            -1, D_, -1, -1, -1).reshape(B * D_, *fluence_map.shape[1:])
+        sampled = F.grid_sample(
+            fm, grid, mode="bilinear", padding_mode="zeros", align_corners=False,
+        )
+        # [B*D, 1, Wc, Hc] -> [B, D, Wc, Hc, 1]
+        volume_grid = sampled.permute(0, 2, 3, 1).reshape(B, D_, Wc, Hc, 1)
+        volume_grid = volume_grid * self.profile_corrections.view(
+            1, D_, 1, 1, 1).to(volume_grid.dtype)
+        del sampled, fluence_map, grid, fm
 
         volume_grid = volume_grid.permute(0, 1, 3, 2, 4)
         return volume_grid
