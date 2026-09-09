@@ -43,7 +43,7 @@ include = ["pydosert*"]
 exclude = ["pydosert.egg-info*"]
 
 [tool.setuptools.package-data]
-"pydosert" = ["data/machine_presets/*.json", "data/optimization_presets/*.json"]
+"pydosert" = ["data/machine_presets/*.json", "data/machine_presets/*.npz", "data/ion_machine_presets/*.json", "data/optimization_presets/*.json"]
 
 [build-system]
 requires = ["setuptools>=80", "setuptools-scm[simple]>=9.2"]

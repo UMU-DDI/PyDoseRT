@@ -9,6 +9,10 @@ This changelog was introduced after releasing version 1.3.0.
 ## [Unreleased]
 
 ### Added
+- Proton pencil-beam dose calculation. `IonDoseEngine` computes the dose of a batch of ion beamlets on a beam's-eye-view lattice and is differentiable end to end, including an optional `bev_correction` hook for a learned residual model. Supporting types: `IonKernelTable` (commissioned base data in a padded-rectangular `.npz`), `IonBeamletBatch`, `IonMachineConfig`, `fermi_eyges_excess` (heterogeneity-aware multiple-Coulomb-scattering correction, identically zero in water) and the BEV geometry helpers in `pydosert.geometry.bev`. Nothing in the photon pipeline changes.
+- `IonKernelCalibration` plus `commissioning/calibrate_ion_kernel_table.py`: learnable per-row residuals over a kernel table, fitted against water-phantom Monte Carlo by backpropagating through the engine. The residuals are exactly zero at initialisation, so an untrained calibration reproduces the input table bit-for-bit.
+- `commissioning/conversion/convert_proton_mat_to_npz.py` converts a pyRadPlan/matRad proton machine `.mat` into the kernel-table `.npz`.
+- `patient_dose_mask` builds the dose-scoring mask topologically, keeping internal air (trachea, bowel gas, sinuses) that a density threshold would zero. `IonDoseEngine.compute_dose` requires the mask explicitly and applies no threshold of its own.
 ### Changed
 ### Fixed
 ### Removed
