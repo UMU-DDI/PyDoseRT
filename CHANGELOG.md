@@ -23,6 +23,7 @@ This changelog was introduced after releasing version 1.3.0.
 ### Fixed
 - `Patient.device` and `Patient.dtype` read the density-image tensor directly; they previously referenced a non-existent `.attenuation.data` attribute and raised.
 - `load_structures` returns early when no structure set is given, instead of nesting the whole body in a conditional.
+- `result_validation` computes the fraction-scaled predicted and reference dose unconditionally; the gamma path referenced them while they were only assigned inside the clinical-criteria branch, so requesting gamma without clinical criteria raised `UnboundLocalError`.
 
 ### Removed
 - **Breaking**: the ad-hoc loss collection in `pydosert.objectives.losses` has been removed in favour of the composable primitives above: `scale_loss`, `constraint_loss`, `compute_l2_loss`, `dose_loss`, `compute_loss`, `compute_dvh_loss`, `compute_mae_loss`, `leaf_range_loss`, `create_sphere_mask`, `cosine_warmup_scheduler`, `dvh_percentile_objective`, `dvh_volume_objective`, `dvh_percentile_loss_with_threshold`, `dvh_volume_loss_with_threshold`, `dvh_Dp_loss` and `dvh_Vx_loss`.

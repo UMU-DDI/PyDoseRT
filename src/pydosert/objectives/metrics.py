@@ -204,12 +204,14 @@ def result_validation(patient: Patient,
     """
     results = {}
     patient = patient.to('cpu')
-    
+
+    # Total (x fractions) predicted and reference dose — used by BOTH the clinical-criteria and
+    # the gamma paths, so compute it unconditionally (the gamma path referenced these before).
+    pred_dose_np = patient.number_of_fractions * pred_dose.cpu().detach().numpy()
+    patient_dose_np = patient.number_of_fractions * patient.dose.cpu().detach().numpy()
+
     # Validate clinical criteria if requested
     if compute_clinical_criteria:
-        pred_dose_np = patient.number_of_fractions * pred_dose.cpu().detach().numpy()
-        patient_dose_np = patient.number_of_fractions * patient.dose.cpu().detach().numpy()
-
         validation_results = optimization_config.validate(pred_dose_np, patient)
         clinical_results = dict(sum([[(k + "_" +  v['type'], v['ratio']) for v in v_list['criteria']] for k, v_list in validation_results.items()], []))
         clinical_results["passed_test"] = np.mean(np.array(list(clinical_results.values())) < 1.0)
