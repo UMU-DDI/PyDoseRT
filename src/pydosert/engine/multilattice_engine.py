@@ -214,6 +214,7 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
                       iso_center, lattice_size: int, mu_eff: float,
                       cf_clamp: tuple = (0.3, 3.0),
                       dense_depth: torch.Tensor | None = None,
+                      source_scale: torch.Tensor | None = None,
                       tile_chunk: int = 4) -> torch.Tensor:
     """Pencil-beam dose from an ``L x L`` lattice of rays.
 
@@ -238,6 +239,10 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
         cf_clamp: (min, max) clamp on that correction factor, for stability.
         dense_depth: per-voxel depth ``[B, G, D, H, W]`` in density x cm,
             recomputed when not supplied.
+        source_scale: optional ``[B*G, D, H, W]`` multiplier applied to the fluence
+            BEFORE convolution -- this is where TERMA scaling enters, and it must be
+            applied to the source rather than to the dose, because it models how much
+            energy is released at the interaction site.
         tile_chunk: number of tiles convolved per grouped convolution.
 
     Returns:
@@ -288,6 +293,8 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
         # Only this part carries gradient: the fluence is what the rest of the
         # engine (and any correction model downstream) differentiates through.
         source = torch.stack([flat_fluence[i] for i, _t in chunk], dim=0) * masks
+        if source_scale is not None:
+            source = source * torch.stack([source_scale[i] for i, _t in chunk], dim=0)
         tile_dose = conv_layer(source.unsqueeze(-1), kernels).squeeze(-1)
         for k, (i, _tile) in enumerate(chunk):
             # Residual heterogeneity, relative to THIS tile's ray rather than the
@@ -320,7 +327,8 @@ class MultilatticeEngine(PhotonBaseEngine):
 
     def __init__(self, *args, lattice_size: int = 3, mu_eff: float = 0.05,
                  cf_clamp: tuple[float, float] = (0.3, 3.0), tile_chunk: int = 4,
-                 ray_supersample: int = 1, **kwargs):
+                 ray_supersample: int = 1, source_scale_layer: nn.Module | None = None,
+                 **kwargs):
         """
         Args:
             lattice_size: ``L``; up to ``L x L`` equal-fluence tiles per beam.
@@ -329,6 +337,10 @@ class MultilatticeEngine(PhotonBaseEngine):
             cf_clamp: (min, max) clamp on that correction factor.
             tile_chunk: tiles convolved per grouped convolution (memory knob).
             ray_supersample: lateral oversampling of the divergent depth grid.
+            source_scale_layer: optional module called as
+                ``layer(fluence_maps, bev_density)`` returning a ``[B*G, D, H, W, 1]``
+                multiplier applied to the fluence before convolution -- e.g.
+                :class:`~pydosert.layers.TermaScalingLayer`. None disables it.
 
         Remaining arguments are those of :class:`PhotonBaseEngine`.
         """
@@ -340,6 +352,8 @@ class MultilatticeEngine(PhotonBaseEngine):
         self.tile_chunk = int(tile_chunk)
         self.ray_supersample = int(ray_supersample)
         super().__init__(*args, **kwargs)
+        # after super(): nn.Module refuses submodule assignment before its own __init__
+        self.source_scale_layer = source_scale_layer
 
     def _initialize_layers(self, new_beam_data: BeamSequence | Beam, overwrite: bool = False) -> None:
         """Build or refresh the pipeline layers from a beam template.
@@ -501,12 +515,18 @@ class MultilatticeEngine(PhotonBaseEngine):
                     bev_density, self.SID, self.dose_grid_spacing, self.iso_center,
                     supersample=self.ray_supersample)
 
+            source_scale = None
+            if self.source_scale_layer is not None:
+                source_scale = self.source_scale_layer(
+                    batched_fluence_maps, bev_density).squeeze(-1)
+
             dose = multilattice_dose(
                 batched_fluence_volumes, bev_density,
                 self.pencil_beam_kernel_layer, self.beam_wise_conv_layer,
                 self.SID, self.dose_grid_spacing, self.iso_center,
                 self.lattice_size, self.mu_eff, cf_clamp=self.cf_clamp,
-                dense_depth=dense_depth, tile_chunk=self.tile_chunk)
+                dense_depth=dense_depth, source_scale=source_scale,
+                tile_chunk=self.tile_chunk)
 
             dose = dose * self.machine_config.mean_photon_energy_MeV
             if mus is not None:

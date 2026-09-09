@@ -4,6 +4,7 @@ from .FluenceVolumeLayer import FluenceVolumeLayer
 from .PencilBeamKernelLayer import PencilBeamKernelLayer
 from .RadiologicalDepthLayer import RadiologicalDepthLayer
 from .BeamRotationLayer import BeamRotationLayer
+from .TermaScalingLayer import TermaScalingLayer
 
 __all__ = [
     "BeamWiseConvolutionalLayer",
@@ -12,4 +13,5 @@ __all__ = [
     "PencilBeamKernelLayer",
     "RadiologicalDepthLayer",
     "BeamRotationLayer",
+    "TermaScalingLayer",
     ]
