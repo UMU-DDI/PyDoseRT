@@ -25,6 +25,7 @@ density x MM.  :func:`ray_depth_profile` returns cm and the caller multiplies by
 """
 from __future__ import annotations
 
+import math
 from itertools import pairwise
 
 import torch
@@ -45,7 +46,8 @@ DEPTH_CM_TO_KERNEL_UNITS = 10.0
 
 def divergent_radiological_depth(bev_density: torch.Tensor, sad_mm: float,
                                  spacing: tuple, iso_center: tuple,
-                                 supersample: int = 1) -> torch.Tensor:
+                                 supersample: int = 1,
+                                 beam_batch: int = 2) -> torch.Tensor:
     """Per-voxel radiological depth along DIVERGENT rays from the point source.
 
     The source sits ``sad_mm`` upstream of isocentre, so rays fan out with a
@@ -61,11 +63,19 @@ def divergent_radiological_depth(bev_density: torch.Tensor, sad_mm: float,
         spacing: (rH, rD, rW) voxel spacing (mm).
         iso_center: (X, Y, Z) isocentre in mm (X=H, Y=D, Z=W).
         supersample: lateral ray-grid oversampling factor.
+        beam_batch: beams resampled at once. The two grid_samples need a
+            ``[N, D, H, W, 3]`` sampling grid, so the transient is proportional to
+            this rather than to the beam count; it does not change the result.
 
     Returns:
         [B, G, D, H, W] radiological depth (density x cm).
     """
     B, G, D, H, W = bev_density.shape
+    if beam_batch > 0 and G > beam_batch:
+        return torch.cat([
+            divergent_radiological_depth(bev_density[:, i:i + beam_batch], sad_mm, spacing,
+                                         iso_center, supersample, beam_batch=0)
+            for i in range(0, G, beam_batch)], dim=1)
     if supersample > 1:
         k = supersample
         up = F.interpolate(bev_density.reshape(B * G, 1, D, H, W),
@@ -113,15 +123,18 @@ def equal_fluence_edges(profile: torch.Tensor, parts: int) -> list[int]:
     narrow, intense part of the aperture deserves its own ray.
     """
     n = int(profile.numel())
-    if parts <= 1 or float(profile.sum()) <= 0.0:
+    if parts <= 1:
         return [0, n]
     cumulative = profile.double().cumsum(0)
     total = cumulative[-1]
-    interior = []
-    for i in range(1, parts):
-        edge = int(torch.searchsorted(cumulative, total * i / parts).item()) + 1
-        interior.append(min(max(edge, 1), n - 1))
-    return [0, *sorted(set(interior)), n]
+    if float(total) <= 0.0:
+        return [0, n]
+    # One batched searchsorted and one device sync for all interior edges: the
+    # per-edge .item() this replaces cost more than the arithmetic.
+    quantiles = total * torch.arange(1, parts, device=profile.device,
+                                     dtype=cumulative.dtype) / parts
+    edges = (torch.searchsorted(cumulative, quantiles) + 1).clamp_(1, n - 1)
+    return [0, *sorted(set(edges.tolist())), n]
 
 
 def _iso_indices(spacing, iso_center):
@@ -165,19 +178,27 @@ def ray_depth_profile(dense_depth: torch.Tensor, center_h: torch.Tensor,
 
 
 def backprojected_tile_mask(shape, h_bounds, w_bounds, sad_mm, spacing,
-                            iso_center, device, dtype) -> torch.Tensor:
+                            iso_center, device, dtype,
+                            origin: tuple[int, int] = (0, 0)) -> torch.Tensor:
     """Which voxels belong to a tile, at every depth plane.
 
     Tile bounds are defined once at the isocentre plane; a voxel belongs to the
     tile if its position mapped BACK to isocentre falls inside them. That makes
     the tiles diverge with the beam, so they stay aligned with the fluence they
     were cut from.
+
+    ``shape`` may describe a lateral CROP of the volume, in which case ``origin``
+    gives the crop's (h, w) start in voxels. The back-projection is depth
+    dependent, so the crop has to enter as an index offset -- shifting
+    ``iso_center`` instead would only be correct at one depth.
     """
     d, h, w = shape
     (iso_h, iso_d, iso_w), (_, r_d, _) = _iso_indices(spacing, iso_center)
     scale = _divergence_scale(d, sad_mm, iso_d, r_d, device, dtype).view(d, 1, 1)
-    h_at_iso = iso_h + (torch.arange(h, device=device, dtype=dtype).view(1, h, 1) - iso_h) / scale
-    w_at_iso = iso_w + (torch.arange(w, device=device, dtype=dtype).view(1, 1, w) - iso_w) / scale
+    h_index = torch.arange(h, device=device, dtype=dtype).view(1, h, 1) + float(origin[0])
+    w_index = torch.arange(w, device=device, dtype=dtype).view(1, 1, w) + float(origin[1])
+    h_at_iso = iso_h + (h_index - iso_h) / scale
+    w_at_iso = iso_w + (w_index - iso_w) / scale
     return ((h_at_iso >= h_bounds[0]) & (h_at_iso < h_bounds[1])
             & (w_at_iso >= w_bounds[0]) & (w_at_iso < w_bounds[1]))
 
@@ -194,19 +215,60 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
     plane = fluence_bev[int(min(max(iso_d, 0), d - 1))].clamp_min(0.0)
     h_edges = equal_fluence_edges(plane.sum(1), lattice_size)
     w_edges = equal_fluence_edges(plane.sum(0), lattice_size)
+
+    # Tile weights and fluence-weighted centroids for the whole lattice in three
+    # reductions, with a single device sync for the emptiness test. Doing this per
+    # tile costs O(L^2) syncs per beam, which dominated the forward at L >= 3.
     h_idx = torch.arange(h, device=plane.device, dtype=plane.dtype).view(h, 1)
     w_idx = torch.arange(w, device=plane.device, dtype=plane.dtype).view(1, w)
+    def _block_sums(x):
+        """Sum x over the lattice blocks -> [len(h_edges)-1, len(w_edges)-1]."""
+        rows = torch.stack([x[a:b].sum(0) for a, b in pairwise(h_edges)], dim=0)
+        return torch.stack([rows[:, a:b].sum(1) for a, b in pairwise(w_edges)], dim=1)
+
+    weights = _block_sums(plane)
+    centre_h = _block_sums(plane * h_idx)
+    centre_w = _block_sums(plane * w_idx)
+    nonempty = (weights > 0.0).tolist()                 # the one sync
+    safe = weights.clamp_min(torch.finfo(plane.dtype).eps)
+    centre_h = centre_h / safe
+    centre_w = centre_w / safe
+
     tiles = []
-    for h0, h1 in pairwise(h_edges):
-        for w0, w1 in pairwise(w_edges):
-            block = plane[h0:h1, w0:w1]
-            weight = block.sum()
-            if float(weight) <= 0.0:
+    for r, (h0, h1) in enumerate(pairwise(h_edges)):
+        for c, (w0, w1) in enumerate(pairwise(w_edges)):
+            if not nonempty[r][c]:
                 continue
-            tiles.append(((h0, h1), (w0, w1),
-                          (block * h_idx[h0:h1]).sum() / weight,
-                          (block * w_idx[:, w0:w1]).sum() / weight))
+            tiles.append(((h0, h1), (w0, w1), centre_h[r, c], centre_w[r, c]))
     return tiles
+
+
+
+def tile_crop_bounds(shape, h_bounds, w_bounds, sad_mm, spacing, iso_center,
+                     halo: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Lateral window holding everything a tile can contribute to.
+
+    The tile bounds are given at the isocentre plane and diverge with depth, so the
+    window is the union of the tile over all depth planes, grown by the kernel
+    half-width. Because the masked source is exactly zero outside the tile, the
+    convolution restricted to this window equals the full-volume convolution there
+    and is exactly zero outside it -- cropping is not an approximation.
+    """
+    d, h, w = shape
+    (iso_h, iso_d, iso_w), (_, r_d, _) = _iso_indices(spacing, iso_center)
+    z_first = (float(sad_mm) + (0.0 - iso_d) * r_d) / float(sad_mm)
+    z_last = (float(sad_mm) + (d - 1 - iso_d) * r_d) / float(sad_mm)
+    s_lo, s_hi = max(min(z_first, z_last), 1e-3), max(z_first, z_last)
+
+    def _span(lo, hi, iso, n, pad):
+        edges = [iso + (lo - iso) * s for s in (s_lo, s_hi)]
+        edges += [iso + (hi - iso) * s for s in (s_lo, s_hi)]
+        return (max(0, math.floor(min(edges)) - pad),
+                min(n, math.ceil(max(edges)) + pad))
+
+    h0, h1 = _span(h_bounds[0], h_bounds[1], iso_h, h, halo[0])
+    w0, w1 = _span(w_bounds[0], w_bounds[1], iso_w, w, halo[1])
+    return h0, max(h1, h0 + 1), w0, max(w1, w0 + 1)
 
 
 def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
@@ -248,7 +310,9 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
     Returns:
         ``[B, G, D, H, W]`` dose, unscaled (no mean energy, no MU).
     """
-    b, g, d, h, w = bev_density.shape
+    b, g = bev_density.shape[:2]
+    d, h, w = (dense_depth.shape[-3:] if dense_depth is not None
+               else bev_density.shape[-3:])
     # Depths, tile geometry and kernels are PHYSICS -- nothing here is learnable,
     # and PencilBeamModel.get_pencil_beam builds its kernels with
     # ``torch.exp(..., out=K_numer)``, which autograd refuses if the input
@@ -265,46 +329,67 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
     # Tiles are per beam: each has its own aperture, so its own lattice. The tiling
     # is geometry read off the fluence, not a differentiable function of it.
     with torch.no_grad():
-        jobs = [(i, tile)
-                for i in range(b * g)
-                for tile in lattice_tiles(flat_fluence[i].detach(), lattice_size,
-                                          spacing, iso_center)]
-    if not jobs:
+        tiles_per_beam = [lattice_tiles(flat_fluence[i].detach(), lattice_size,
+                                        spacing, iso_center)
+                          for i in range(b * g)]
+    if not any(tiles_per_beam):
         return torch.zeros_like(flat_fluence).reshape(b, g, d, h, w)
+
+    halo = (kernel_layer.pbm.kernel_size_h // 2, kernel_layer.pbm.kernel_size_w // 2)
     # Accumulate per beam OUT OF PLACE. Writing into a preallocated tensor with
     # ``total[i] = ...`` is an in-place index_put_, which autograd rejects once
     # the fluence carries grad ("functions with out=... arguments don't support
     # automatic differentiation") -- and the engine does carry grad in training.
     per_beam_dose: list = [None] * (b * g)
 
-    for start in range(0, len(jobs), max(1, int(tile_chunk))):
-        chunk = jobs[start:start + max(1, int(tile_chunk))]
-        with torch.no_grad():
-            depths = flat_depth.new_zeros((len(chunk), d))
-            masks = flat_fluence.new_zeros((len(chunk), d, h, w))
-            for k, (i, ((h0, h1), (w0, w1), centre_h, centre_w)) in enumerate(chunk):
-                depths[k] = ray_depth_profile(flat_depth[i], centre_h, centre_w,
-                                              sad_mm, spacing, iso_center)
-                masks[k] = backprojected_tile_mask(
-                    (d, h, w), (h0, h1), (w0, w1), sad_mm, spacing, iso_center,
-                    flat_fluence.device, flat_fluence.dtype)
-            kernels = kernel_layer(
-                (depths * DEPTH_CM_TO_KERNEL_UNITS).view(len(chunk), d, 1)).detach()
-        # Only this part carries gradient: the fluence is what the rest of the
-        # engine (and any correction model downstream) differentiates through.
-        source = torch.stack([flat_fluence[i] for i, _t in chunk], dim=0) * masks
-        if source_scale is not None:
-            source = source * torch.stack([source_scale[i] for i, _t in chunk], dim=0)
-        tile_dose = conv_layer(source.unsqueeze(-1), kernels).squeeze(-1)
-        for k, (i, _tile) in enumerate(chunk):
-            # Residual heterogeneity, relative to THIS tile's ray rather than the
-            # central axis -- the difference it has to correct is far smaller.
-            residual = torch.exp(-float(mu_eff)
-                                 * (flat_depth[i] - depths[k].view(d, 1, 1))).clamp(*cf_clamp)
-            contribution = tile_dose[k] * residual
-            per_beam_dose[i] = (contribution if per_beam_dose[i] is None
-                                else per_beam_dose[i] + contribution)
-        del depths, source, kernels, tile_dose
+    chunk_size = max(1, int(tile_chunk))
+    for i, tiles in enumerate(tiles_per_beam):
+        # Chunked WITHIN one beam so every tile in a chunk shares the same depth
+        # volume: the ray profiles then come from one batched grid_sample instead
+        # of one call per tile.
+        for start in range(0, len(tiles), chunk_size):
+            chunk = tiles[start:start + chunk_size]
+            with torch.no_grad():
+                crops = [tile_crop_bounds((d, h, w), t[0], t[1], sad_mm, spacing,
+                                          iso_center, halo) for t in chunk]
+                # One window size for the chunk so the tiles convolve as one batch;
+                # each window is shifted to stay inside the volume.
+                ch = max(c[1] - c[0] for c in crops)
+                cw = max(c[3] - c[2] for c in crops)
+                starts = [(min(c[0], h - ch), min(c[2], w - cw)) for c in crops]
+
+                depths = torch.stack([
+                    ray_depth_profile(flat_depth[i], t[2], t[3], sad_mm, spacing, iso_center)
+                    for t in chunk], dim=0)                                  # [n, d]
+                masks = torch.stack([
+                    backprojected_tile_mask((d, ch, cw), t[0], t[1], sad_mm, spacing,
+                                            iso_center, flat_fluence.device,
+                                            flat_fluence.dtype, origin=(hs, ws))
+                    for t, (hs, ws) in zip(chunk, starts)], dim=0)           # [n, d, ch, cw]
+                kernels = kernel_layer(
+                    (depths * DEPTH_CM_TO_KERNEL_UNITS).view(len(chunk), d, 1)).detach()
+
+            # Only this part carries gradient: the fluence is what the rest of the
+            # engine (and any correction model downstream) differentiates through.
+            source = torch.stack([flat_fluence[i, :, hs:hs + ch, ws:ws + cw]
+                                  for hs, ws in starts], dim=0) * masks
+            if source_scale is not None:
+                source = source * torch.stack([source_scale[i, :, hs:hs + ch, ws:ws + cw]
+                                               for hs, ws in starts], dim=0)
+            tile_dose = conv_layer(source.unsqueeze(-1), kernels).squeeze(-1)
+
+            for k, (hs, ws) in enumerate(starts):
+                # Residual heterogeneity, relative to THIS tile's ray rather than the
+                # central axis -- the difference it has to correct is far smaller.
+                residual = torch.exp(
+                    -float(mu_eff) * (flat_depth[i, :, hs:hs + ch, ws:ws + cw]
+                                      - depths[k].view(d, 1, 1))).clamp(*cf_clamp)
+                contribution = F.pad(tile_dose[k] * residual,
+                                     (ws, w - ws - cw, hs, h - hs - ch))
+                per_beam_dose[i] = (contribution if per_beam_dose[i] is None
+                                    else per_beam_dose[i] + contribution)
+            del depths, masks, source, kernels, tile_dose
+
     zero = torch.zeros_like(flat_fluence[0])
     total = torch.stack([x if x is not None else zero for x in per_beam_dose], dim=0)
     return total.reshape(b, g, d, h, w)
@@ -523,6 +608,15 @@ class MultilatticeEngine(PhotonBaseEngine):
             scale_layer = getattr(self, "source_scale_layer", None)
             if scale_layer is not None:
                 source_scale = scale_layer(batched_fluence_maps, bev_density).squeeze(-1)
+
+            # multilattice_dose only reads bev_density for its shape once dense_depth
+            # is supplied, so the second full BEV volume can go here rather than being
+            # held for the whole tile loop.
+            bev_shape = bev_density.shape
+            if not return_intermediates:
+                del bev_density
+                bev_density = torch.empty(bev_shape[:2] + (0, 0, 0), device=dense_depth.device,
+                                          dtype=dense_depth.dtype)
 
             dose = multilattice_dose(
                 batched_fluence_volumes, bev_density,
