@@ -12,9 +12,10 @@ smoothed relative density *before* pencil-beam convolution. This module owns no
 beam geometry; it only maps a fluence map and a beam's-eye-view density to a
 scale volume.
 
-Not wired into any engine by default: ``c1`` and ``c2_per_mm`` have no
-meaningful defaults and must be calibrated against a reference dose for the
-machine and beam quality in question (or fitted with ``learnable=True``).
+Not wired into any engine by default. The default ``c1`` and ``c2_per_mm`` are
+the values used in the DoseRAD 2026 experiments; they are a starting point, not
+a universal calibration -- refit them for a different machine or beam quality
+(``learnable=True`` exposes them as parameters).
 
 Where it plugs in
 -----------------
@@ -77,6 +78,10 @@ class TermaScalingLayer(nn.Module):
     ``spacing_mm`` follows the patient-grid convention ``(rH, rD, rW)``. The BEV density order is ``[B,G,D,H,W]``, hence the
     pooling kernel order is ``(rD,rH,rW)``.
 
+    ``c1`` sets how much of the correction is field-size dependent (the amplitude
+    of the exponential term) and ``c2_per_mm`` the field size over which it decays;
+    both default to the DoseRAD 2026 values.
+
     When ``learnable=True``, unconstrained raw parameters are transformed so
     ``0 < c1 < 1`` and ``c2 >= 0``. This permits global data calibration while
     retaining physically meaningful coefficients.
@@ -84,9 +89,9 @@ class TermaScalingLayer(nn.Module):
 
     def __init__(
         self,
-        c1: float,
-        c2_per_mm: float,
         spacing_mm: tuple[float, float, float],
+        c1: float = 0.9,
+        c2_per_mm: float = 0.28,
         *,
         fluence_pixel_size_mm: float = 1.0,
         smoothing_size_mm: float = 10.0,
