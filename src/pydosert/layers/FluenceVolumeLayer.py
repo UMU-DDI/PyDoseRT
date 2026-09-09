@@ -182,6 +182,11 @@ class FluenceVolumeLayer(nn.Module):
         w_min_idx = 0 if w_min_idx is None else w_min_idx
         w_max_idx = W - 1 if w_max_idx is None else w_max_idx
         
+        # Possible speedup, not yet verified: sampling_grids and profile_corrections
+        # are precomputed per depth plane, so this loop could collapse into a single
+        # grid_sample over all D planes (expand the grid and fluence to [B*D, ...]
+        # rather than repeating per plane), trading D kernel launches and D grid
+        # copies for one. Same result in principle; benchmark before adopting.
         vol_slices = []
         open_volumes = torch.sum(fluence_map, [1, 2, 3], keepdims=True)
         for d in range(self.D):
