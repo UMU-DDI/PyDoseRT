@@ -351,8 +351,12 @@ class MultilatticeEngine(PhotonBaseEngine):
         self.cf_clamp = cf_clamp
         self.tile_chunk = int(tile_chunk)
         self.ray_supersample = int(ray_supersample)
+        # Assigned only after super(): nn.Module refuses submodule assignment before its
+        # own __init__, and a class-level default would shadow the registered submodule.
+        # super().__init__ may already run a forward pass (auto_calibrate), so
+        # _forward_core reads this with getattr. That calibration is in water, where the
+        # TERMA scaling is identity, so it is unaffected by the layer being attached after.
         super().__init__(*args, **kwargs)
-        # after super(): nn.Module refuses submodule assignment before its own __init__
         self.source_scale_layer = source_scale_layer
 
     def _initialize_layers(self, new_beam_data: BeamSequence | Beam, overwrite: bool = False) -> None:
@@ -516,9 +520,9 @@ class MultilatticeEngine(PhotonBaseEngine):
                     supersample=self.ray_supersample)
 
             source_scale = None
-            if self.source_scale_layer is not None:
-                source_scale = self.source_scale_layer(
-                    batched_fluence_maps, bev_density).squeeze(-1)
+            scale_layer = getattr(self, "source_scale_layer", None)
+            if scale_layer is not None:
+                source_scale = scale_layer(batched_fluence_maps, bev_density).squeeze(-1)
 
             dose = multilattice_dose(
                 batched_fluence_volumes, bev_density,

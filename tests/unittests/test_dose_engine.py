@@ -353,3 +353,36 @@ def test_forward_fluence_maps_wrong_ndim_raises(
             density_image=default_ct_image,
             fluence_maps=bad_maps,
         )
+
+
+def test_multilattice_engine_auto_calibrate(
+    default_machine_config,
+    default_ct_array_shape,
+    default_resolution,
+    default_beam_sequence,
+    default_kernel_size,
+    default_device,
+    default_dtype,
+):
+    """auto_calibrate runs a forward pass from inside __init__, before the
+    engine's own attributes are assigned."""
+    from pydosert import MultilatticeEngine
+    from pydosert.layers import TermaScalingLayer
+
+    engine = MultilatticeEngine(
+        machine_config=default_machine_config,
+        kernel_size=default_kernel_size,
+        dose_grid_spacing=default_resolution,
+        dose_grid_shape=default_ct_array_shape,
+        beam_template=default_beam_sequence,
+        device=default_device,
+        dtype=default_dtype,
+        auto_calibrate=True,
+        source_scale_layer=TermaScalingLayer(default_resolution).to(default_device),
+    )
+    assert engine.source_scale_layer is not None
+
+    ct = torch.ones((1, *default_ct_array_shape), device=default_device, dtype=default_dtype)
+    dose = engine.compute_dose(default_beam_sequence, density_image=ct)
+    assert dose.shape == ct.shape
+    assert torch.isfinite(dose).all()
