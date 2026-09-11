@@ -9,9 +9,12 @@ Multilattice keeps the same pencil-beam kernels but uses an ``L x L`` lattice of
 rays.  The beam's-eye-view fluence is partitioned into tiles of approximately
 EQUAL FLUENCE, each tile gets the kernel set belonging to a ray through its own
 fluence-weighted centroid, and only that tile's fluence is convolved with it.
-A residual ``exp(-mu_eff * (d - d_ray))`` factor then corrects each voxel to its
-own radiological depth, referenced to the tile's ray rather than to the central
-axis, so the difference it has to absorb is far smaller.
+A residual factor then corrects each voxel to its own radiological depth,
+referenced to the tile's ray rather than to the central axis, so the difference
+it has to absorb is far smaller. By default that factor is the kernel model's own
+depth dependence, ``E(d_voxel) / E(d_ray)`` with ``E = A/a + B/b`` -- the same
+parameterisation that builds the kernels, so it carries no free parameter and
+follows the beam quality (TPR 20/10).
 
 An ``L = 1`` lattice is still not the central-ray calculation: its single ray
 passes through the fluence-weighted CENTROID of the aperture rather than through
@@ -244,6 +247,26 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
 
 
 
+
+def integrated_kernel_energy(pencil_beam_model, depth_cm: torch.Tensor) -> torch.Tensor:
+    """Laterally integrated pencil-beam energy ``A/a + B/b`` at a radiological depth.
+
+    This is the depth dependence the kernels themselves encode, so the ratio of it
+    at two depths is the model's own answer to "how much less dose at depth d1 than
+    at d2". It follows the beam quality (TPR 20/10) through the model parameters and
+    is correct through buildup, where the dose still rises with depth.
+
+    Args:
+        pencil_beam_model: a ``PencilBeamModel`` (``PencilBeamKernelLayer.pbm``).
+        depth_cm: radiological depth in density x cm, any shape.
+
+    Returns:
+        Energy of the same shape, in the model's (unnormalised) units.
+    """
+    d = depth_cm.float()
+    return pencil_beam_model.depth_A_per_a(d) + pencil_beam_model.depth_B_per_b(d)
+
+
 def tile_crop_bounds(shape, h_bounds, w_bounds, sad_mm, spacing, iso_center,
                      halo: tuple[int, int]) -> tuple[int, int, int, int]:
     """Lateral window holding everything a tile can contribute to.
@@ -273,7 +296,7 @@ def tile_crop_bounds(shape, h_bounds, w_bounds, sad_mm, spacing, iso_center,
 
 def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
                       kernel_layer, conv_layer, sad_mm: float, spacing,
-                      iso_center, lattice_size: int, mu_eff: float,
+                      iso_center, lattice_size: int, mu_eff: float | None = None,
                       cf_clamp: tuple = (0.3, 3.0),
                       dense_depth: torch.Tensor | None = None,
                       source_scale: torch.Tensor | None = None,
@@ -296,8 +319,11 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
         spacing: (rH, rD, rW) voxel spacing (mm).
         iso_center: (X, Y, Z) isocentre in mm.
         lattice_size: ``L``; the lattice has up to ``L x L`` tiles per beam.
-        mu_eff: effective linear attenuation (per cm of water) for the residual
-            depth correction.
+        mu_eff: how voxels whose radiological depth differs from their tile's ray are
+            corrected. ``None`` (default) uses the kernel model's own depth dependence,
+            ``E(d_voxel) / E(d_ray)`` with :func:`integrated_kernel_energy` -- no free
+            parameter. A float applies a constant attenuation ``exp(-mu_eff * delta)``
+            per cm of water instead.
         cf_clamp: (min, max) clamp on that correction factor, for stability.
         dense_depth: per-voxel depth ``[B, G, D, H, W]`` in density x cm,
             recomputed when not supplied.
@@ -381,9 +407,15 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
             for k, (hs, ws) in enumerate(starts):
                 # Residual heterogeneity, relative to THIS tile's ray rather than the
                 # central axis -- the difference it has to correct is far smaller.
-                residual = torch.exp(
-                    -float(mu_eff) * (flat_depth[i, :, hs:hs + ch, ws:ws + cw]
-                                      - depths[k].view(d, 1, 1))).clamp(*cf_clamp)
+                voxel_depth = flat_depth[i, :, hs:hs + ch, ws:ws + cw]
+                ray_depth = depths[k].view(d, 1, 1)
+                if mu_eff is None:
+                    ray_energy = integrated_kernel_energy(kernel_layer.pbm, ray_depth)
+                    residual = (integrated_kernel_energy(kernel_layer.pbm, voxel_depth)
+                                / ray_energy.clamp_min(torch.finfo(ray_energy.dtype).tiny))
+                else:
+                    residual = torch.exp(-float(mu_eff) * (voxel_depth - ray_depth))
+                residual = residual.clamp(*cf_clamp).to(tile_dose.dtype)
                 contribution = F.pad(tile_dose[k] * residual,
                                      (ws, w - ws - cw, hs, h - hs - ch))
                 per_beam_dose[i] = (contribution if per_beam_dose[i] is None
@@ -401,24 +433,27 @@ class MultilatticeEngine(PhotonBaseEngine):
     A sibling of :class:`~pydosert.engine.dose_engine.DoseEngine`: same layers,
     same fluence model, same kernels, but the kernel depth is taken from a lattice
     of rays through the aperture instead of a single central-axis ray, and the
-    residual per-voxel depth difference is corrected with ``exp(-mu_eff * delta)``.
+    residual per-voxel depth difference is corrected with the kernel model's own
+    depth dependence (or a constant attenuation, if ``mu_eff`` is given).
 
     Usage mirrors DoseEngine::
 
         engine = MultilatticeEngine(machine_config, kernel_size, spacing, shape,
-                                    lattice_size=3, mu_eff=0.05)
+                                    lattice_size=3)
         dose = engine.compute_dose(beam_sequence, density_image)
     """
 
-    def __init__(self, *args, lattice_size: int = 3, mu_eff: float = 0.05,
+    def __init__(self, *args, lattice_size: int = 3, mu_eff: float | None = None,
                  cf_clamp: tuple[float, float] = (0.3, 3.0), tile_chunk: int = 4,
                  ray_supersample: int = 1, source_scale_layer: nn.Module | None = None,
                  **kwargs):
         """
         Args:
             lattice_size: ``L``; up to ``L x L`` equal-fluence tiles per beam.
-            mu_eff: effective linear attenuation (per cm of water) used for the
-                residual depth correction within a tile.
+            mu_eff: residual depth correction within a tile. ``None`` (default)
+                derives it from the pencil-beam model, so it follows TPR 20/10 and has
+                no free parameter; a float applies a constant attenuation per cm of
+                water instead.
             cf_clamp: (min, max) clamp on that correction factor.
             tile_chunk: tiles convolved per grouped convolution (memory knob).
             ray_supersample: lateral oversampling of the divergent depth grid.
