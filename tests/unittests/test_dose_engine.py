@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
-from pydosert import DoseEngine
+from pydosert import DoseEngine, MachineConfig
 from pydosert.data import BeamSequence
 
 
@@ -386,3 +386,36 @@ def test_multilattice_engine_auto_calibrate(
     dose = engine.compute_dose(default_beam_sequence, density_image=ct)
     assert dose.shape == ct.shape
     assert torch.isfinite(dose).all()
+
+
+@pytest.mark.parametrize("gantry_deg", [0.0, 30.0, 45.0, 90.0, 180.0, 270.0])
+def test_multilattice_single_ray_matches_baseline(gantry_deg, default_device):
+    """With one tile and no residual correction, the lattice's single ray through a
+    centred field IS the central axis, so it must reproduce DoseEngine. Guards the
+    beam's-eye-view geometry: a depth convention one voxel off from
+    RadiologicalDepthLayer produced 30% of max at oblique gantry angles, and
+    clipped tile bounds dropped the out-of-field head-scatter tail."""
+    from pydosert import MultilatticeEngine
+
+    config = MachineConfig(preset="varian_10MV")
+    shape, spacing = (60, 60, 60), (3.0, 3.0, 3.0)
+    iso = (90.0, 90.0, 90.0)                                   # grid centre
+    sequence = BeamSequence.create(
+        [gantry_deg], config.number_of_leaf_pairs, (400, 400), iso,
+        open_field_size=90.0, device=default_device, dtype=torch.float32,
+        requires_grad=False)
+    body = torch.zeros((1, *shape), device=default_device)
+    body[:, 6:54, 6:54, 6:54] = 1.0                            # water with an air margin
+
+    kwargs = dict(machine_config=config, kernel_size=15, dose_grid_spacing=spacing,
+                  dose_grid_shape=shape, beam_template=sequence,
+                  device=default_device, dtype=torch.float32)
+    with torch.no_grad():
+        baseline = DoseEngine(**kwargs).compute_dose(sequence, density_image=body)
+        lattice = MultilatticeEngine(**kwargs, lattice_size=1, mu_eff=0.0).compute_dose(
+            sequence, density_image=body)
+
+    # 5e-3 of max leaves room for the ray passing through the fluence-weighted
+    # centroid, a fraction of a voxel from the isocentre; the geometry errors
+    # this guards against were 1e-2 to 3e-1.
+    assert (lattice - baseline).abs().max() / baseline.max() < 5e-3

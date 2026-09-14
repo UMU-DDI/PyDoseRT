@@ -38,7 +38,7 @@ from torch import nn
 
 from pydosert.data import Beam, BeamSequence
 from pydosert.engine.photon_base_engine import PhotonBaseEngine
-from pydosert.geometry.rotations import build_rotation_grids, rotate_2d_images
+from pydosert.geometry.rotations import rotate_2d_images
 from pydosert.layers.BeamRotationLayer import BeamRotationLayer
 from pydosert.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLayer
 from pydosert.layers.FluenceMapLayer import FluenceMapLayer
@@ -250,13 +250,23 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
     equivalent_pixels = weights / _block_max(plane).clamp_min(torch.finfo(plane.dtype).eps)
     radius_cm = torch.sqrt(equivalent_pixels * pixel_area_cm2 / math.pi)
 
+    # The lattice is cut at the isocentre plane, but it has to own every voxel at
+    # every depth. Above isocentre the beam is narrower than the grid, so bounds
+    # of exactly 0 and n back-project INSIDE the grid there and would drop the edge
+    # voxels -- the head-scatter tail -- from every tile. The outermost bounds are
+    # therefore open.
+    def _open(edges, i):
+        lo = -math.inf if i == 0 else edges[i]
+        hi = math.inf if i == len(edges) - 2 else edges[i + 1]
+        return lo, hi
+
     tiles = []
-    for r, (h0, h1) in enumerate(pairwise(h_edges)):
-        for c, (w0, w1) in enumerate(pairwise(w_edges)):
+    for r in range(len(h_edges) - 1):
+        for c in range(len(w_edges) - 1):
             if not nonempty[r][c]:
                 continue
-            tiles.append(((h0, h1), (w0, w1), centre_h[r, c], centre_w[r, c],
-                          radius_cm[r, c]))
+            tiles.append((_open(h_edges, r), _open(w_edges, c), centre_h[r, c],
+                          centre_w[r, c], radius_cm[r, c]))
     return tiles
 
 
@@ -311,8 +321,9 @@ def tile_crop_bounds(shape, h_bounds, w_bounds, sad_mm, spacing, iso_center,
     def _span(lo, hi, iso, n, pad):
         edges = [iso + (lo - iso) * s for s in (s_lo, s_hi)]
         edges += [iso + (hi - iso) * s for s in (s_lo, s_hi)]
-        return (max(0, math.floor(min(edges)) - pad),
-                min(n, math.ceil(max(edges)) + pad))
+        low, high = min(edges), max(edges)                  # +-inf for open bounds
+        return (0 if math.isinf(low) else max(0, math.floor(low) - pad),
+                n if math.isinf(high) else min(n, math.ceil(high) + pad))
 
     h0, h1 = _span(h_bounds[0], h_bounds[1], iso_h, h, halo[0])
     w0, w1 = _span(w_bounds[0], w_bounds[1], iso_w, w, halo[1])
@@ -587,33 +598,64 @@ class MultilatticeEngine(PhotonBaseEngine):
                 iso_center=self.iso_center, resolution=self.dose_grid_spacing,
                 verbose=self.verbose)
 
-        self.inv_rot_grid = self._inverse_rotation_grid(self.gantry_angles)
+        self.bev_grid = self._bev_sampling_grid(self.gantry_angles)
         self.layers_initialized = True
 
-    def _inverse_rotation_grid(self, gantry_angles: torch.Tensor) -> torch.Tensor:
-        """Grid mapping the patient volume into beam's-eye-view (inverse of BeamRotationLayer)."""
-        H, D, W = self.dose_grid_shape
-        return build_rotation_grids(
-            (1, gantry_angles.shape[0], D, H, W), -gantry_angles,
-            self.device, self.dtype, iso_center=self.iso_center,
-            resolution=self.dose_grid_spacing,
-        )
+    def _bev_sampling_grid(self, gantry_angles: torch.Tensor) -> torch.Tensor:
+        """Where each beam's-eye-view voxel samples the patient, per beam.
 
-    def _density_to_bev(self, density_image: torch.Tensor, inv_grid: torch.Tensor,
+        Follows ``RadiologicalDepthLayer``'s ray convention exactly -- rotation about
+        ``iso / res + 0.5`` in index space, depth planes at integer indices, points
+        outside ``[0, N-1]`` treated as air -- so the lattice's central-axis depth is
+        the baseline engine's, voxel for voxel, at every gantry angle. Resampling
+        through the inverse of ``BeamRotationLayer`` instead puts the surface one
+        voxel apart from the baseline at oblique angles.
+
+        Returns:
+            ``[G, D, W, 2]`` ``grid_sample`` coordinates (``align_corners=True``) into
+            each ``[D, W]`` patient slice. Out-of-volume points are sent far outside
+            the image, so zero padding makes them exactly air, as in the baseline.
+        """
+        _, D, W = self.dose_grid_shape
+        _, r_d, r_w = self.dose_grid_spacing
+        centre_w = self.iso_center[2] / r_w + 0.5
+        centre_d = self.iso_center[1] / r_d + 0.5
+        # BEV column w is the baseline's ray x = w + 0.5 (its central ray, x = centre_w,
+        # sits at the lattice's iso column iso / res); BEV plane p is ray point y = p.
+        x0 = (torch.arange(W, device=self.device, dtype=torch.float64) + 0.5 - centre_w).view(1, 1, W)
+        y0 = (torch.arange(D, device=self.device, dtype=torch.float64) - centre_d).view(1, D, 1)
+        theta = gantry_angles.to(device=self.device, dtype=torch.float64).view(-1, 1, 1)
+        cos, sin = torch.cos(theta), torch.sin(theta)
+        x = x0 * cos - y0 * sin + centre_w                                 # [G, D, W]
+        y = x0 * sin + y0 * cos + centre_d
+        inside = (x >= 0) & (x <= W - 1) & (y >= 0) & (y <= D - 1)
+        grid = torch.stack((2.0 * x / max(W - 1, 1) - 1.0, 2.0 * y / max(D - 1, 1) - 1.0), dim=-1)
+        grid = torch.where(inside.unsqueeze(-1), grid, torch.full_like(grid, -10.0))
+        return grid.to(self.dtype)
+
+    def _density_to_bev(self, density_image: torch.Tensor, bev_grid: torch.Tensor,
                         B: int, G: int) -> torch.Tensor:
-        """Resample patient density [B, H, D, W] into per-beam BEV [B, G, D, H, W]."""
+        """Resample patient density [B, H, D, W] into per-beam BEV [B, G, D, H, W].
+
+        The baseline samples its ray at ``z = iso_h / res + 0.5``, i.e. halfway between
+        two patient rows; averaging adjacent rows here reproduces that (the last row
+        has no partner and is air, as the baseline's bounds check makes it).
+        """
         H, D, W = density_image.shape[1], density_image.shape[2], density_image.shape[3]
-        dp = density_image.unsqueeze(1).expand(B, G, H, D, W).reshape(B * G * H, 1, D, W)
-        grid = inv_grid.repeat(B, 1, H, 1, 1, 1).reshape(B * G * H, D, W, 2).to(dp.dtype)
-        rot = F.grid_sample(dp, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
-        return rot.reshape(B, G, H, D, W).permute(0, 1, 3, 2, 4)      # [B, G, D, H, W]
+        rows = torch.cat([0.5 * (density_image[:, :-1] + density_image[:, 1:]),
+                          torch.zeros_like(density_image[:, :1])], dim=1)
+        dp = rows.unsqueeze(1).expand(B, G, H, D, W).reshape(B * G * H, 1, D, W)
+        grid = bev_grid.unsqueeze(1).expand(G, H, D, W, 2).unsqueeze(0).expand(B, G, H, D, W, 2)
+        grid = grid.reshape(B * G * H, D, W, 2).to(dp.dtype)
+        bev = F.grid_sample(dp, grid, mode="bilinear", padding_mode="zeros", align_corners=True)
+        return bev.reshape(B, G, H, D, W).permute(0, 1, 3, 2, 4)      # [B, G, D, H, W]
 
     def _full_geometry(self) -> tuple[nn.Module, torch.Tensor]:
-        """Geometry context for the full beam set: rotation layer and inverse grid."""
-        return (self.rotation_layer, self.inv_rot_grid)
+        """Geometry context for the full beam set: rotation layer and BEV sampling grid."""
+        return (self.rotation_layer, self.bev_grid)
 
     def _build_chunk_geometry(self, chunk_size: int) -> list[tuple[int, int, tuple]]:
-        """Per-chunk (rotation layer, inverse rotation grid); cached by the base class."""
+        """Per-chunk (rotation layer, BEV sampling grid); cached by the base class."""
         chunks = []
         for start in range(0, self.number_of_beams, chunk_size):
             end = min(start + chunk_size, self.number_of_beams)
@@ -623,7 +665,7 @@ class MultilatticeEngine(PhotonBaseEngine):
                 ct_array_shape=self.dose_grid_shape, gantry_angles=gantry_angles,
                 iso_center=self.iso_center, resolution=self.dose_grid_spacing,
                 verbose=self.verbose)
-            chunks.append((start, end, (rotation_layer, self._inverse_rotation_grid(gantry_angles))))
+            chunks.append((start, end, (rotation_layer, self._bev_sampling_grid(gantry_angles))))
         return chunks
 
     def _forward_core(self, leaf_positions, mus, jaw_positions, density_image,
@@ -634,7 +676,7 @@ class MultilatticeEngine(PhotonBaseEngine):
         Returns a dose tensor [B, D, H, W] summed over the given beams; with
         return_intermediates, a tuple (bev_density, fluence_maps, fluence_volumes, dose).
         """
-        rotation_layer, inv_rot_grid = geometry
+        rotation_layer, bev_grid = geometry
         with torch.amp.autocast(self.device.type, dtype=self.dtype):
             if density_image.dim() == 3:
                 density_image = density_image.unsqueeze(0)
@@ -660,7 +702,7 @@ class MultilatticeEngine(PhotonBaseEngine):
             batched_fluence_volumes = self.fluence_volume_layer(batched_fluence_maps)
 
             with torch.no_grad():
-                bev_density = self._density_to_bev(density_image, inv_rot_grid, B, G)
+                bev_density = self._density_to_bev(density_image, bev_grid, B, G)
                 dense_depth = divergent_radiological_depth(
                     bev_density, self.SID, self.dose_grid_spacing, self.iso_center,
                     supersample=self.ray_supersample)
