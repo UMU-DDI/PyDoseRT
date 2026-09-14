@@ -11,10 +11,11 @@ EQUAL FLUENCE, each tile gets the kernel set belonging to a ray through its own
 fluence-weighted centroid, and only that tile's fluence is convolved with it.
 A residual factor then corrects each voxel to its own radiological depth,
 referenced to the tile's ray rather than to the central axis, so the difference
-it has to absorb is far smaller. By default that factor is the kernel model's own
-depth dependence, ``E(d_voxel) / E(d_ray)`` with ``E = A/a + B/b`` -- the same
-parameterisation that builds the kernels, so it carries no free parameter and
-follows the beam quality (TPR 20/10).
+it has to absorb is far smaller. By default that factor is the depth dose of the
+tile's own field, ``D(d_voxel; R) / D(d_ray; R)``, taken from the same pencil-beam
+model that builds the kernels (see :func:`field_depth_dose`). It has no free
+parameter, follows the beam quality (TPR 20/10), is correct through buildup, and
+adapts to the lattice: smaller tiles fall closer to the primary attenuation rate.
 
 An ``L = 1`` lattice is still not the central-ray calculation: its single ray
 passes through the fluence-weighted CENTROID of the aperture rather than through
@@ -210,8 +211,12 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
                   iso_center) -> list[tuple]:
     """Cut one beam's fluence into ``L x L`` equal-fluence tiles.
 
-    Returns one ``(h_bounds, w_bounds, centre_h, centre_w)`` per non-empty tile,
-    with the centre being the fluence-weighted centroid at the isocentre plane.
+    Returns one ``(h_bounds, w_bounds, centre_h, centre_w, radius_cm)`` per
+    non-empty tile: the centre is the fluence-weighted centroid at the isocentre
+    plane, and ``radius_cm`` the radius of the circular field with the tile's
+    equivalent area, ``sqrt(A_eq / pi)`` with ``A_eq = sum(psi) / max(psi)`` pixels.
+    Fluence-weighted rather than the bounding box, so an aperture that only partly
+    fills its tile gets the smaller field it really is.
     """
     d, h, w = fluence_bev.shape
     (_, iso_d, _), _ = _iso_indices(spacing, iso_center)
@@ -229,6 +234,10 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
         rows = torch.stack([x[a:b].sum(0) for a, b in pairwise(h_edges)], dim=0)
         return torch.stack([rows[:, a:b].sum(1) for a, b in pairwise(w_edges)], dim=1)
 
+    def _block_max(x):
+        rows = torch.stack([x[a:b].amax(0) for a, b in pairwise(h_edges)], dim=0)
+        return torch.stack([rows[:, a:b].amax(1) for a, b in pairwise(w_edges)], dim=1)
+
     weights = _block_sums(plane)
     centre_h = _block_sums(plane * h_idx)
     centre_w = _block_sums(plane * w_idx)
@@ -236,35 +245,51 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
     safe = weights.clamp_min(torch.finfo(plane.dtype).eps)
     centre_h = centre_h / safe
     centre_w = centre_w / safe
+    (r_h, _, r_w) = (float(x) for x in spacing)
+    pixel_area_cm2 = (r_h / 10.0) * (r_w / 10.0)
+    equivalent_pixels = weights / _block_max(plane).clamp_min(torch.finfo(plane.dtype).eps)
+    radius_cm = torch.sqrt(equivalent_pixels * pixel_area_cm2 / math.pi)
 
     tiles = []
     for r, (h0, h1) in enumerate(pairwise(h_edges)):
         for c, (w0, w1) in enumerate(pairwise(w_edges)):
             if not nonempty[r][c]:
                 continue
-            tiles.append(((h0, h1), (w0, w1), centre_h[r, c], centre_w[r, c]))
+            tiles.append(((h0, h1), (w0, w1), centre_h[r, c], centre_w[r, c],
+                          radius_cm[r, c]))
     return tiles
 
 
 
 
-def integrated_kernel_energy(pencil_beam_model, depth_cm: torch.Tensor) -> torch.Tensor:
-    """Laterally integrated pencil-beam energy ``A/a + B/b`` at a radiological depth.
+def field_depth_dose(pencil_beam_model, depth_cm: torch.Tensor,
+                     radius_cm: torch.Tensor) -> torch.Tensor:
+    """Central-axis depth dose of a circular field, from the pencil-beam model.
 
-    This is the depth dependence the kernels themselves encode, so the ratio of it
-    at two depths is the model's own answer to "how much less dose at depth d1 than
-    at d2". It follows the beam quality (TPR 20/10) through the model parameters and
-    is correct through buildup, where the dose still rises with depth.
+    The Nyholm kernel ``K(d, r) = A e^{-ar}/r + B e^{-br}/r`` integrated over a
+    field of radius ``R``::
+
+        D(d; R) = A/a (1 - e^{-aR}) + B/b (1 - e^{-bR})        (up to 2 pi)
+
+    Its depth dependence is what the multilattice needs to carry a tile's dose from
+    the depth of the tile's ray to a voxel's own depth. It depends on the field
+    size: small fields fall at the primary rate, broad fields slower because the
+    scatter term builds up with depth. ``R -> 0`` is the pencil-beam limit and
+    ``R -> inf`` the broad field ``A/a + B/b``; a tile sits between the two.
 
     Args:
         pencil_beam_model: a ``PencilBeamModel`` (``PencilBeamKernelLayer.pbm``).
         depth_cm: radiological depth in density x cm, any shape.
+        radius_cm: field radius in cm, broadcastable against ``depth_cm``.
 
     Returns:
-        Energy of the same shape, in the model's (unnormalised) units.
+        Dose of the same shape as ``depth_cm``, in the model's (unnormalised) units.
     """
     d = depth_cm.float()
-    return pencil_beam_model.depth_A_per_a(d) + pencil_beam_model.depth_B_per_b(d)
+    r = radius_cm.float()
+    a, b = pencil_beam_model.depth_a(d), pencil_beam_model.depth_b(d)
+    return (pencil_beam_model.depth_A_per_a(d) * (1.0 - torch.exp(-a * r))
+            + pencil_beam_model.depth_B_per_b(d) * (1.0 - torch.exp(-b * r)))
 
 
 def tile_crop_bounds(shape, h_bounds, w_bounds, sad_mm, spacing, iso_center,
@@ -320,10 +345,10 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
         iso_center: (X, Y, Z) isocentre in mm.
         lattice_size: ``L``; the lattice has up to ``L x L`` tiles per beam.
         mu_eff: how voxels whose radiological depth differs from their tile's ray are
-            corrected. ``None`` (default) uses the kernel model's own depth dependence,
-            ``E(d_voxel) / E(d_ray)`` with :func:`integrated_kernel_energy` -- no free
-            parameter. A float applies a constant attenuation ``exp(-mu_eff * delta)``
-            per cm of water instead.
+            corrected. ``None`` (default) uses the depth dose of the tile's own field,
+            ``D(d_voxel; R) / D(d_ray; R)`` with :func:`field_depth_dose` and ``R`` the
+            tile's equivalent radius -- no free parameter. A float applies a constant
+            attenuation ``exp(-mu_eff * delta)`` per cm of water instead.
         cf_clamp: (min, max) clamp on that correction factor, for stability.
         dense_depth: per-voxel depth ``[B, G, D, H, W]`` in density x cm,
             recomputed when not supplied.
@@ -410,9 +435,10 @@ def multilattice_dose(fluence_volume: torch.Tensor, bev_density: torch.Tensor,
                 voxel_depth = flat_depth[i, :, hs:hs + ch, ws:ws + cw]
                 ray_depth = depths[k].view(d, 1, 1)
                 if mu_eff is None:
-                    ray_energy = integrated_kernel_energy(kernel_layer.pbm, ray_depth)
-                    residual = (integrated_kernel_energy(kernel_layer.pbm, voxel_depth)
-                                / ray_energy.clamp_min(torch.finfo(ray_energy.dtype).tiny))
+                    radius = chunk[k][4]
+                    ray_dose = field_depth_dose(kernel_layer.pbm, ray_depth, radius)
+                    residual = (field_depth_dose(kernel_layer.pbm, voxel_depth, radius)
+                                / ray_dose.clamp_min(torch.finfo(ray_dose.dtype).tiny))
                 else:
                     residual = torch.exp(-float(mu_eff) * (voxel_depth - ray_depth))
                 residual = residual.clamp(*cf_clamp).to(tile_dose.dtype)
@@ -451,9 +477,9 @@ class MultilatticeEngine(PhotonBaseEngine):
         Args:
             lattice_size: ``L``; up to ``L x L`` equal-fluence tiles per beam.
             mu_eff: residual depth correction within a tile. ``None`` (default)
-                derives it from the pencil-beam model, so it follows TPR 20/10 and has
-                no free parameter; a float applies a constant attenuation per cm of
-                water instead.
+                uses the depth dose of each tile's own field from the pencil-beam
+                model -- no free parameter, follows TPR 20/10; a float applies a
+                constant attenuation per cm of water instead.
             cf_clamp: (min, max) clamp on that correction factor.
             tile_chunk: tiles convolved per grouped convolution (memory knob).
             ray_supersample: lateral oversampling of the divergent depth grid.
