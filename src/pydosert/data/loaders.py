@@ -2,6 +2,7 @@
 Patient configuration - CT dimensions and geometric parameters.
 """
 # from pydantic import BaseModel, Field, model_validator
+import math
 from typing import List
 import torch
 from pathlib import Path
@@ -233,6 +234,137 @@ def center_crop_axial(image, max_size_cm=40.0):
     cropped.SetOrigin(new_origin)
 
     return cropped
+
+
+def body_cylinder_radius_mm(ct_volume, resolution, iso_center, air_hu: float = -500.0) -> float:
+    """
+    Largest axial distance from the isocentre to any non-air voxel, in mm.
+
+    The engines rotate each axial (D, W) slice about the isocentre, so only the
+    inscribed circle of the axial plane survives every gantry angle; tissue further
+    out leaves the array at some angles and is silently treated as air. Pass the
+    result to ``pad_to_cylinder`` so nothing is lost.
+
+    Args:
+        ct_volume (torch.Tensor | np.ndarray): CT in HU, shape (H, D, W).
+        resolution (tuple[float, float, float]): Voxel spacing (res_H, res_D, res_W) in mm.
+        iso_center (tuple[float, float, float]): Isocentre (iso_H, iso_D, iso_W) in mm
+            from the grid origin.
+        air_hu (float): HU at or below which a voxel counts as air.
+
+    Returns:
+        float: Radius in mm, or 0.0 if the volume is entirely air.
+    """
+    arr = ct_volume.detach().cpu().numpy() if isinstance(ct_volume, torch.Tensor) else np.asarray(ct_volume)
+    body = (arr > air_hu).any(axis=0)                  # a voxel's axial radius does not depend on H
+    if not body.any():
+        return 0.0
+    _, res_d, res_w = resolution
+    d_idx, w_idx = np.nonzero(body)
+    dd = (d_idx + 0.5) * res_d - iso_center[1]
+    ww = (w_idx + 0.5) * res_w - iso_center[2]
+    return float(np.sqrt(dd * dd + ww * ww).max())
+
+
+def pad_to_cylinder(volumes, resolution, iso_center, radius_mm: float = 0.0, fill_value=0.0):
+    """
+    Pad the axial plane so that rotating about the isocentre crops nothing.
+
+    D and W are padded twice, symmetrically: first so the isocentre lands at the
+    centre of the slice (the rotation is about it), then -- if ``radius_mm`` is
+    given -- further, until the inscribed circle ``min(D, W) / 2`` covers it. Use
+    ``body_cylinder_radius_mm`` of the CT for the radius. H is left alone: it is
+    the gantry's rotation axis.
+
+    Apply it with the same arguments to every volume on the dose grid (CT, masks,
+    reference dose), move the beams to ``new_iso_center``
+    (``beam_sequence.iso_center = new_iso_center``), and map computed dose back to
+    the original grid with ``crop_from_cylinder``.
+
+    Args:
+        volumes (torch.Tensor | np.ndarray | list | tuple): One (..., H, D, W) volume,
+            or a list/tuple of them on the same grid.
+        resolution (tuple[float, float, float]): Voxel spacing (res_H, res_D, res_W) in mm.
+        iso_center (tuple[float, float, float]): Isocentre (iso_H, iso_D, iso_W) in mm
+            from the grid origin.
+        radius_mm (float): Radius the axial plane must hold around the isocentre;
+            0 only centres the isocentre.
+        fill_value (float | list | tuple): Pad value, one scalar or one per volume
+            (e.g. -1000 for HU, 0 for density, dose and masks).
+
+    Returns:
+        tuple: ``(padded, new_iso_center, pad_info)``; ``padded`` in the container type
+            given, ``pad_info`` is consumed by ``crop_from_cylinder``.
+    """
+    single = not isinstance(volumes, (list, tuple))
+    vol_list = [volumes] if single else list(volumes)
+    fills = list(fill_value) if isinstance(fill_value, (list, tuple)) else [fill_value] * len(vol_list)
+    if len(fills) != len(vol_list):
+        raise ValueError(f"{len(fills)} fill values for {len(vol_list)} volumes")
+    H, D, W = vol_list[0].shape[-3:]
+    if any(tuple(v.shape[-3:]) != (H, D, W) for v in vol_list):
+        raise ValueError(f"all volumes must share the (H, D, W) grid {(H, D, W)}")
+
+    _, res_d, res_w = resolution
+    _, iso_d, iso_w = iso_center
+
+    def _centring(n, iso_voxels):
+        diff = 2.0 * iso_voxels - n
+        return (0, math.ceil(diff)) if diff >= 0 else (math.ceil(-diff), 0)
+
+    d_before, d_after = _centring(D, iso_d / res_d)
+    w_before, w_after = _centring(W, iso_w / res_w)
+
+    if radius_mm:
+        # +2 voxels: the radius is measured to voxel centres, so the outermost
+        # voxel's far corner sits up to one voxel beyond it. Grow both sides
+        # equally -- padding one side would move the isocentre off centre.
+        need_d = math.ceil(2.0 * radius_mm / res_d) + 2 - (D + d_before + d_after)
+        need_w = math.ceil(2.0 * radius_mm / res_w) + 2 - (W + w_before + w_after)
+        if need_d > 0:
+            d_before += math.ceil(need_d / 2.0)
+            d_after += math.ceil(need_d / 2.0)
+        if need_w > 0:
+            w_before += math.ceil(need_w / 2.0)
+            w_after += math.ceil(need_w / 2.0)
+
+    def _pad(v, fv):
+        if isinstance(v, torch.Tensor):
+            return torch.nn.functional.pad(v, (w_before, w_after, d_before, d_after),
+                                           mode="constant", value=float(fv))
+        widths = [(0, 0)] * (v.ndim - 2) + [(d_before, d_after), (w_before, w_after)]
+        return np.pad(v, widths, mode="constant", constant_values=fv)
+
+    padded = [_pad(v, fv) for v, fv in zip(vol_list, fills)]
+    new_iso_center = (iso_center[0], iso_d + d_before * res_d, iso_w + w_before * res_w)
+    pad_info = {"d_before": d_before, "w_before": w_before, "original_shape": (H, D, W)}
+    if single:
+        return padded[0], new_iso_center, pad_info
+    return (tuple(padded) if isinstance(volumes, tuple) else padded), new_iso_center, pad_info
+
+
+def crop_from_cylinder(volumes, pad_info: dict):
+    """
+    Undo ``pad_to_cylinder``: crop volumes on the padded grid back to the original.
+
+    Args:
+        volumes (torch.Tensor | np.ndarray | list | tuple): One (..., H, D, W) volume on
+            the padded grid (e.g. dose computed there), or a list/tuple of them.
+        pad_info (dict): The ``pad_info`` returned by ``pad_to_cylinder``.
+
+    Returns:
+        The volume(s) on the original (H, D, W) grid, in the container type given.
+    """
+    _, D, W = pad_info["original_shape"]
+    d0, w0 = pad_info["d_before"], pad_info["w_before"]
+
+    def _crop(v):
+        return v[..., d0:d0 + D, w0:w0 + W]
+
+    if isinstance(volumes, (list, tuple)):
+        cropped = [_crop(v) for v in volumes]
+        return tuple(cropped) if isinstance(volumes, tuple) else cropped
+    return _crop(volumes)
 
 def load_asc_measurements(path: str,
                           coord_map: Tuple[str, str, str] = ("X", "Y", "Z")):
