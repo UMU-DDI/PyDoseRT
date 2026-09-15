@@ -208,7 +208,7 @@ def backprojected_tile_mask(shape, h_bounds, w_bounds, sad_mm, spacing,
 
 
 def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
-                  iso_center) -> list[tuple]:
+                  iso_center, primary_fraction: float = 0.2) -> list[tuple]:
     """Cut one beam's fluence into ``L x L`` equal-fluence tiles.
 
     Returns one ``(h_bounds, w_bounds, centre_h, centre_w, radius_cm)`` per
@@ -217,12 +217,25 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
     equivalent area, ``sqrt(A_eq / pi)`` with ``A_eq = sum(psi) / max(psi)`` pixels.
     Fluence-weighted rather than the bounding box, so an aperture that only partly
     fills its tile gets the smaller field it really is.
+
+    The geometry -- where the lattice cuts, where each ray sits, how large each
+    tile's field is -- is read off the PRIMARY fluence only, ``psi > primary_fraction
+    * max(psi)``. MLC transmission and head scatter leave a floor of a few percent
+    over the whole field, typically 10-15% of a VMAT segment's total fluence. The
+    outer tiles' bounds are open to the grid edge, so that floor dragged their
+    centroids toward and past the aperture edge (a third of all rays landed outside
+    the open field, up to 8 cm away) and inflated their equivalent field size.
+    Tile membership is unchanged: the leakage is still assigned and convolved, and
+    a tile holding only leakage takes its ray from the full fluence, there being no
+    primary to place it by.
     """
     d, h, w = fluence_bev.shape
     (_, iso_d, _), _ = _iso_indices(spacing, iso_center)
     plane = fluence_bev[int(min(max(iso_d, 0), d - 1))].clamp_min(0.0)
-    h_edges = equal_fluence_edges(plane.sum(1), lattice_size)
-    w_edges = equal_fluence_edges(plane.sum(0), lattice_size)
+    primary = torch.where(plane > primary_fraction * plane.max(), plane,
+                          torch.zeros_like(plane))
+    h_edges = equal_fluence_edges(primary.sum(1), lattice_size)
+    w_edges = equal_fluence_edges(primary.sum(0), lattice_size)
 
     # Tile weights and fluence-weighted centroids for the whole lattice in three
     # reductions, with a single device sync for the emptiness test. Doing this per
@@ -238,16 +251,20 @@ def lattice_tiles(fluence_bev: torch.Tensor, lattice_size: int, spacing,
         rows = torch.stack([x[a:b].amax(0) for a, b in pairwise(h_edges)], dim=0)
         return torch.stack([rows[:, a:b].amax(1) for a, b in pairwise(w_edges)], dim=1)
 
-    weights = _block_sums(plane)
-    centre_h = _block_sums(plane * h_idx)
-    centre_w = _block_sums(plane * w_idx)
+    weights = _block_sums(plane)                        # membership: all of the fluence
+    primary_weights = _block_sums(primary)
+    has_primary = primary_weights > 0.0
+    geometry_weights = torch.where(has_primary, primary_weights, weights)
+    centre_h = torch.where(has_primary, _block_sums(primary * h_idx), _block_sums(plane * h_idx))
+    centre_w = torch.where(has_primary, _block_sums(primary * w_idx), _block_sums(plane * w_idx))
     nonempty = (weights > 0.0).tolist()                 # the one sync
-    safe = weights.clamp_min(torch.finfo(plane.dtype).eps)
+    safe = geometry_weights.clamp_min(torch.finfo(plane.dtype).eps)
     centre_h = centre_h / safe
     centre_w = centre_w / safe
     (r_h, _, r_w) = (float(x) for x in spacing)
     pixel_area_cm2 = (r_h / 10.0) * (r_w / 10.0)
-    equivalent_pixels = weights / _block_max(plane).clamp_min(torch.finfo(plane.dtype).eps)
+    equivalent_pixels = (geometry_weights
+                         / _block_max(plane).clamp_min(torch.finfo(plane.dtype).eps))
     radius_cm = torch.sqrt(equivalent_pixels * pixel_area_cm2 / math.pi)
 
     # The lattice is cut at the isocentre plane, but it has to own every voxel at
