@@ -62,6 +62,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 from pydosert.data.ion_beam import IonBeamletBatch
 from pydosert.data.ion_machine import IonMachineConfig
@@ -255,6 +256,7 @@ class IonDoseEngine(nn.Module):
         heterogeneous_mcs: bool = True,
         n_sub_beams_per_dim: int = 9,
         bev_correction: nn.Module | None = None,
+        beamlet_chunk_size: int | None = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ) -> None:
@@ -287,6 +289,7 @@ class IonDoseEngine(nn.Module):
         self.lateral_model = lateral_model
         self.heterogeneous_mcs = bool(heterogeneous_mcs)
         self.n_sub_beams_per_dim = int(n_sub_beams_per_dim)
+        self.beamlet_chunk_size = None if beamlet_chunk_size is None else max(1, int(beamlet_chunk_size))
         self.field_size = self._check_field_size(field_size)
         # The correction injection point. Registered as a plain submodule so its
         # parameters are part of the engine's state_dict and move with .to().
@@ -829,6 +832,7 @@ class IonDoseEngine(nn.Module):
         *,
         ssd_mm: torch.Tensor | float | None = None,
         finalize_chunk_size: int = 4,
+        beamlet_chunk_size: int | None = None,
         return_per_beamlet: bool = False,
     ) -> torch.Tensor | list[BeamletDose | None]:
         """Compute the dose of a beamlet batch. See :meth:`forward`."""
@@ -838,6 +842,7 @@ class IonDoseEngine(nn.Module):
             dose_mask,
             ssd_mm=ssd_mm,
             finalize_chunk_size=finalize_chunk_size,
+            beamlet_chunk_size=beamlet_chunk_size,
             return_per_beamlet=return_per_beamlet,
         )
 
@@ -849,9 +854,171 @@ class IonDoseEngine(nn.Module):
         *,
         ssd_mm: torch.Tensor | float | None = None,
         finalize_chunk_size: int = 4,
+        beamlet_chunk_size: int | None = None,
         return_per_beamlet: bool = False,
     ) -> torch.Tensor | list[BeamletDose | None]:
         """Compute the patient-frame dose of a batch of ion beamlets.
+
+        A single pass allocates BEV volumes for all ``G`` beamlets at once, so
+        peak memory grows linearly with the number of spots and a full IMPT plan
+        will not fit. ``beamlet_chunk_size`` splits the batch into groups that
+        are computed one at a time and summed. Each group is wrapped in
+        :func:`torch.utils.checkpoint.checkpoint`, so the backward pass
+        recomputes one group's BEV volumes at a time instead of holding all of
+        them; gradients are unaffected and reach every beamlet field.
+
+        The result does not depend on the chunk size -- dose is a plain sum over
+        beamlets and the Gy conversion is linear -- only peak memory does.
+
+        Args:
+            beamlets: The ``G`` beamlets to compute, all on the engine's device
+                and dtype.
+            density_image: Stopping-power-ratio volume, ``[H, D, W]`` or
+                ``[1, H, D, W]``, matching ``dose_grid_shape``. This is what the
+                transport integrates; it is *not* a mass density.
+            dose_mask: Boolean volume of the same shape marking where dose is
+                scored. Use :func:`patient_dose_mask`.
+            ssd_mm: Source-to-skin distance in mm, scalar or ``(G,)``. ``None``
+                applies no radiological-depth offset.
+            finalize_chunk_size: Beamlets rotated per batched ``grid_sample``.
+                Peak memory of the rotation step only.
+            beamlet_chunk_size: Beamlets whose BEV volumes are built at once.
+                ``None`` uses the engine's default; ``None`` there too means one
+                unchunked pass. This is the setting that bounds peak memory.
+            return_per_beamlet: Return the per-beamlet cropped doses instead of
+                the summed volume. Chunking still applies, and the returned list
+                is in beamlet order; checkpointing does not, since the outputs
+                are kept anyway.
+
+        Returns:
+            ``[1, H, D, W]`` dose in Gy, or -- with ``return_per_beamlet`` -- a
+            list of ``G`` :class:`BeamletDose` (``None`` for a beamlet that
+            deposits nothing inside the grid).
+
+        Raises:
+            TypeError: If ``beamlets`` is not an :class:`IonBeamletBatch`.
+            ValueError: On a shape, device or dtype mismatch of any input.
+        """
+        if not isinstance(beamlets, IonBeamletBatch):
+            raise TypeError(f"beamlets must be an IonBeamletBatch, got {type(beamlets).__name__}")
+        if beamlets.device != self.device or beamlets.dtype != self.dtype:
+            raise ValueError(
+                f"beamlets are on {beamlets.device}/{beamlets.dtype} but the engine computes on "
+                f"{self.device}/{self.dtype}; move them with IonBeamletBatch.to()"
+            )
+
+        chunk_size = self.beamlet_chunk_size if beamlet_chunk_size is None else beamlet_chunk_size
+        if chunk_size is None or int(chunk_size) >= len(beamlets):
+            return self._forward_batch(
+                beamlets,
+                density_image,
+                dose_mask,
+                ssd_mm=ssd_mm,
+                finalize_chunk_size=finalize_chunk_size,
+                return_per_beamlet=return_per_beamlet,
+            )
+        chunk_size = max(1, int(chunk_size))
+
+        # Expand ssd to one value per beamlet up front so each chunk can take its
+        # own slice; a scalar would otherwise be re-broadcast to the chunk length.
+        ssd_per_beamlet = self._expand_ssd(beamlets, ssd_mm)
+
+        if return_per_beamlet:
+            per_beamlet: list[BeamletDose | None] = []
+            for start, end, chunk in beamlets.chunks(chunk_size):
+                per_beamlet.extend(
+                    self._forward_batch(
+                        chunk,
+                        density_image,
+                        dose_mask,
+                        ssd_mm=None if ssd_per_beamlet is None else ssd_per_beamlet[start:end],
+                        finalize_chunk_size=finalize_chunk_size,
+                        return_per_beamlet=True,
+                    )
+                )
+            return per_beamlet
+
+        dose = None
+        for start, end, chunk in beamlets.chunks(chunk_size):
+            chunk_dose = checkpoint(
+                self._forward_batch_positional,
+                chunk,
+                density_image,
+                dose_mask,
+                None if ssd_per_beamlet is None else ssd_per_beamlet[start:end],
+                finalize_chunk_size,
+                use_reentrant=False,
+            )
+            dose = chunk_dose if dose is None else dose + chunk_dose
+        return dose
+
+    def _forward_batch_positional(
+        self,
+        beamlets: IonBeamletBatch,
+        density_image: torch.Tensor,
+        dose_mask: torch.Tensor,
+        ssd_mm: torch.Tensor | None,
+        finalize_chunk_size: int,
+    ) -> torch.Tensor:
+        """Positional-only :meth:`_forward_batch`, for ``checkpoint``.
+
+        ``torch.utils.checkpoint`` forwards positional arguments only, so the
+        keyword-only signature of :meth:`_forward_batch` cannot be checkpointed
+        directly.
+        """
+        return self._forward_batch(
+            beamlets,
+            density_image,
+            dose_mask,
+            ssd_mm=ssd_mm,
+            finalize_chunk_size=finalize_chunk_size,
+            return_per_beamlet=False,
+        )
+
+    def _expand_ssd(
+        self,
+        beamlets: IonBeamletBatch,
+        ssd_mm: torch.Tensor | float | None,
+    ) -> torch.Tensor | None:
+        """Broadcast ``ssd_mm`` to one value per beamlet so chunks can slice it.
+
+        Args:
+            beamlets: The full batch, for its length.
+            ssd_mm: Source-to-skin distance, scalar or ``(G,)``, or ``None``.
+
+        Returns:
+            A ``(G,)`` tensor, or ``None`` when no offset was requested.
+
+        Raises:
+            ValueError: If ``ssd_mm`` is neither scalar nor ``(G,)``.
+        """
+        if ssd_mm is None:
+            return None
+        num_beamlets = len(beamlets)
+        ssd_tensor = torch.as_tensor(ssd_mm, device=self.device, dtype=self.dtype)
+        if ssd_tensor.ndim == 0:
+            return ssd_tensor.expand(num_beamlets).clone()
+        if ssd_tensor.shape != (num_beamlets,):
+            raise ValueError(
+                f"ssd_mm must be scalar or [{num_beamlets}], got {tuple(ssd_tensor.shape)}"
+            )
+        return ssd_tensor
+
+    def _forward_batch(
+        self,
+        beamlets: IonBeamletBatch,
+        density_image: torch.Tensor,
+        dose_mask: torch.Tensor,
+        *,
+        ssd_mm: torch.Tensor | float | None = None,
+        finalize_chunk_size: int = 4,
+        return_per_beamlet: bool = False,
+    ) -> torch.Tensor | list[BeamletDose | None]:
+        """Compute the dose of one whole beamlet batch in a single BEV pass.
+
+        This is the unchunked core: it materialises ``[1, G, depths, h, w]`` BEV
+        volumes for every beamlet at once, so its peak memory scales with ``G``.
+        :meth:`forward` calls it directly, or once per chunk.
 
         Args:
             beamlets: The ``G`` beamlets to compute, all on the engine's device
