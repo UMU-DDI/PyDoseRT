@@ -393,3 +393,89 @@ def test_moving_a_tracked_batch_keeps_it_differentiable():
     moved = batch.to(torch.float64)
     moved.weight.sum().backward()
     assert batch.weight.grad is not None
+
+
+# --------------------------------------------------------------- slicing
+
+
+def make_four() -> IonBeamletBatch:
+    """A four-beamlet batch with distinguishable energies."""
+    return make_batch(
+        gantry_angle_deg=[0.0, 45.0, 90.0, 180.0],
+        position_mm=[[0.0, 0.0], [6.0, -4.0], [1.0, 2.0], [-3.0, 5.0]],
+        energy_mev=[100.0, 120.0, 140.0, 160.0],
+        sigma_mm=[[4.6, 4.6]] * 4,
+        weight=[1.0, 2.0, 3.0, 4.0],
+    )
+
+
+def test_integer_index_returns_a_batch_of_one():
+    """Indexing never degrades the type, so engine calls take any selection."""
+    batch = make_four()
+    single = batch[1]
+    assert isinstance(single, IonBeamletBatch)
+    assert len(single) == 1
+    assert single.energy_mev.tolist() == [120.0]
+
+
+def test_negative_index_counts_from_the_end():
+    assert make_four()[-1].energy_mev.tolist() == [160.0]
+
+
+def test_slice_selects_a_contiguous_range():
+    assert make_four()[1:3].energy_mev.tolist() == [120.0, 140.0]
+
+
+@pytest.mark.parametrize(
+    "index, expected",
+    [
+        ([0, 3], [100.0, 160.0]),
+        (torch.tensor([2, 0]), [140.0, 100.0]),
+        (torch.tensor([True, False, True, False]), [100.0, 140.0]),
+    ],
+)
+def test_fancy_indexing_gathers_in_the_given_order(index, expected):
+    assert make_four()[index].energy_mev.tolist() == expected
+
+
+def test_slicing_is_a_view_so_gradients_reach_the_parent():
+    """Chunked engine calls slice the batch, so the parent must still receive grads."""
+    batch = make_four().with_requires_grad(weight=True)
+    batch[1:3].weight.sum().backward()
+    assert batch.weight.grad.tolist() == [0.0, 1.0, 1.0, 0.0]
+
+
+def test_chunks_cover_the_batch_in_order():
+    batch = make_four()
+    assert [(s, e, len(c)) for s, e, c in batch.chunks(3)] == [(0, 3, 3), (3, 4, 1)]
+    assert [c.energy_mev.tolist() for _, _, c in batch.chunks(2)] == [[100.0, 120.0], [140.0, 160.0]]
+
+
+def test_chunks_larger_than_the_batch_yield_one_chunk():
+    assert len(list(make_four().chunks(99))) == 1
+
+
+@pytest.mark.parametrize("bad", [4, -5])
+def test_out_of_range_index_raises(bad):
+    with pytest.raises(IndexError, match="out of range"):
+        make_four()[bad]
+
+
+def test_empty_slice_raises():
+    with pytest.raises(ValueError, match="at least one beamlet"):
+        make_four()[2:2]
+
+
+def test_bare_bool_index_raises():
+    with pytest.raises(TypeError, match="bare bool"):
+        make_four()[True]
+
+
+def test_wrong_length_bool_mask_raises():
+    with pytest.raises(IndexError, match="bool mask has length"):
+        make_four()[torch.tensor([True, False])]
+
+
+def test_float_index_tensor_raises():
+    with pytest.raises(IndexError, match="integer or bool"):
+        make_four()[torch.tensor([0.0, 1.0])]
