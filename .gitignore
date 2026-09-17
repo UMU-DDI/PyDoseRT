@@ -22,3 +22,4 @@ docs/
 debug/
 example_data/
 experiments/
+.venv*

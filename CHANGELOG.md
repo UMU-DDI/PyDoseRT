@@ -13,9 +13,25 @@ This changelog was introduced after releasing version 1.3.0.
 - `IonKernelCalibration` plus `commissioning/calibrate_ion_kernel_table.py`: learnable per-row residuals over a kernel table, fitted against water-phantom Monte Carlo by backpropagating through the engine. The residuals are exactly zero at initialisation, so an untrained calibration reproduces the input table bit-for-bit.
 - `commissioning/conversion/convert_proton_mat_to_npz.py` converts a pyRadPlan/matRad proton machine `.mat` into the kernel-table `.npz`.
 - `patient_dose_mask` builds the dose-scoring mask topologically, keeping internal air (trachea, bowel gas, sinuses) that a density threshold would zero. `IonDoseEngine.compute_dose` requires the mask explicitly and applies no threshold of its own.
+- New composable objective primitives in `pydosert.objectives.losses`: `upper_penalty`, `lower_penalty`, `mean_upper_penalty` and `squared_penalty` (one- and two-sided squared-hinge penalties on voxel doses), plus `geud` for the generalized equivalent uniform dose. `geud` is a reduction rather than a loss, so it composes with the penalties to build EUD objectives (e.g. `upper_penalty(geud(x, 2.5), c)` is a max-EUD constraint).
+- New `pydosert.objectives.regularizers` module holding the deliverability regularizers `mus_loss`, `leafs_loss` and `jaws_loss`, each returning a (rate, complexity) pair derived from the machine limits.
+- `condition_aperture_pair` and `condition_beam_params` in `pydosert.data.beam` give direct optimization and deep-learning workflows one shared differentiable map from unconstrained variables to physical ordered leaf/jaw pairs and positive MUs. The MU scale is normalized by the control-point count so the raw variables stay ~O(1) regardless of the number of control points.
+- New plotting functions: `plot_mu_polar`, `plot_fluence_and_mu`, `plot_dvh`, `plot_profiles` and `plot_kernel`, with the reusable `compute_fluence_maps` and `compute_dvh_curves` helpers behind them.
+
 ### Changed
+- **Breaking**: the plotting functions have been renamed to a consistent `plot_*` scheme: `print_paper_plot` is now `plot_overview`, `print_comparison_plot` is now `plot_comparison`, and `make_animation` is now `plot_animation`.
+- `utils.py` docstrings have been converted to the Google style used elsewhere in the package.
+- The example notebooks have been updated to the new objective, conditioning and plotting APIs.
+
 ### Fixed
+- `Patient.device` and `Patient.dtype` read the density-image tensor directly; they previously referenced a non-existent `.attenuation.data` attribute and raised.
+- `load_structures` returns early when no structure set is given, instead of nesting the whole body in a conditional.
+
 ### Removed
+- **Breaking**: the ad-hoc loss collection in `pydosert.objectives.losses` has been removed in favour of the composable primitives above: `scale_loss`, `constraint_loss`, `compute_l2_loss`, `dose_loss`, `compute_loss`, `compute_dvh_loss`, `compute_mae_loss`, `leaf_range_loss`, `create_sphere_mask`, `cosine_warmup_scheduler`, `dvh_percentile_objective`, `dvh_volume_objective`, `dvh_percentile_loss_with_threshold`, `dvh_volume_loss_with_threshold`, `dvh_Dp_loss` and `dvh_Vx_loss`.
+- **Breaking**: `mus_loss`, `leafs_loss` and `jaws_loss` have moved from `pydosert.objectives.losses` to `pydosert.objectives.regularizers`.
+- **Breaking**: the `print_results` and `quick_plot` plotting functions have been removed.
+- The unused `get_initial_weights` helper has been removed from `utils.py`.
 
 ## [1.4.0]
 
