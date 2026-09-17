@@ -29,7 +29,7 @@ Design rules
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 
 import torch
@@ -248,6 +248,80 @@ class IonBeamletBatch:
     def num_beamlets(self) -> int:
         """Number of beamlets ``G``."""
         return len(self)
+
+    def __getitem__(self, index: int | slice | Sequence[int] | torch.Tensor) -> IonBeamletBatch:
+        """Select a subset of beamlets, as a batch.
+
+        Indexing always returns an :class:`IonBeamletBatch`, never a scalar
+        "single beamlet" object: an integer gives a batch of one. That keeps the
+        engine's input type the same however you slice, which is what makes
+        chunking a plain loop over ``batch[start:end]``.
+
+        A slice returns views into the original tensors, so gradients flow back
+        to the parent batch and nothing is copied. Fancy indexing (a list, or an
+        index / bool-mask tensor) gathers, which also backpropagates.
+
+        Args:
+            index: An int, a slice, a sequence of ints, a 1-D integer tensor, or
+                a 1-D bool mask of length ``G``.
+
+        Returns:
+            The selected beamlets as a new batch, in the order given.
+
+        Raises:
+            IndexError: If an integer index is out of range, or a bool mask has
+                the wrong length.
+            ValueError: If the selection is empty -- a batch needs >= 1 beamlet.
+        """
+        num_beamlets = len(self)
+
+        if isinstance(index, bool):   # bool is a subclass of int; reject it first
+            raise TypeError("cannot index an IonBeamletBatch with a bare bool")
+
+        if isinstance(index, int):
+            if not -num_beamlets <= index < num_beamlets:
+                raise IndexError(
+                    f"beamlet index {index} is out of range for a batch of {num_beamlets}"
+                )
+            index = slice(index % num_beamlets, index % num_beamlets + 1)
+
+        if isinstance(index, torch.Tensor):
+            if index.ndim != 1:
+                raise IndexError(f"index tensor must be 1-D, got {list(index.shape)}")
+            if index.dtype == torch.bool:
+                if index.shape[0] != num_beamlets:
+                    raise IndexError(
+                        f"bool mask has length {index.shape[0]}, expected {num_beamlets}"
+                    )
+            elif index.is_floating_point():
+                raise IndexError(f"index tensor must be integer or bool, got {index.dtype}")
+            index = index.to(self.device)
+        elif not isinstance(index, slice):
+            index = torch.as_tensor(list(index), dtype=torch.long, device=self.device)
+            if index.ndim != 1:
+                raise IndexError("index sequence must be 1-D")
+
+        # An empty selection is rejected by __post_init__, which requires >= 1 beamlet.
+        return self._map(lambda t: t[index])
+
+    def chunks(self, chunk_size: int) -> Iterator[tuple[int, int, IonBeamletBatch]]:
+        """Iterate the batch in contiguous slices of at most ``chunk_size``.
+
+        Yields ``(start, end, sub_batch)``. The sub-batches are views, so this
+        allocates nothing; it exists so callers bound peak memory by looping
+        instead of materialising every beamlet's BEV volume at once.
+
+        Args:
+            chunk_size: Maximum beamlets per chunk. Values < 1 are treated as 1.
+
+        Yields:
+            ``(start, end, batch[start:end])`` covering the batch in order.
+        """
+        chunk_size = max(1, int(chunk_size))
+        num_beamlets = len(self)
+        for start in range(0, num_beamlets, chunk_size):
+            end = min(start + chunk_size, num_beamlets)
+            yield start, end, self[start:end]
 
     @property
     def device(self) -> torch.device:

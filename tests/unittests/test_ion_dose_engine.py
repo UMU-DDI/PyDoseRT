@@ -597,3 +597,104 @@ def test_geometry_validation(table):
     with pytest.raises(ValueError, match="dose_grid_spacing"):
         make_engine(table, dose_grid_spacing=(2.0, 0.0, 2.0))
     assert math.isclose(make_engine(table)._lateral_area_mm2(), SPACING[0] * SPACING[2])
+
+
+# ------------------------------------------------------- beamlet chunking
+
+
+def _chunking_beamlets(table, energy, count=5):
+    """A batch of beamlets spread laterally so their crops differ."""
+    return IonBeamletBatch.create(
+        gantry_angle_deg=[0.0, 30.0, 90.0, 180.0, 270.0][:count],
+        position_mm=[[float(i) * 3.0 - 6.0, float(i) * 2.0 - 4.0] for i in range(count)],
+        energy_mev=[float(energy)] * count,
+        sigma_mm=[[SIGMA_MM, SIGMA_MM]] * count,
+        weight=[WEIGHT * (1.0 + 0.1 * i) for i in range(count)],
+        iso_center_mm=list(ISO),
+        sad_mm=SAD_MM,
+        dtype=table.dtype,
+    )
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2, 3, 5, 10])
+def test_beamlet_chunking_does_not_change_the_dose(table, energy, chunk_size):
+    """Chunking is a memory strategy: the summed dose is identical for any chunk size.
+
+    Dose is a plain sum over beamlets and the Gy conversion is linear, so
+    splitting the batch may only reorder the additions.
+    """
+    engine = make_engine(table)
+    beamlets = _chunking_beamlets(table, energy)
+    phantom, mask = water(table.dtype), all_scored()
+
+    reference = engine.compute_dose(beamlets, phantom, mask)
+    chunked = engine.compute_dose(beamlets, phantom, mask, beamlet_chunk_size=chunk_size)
+
+    assert chunked.shape == reference.shape
+    torch.testing.assert_close(chunked, reference, rtol=1e-10, atol=1e-12)
+
+
+def test_beamlet_chunking_preserves_gradients(table, energy):
+    """Checkpointed chunks give the same gradients as one unchunked pass.
+
+    The batch is a frozen dataclass rather than a positional tensor argument,
+    so this pins that non-reentrant checkpointing still reaches its fields.
+    """
+    engine = make_engine(table)
+    phantom, mask = water(table.dtype), all_scored()
+
+    def weight_grad(chunk_size):
+        beamlets = _chunking_beamlets(table, energy).with_requires_grad(weight=True, position=True)
+        dose = engine.compute_dose(beamlets, phantom, mask, beamlet_chunk_size=chunk_size)
+        dose.square().sum().backward()
+        return beamlets.weight.grad.clone(), beamlets.position_mm.grad.clone()
+
+    ref_weight, ref_position = weight_grad(None)
+    chunk_weight, chunk_position = weight_grad(2)
+
+    assert ref_weight.abs().sum() > 0        # the test would be vacuous otherwise
+    torch.testing.assert_close(chunk_weight, ref_weight, rtol=1e-9, atol=1e-11)
+    torch.testing.assert_close(chunk_position, ref_position, rtol=1e-9, atol=1e-11)
+
+
+def test_beamlet_chunking_applies_per_beamlet_ssd(table, energy):
+    """A per-beamlet ssd_mm is sliced with its chunk, not re-broadcast."""
+    engine = make_engine(table)
+    beamlets = _chunking_beamlets(table, energy)
+    phantom, mask = water(table.dtype), all_scored()
+    ssd = torch.linspace(900.0, 1000.0, len(beamlets), dtype=table.dtype)
+
+    reference = engine.compute_dose(beamlets, phantom, mask, ssd_mm=ssd)
+    chunked = engine.compute_dose(beamlets, phantom, mask, ssd_mm=ssd, beamlet_chunk_size=2)
+
+    torch.testing.assert_close(chunked, reference, rtol=1e-10, atol=1e-12)
+
+
+def test_beamlet_chunking_returns_every_beamlet_in_order(table, energy):
+    """return_per_beamlet still yields G entries, in beamlet order, when chunked."""
+    engine = make_engine(table)
+    beamlets = _chunking_beamlets(table, energy)
+    phantom, mask = water(table.dtype), all_scored()
+
+    reference = engine.compute_dose(beamlets, phantom, mask, return_per_beamlet=True)
+    chunked = engine.compute_dose(
+        beamlets, phantom, mask, beamlet_chunk_size=2, return_per_beamlet=True
+    )
+
+    assert len(chunked) == len(reference) == len(beamlets)
+    for got, want in zip(chunked, reference):
+        assert (got is None) == (want is None)
+        if want is not None:
+            assert got.offset == want.offset and got.full_shape == want.full_shape
+            torch.testing.assert_close(got.dose, want.dose, rtol=1e-10, atol=1e-12)
+
+
+def test_engine_default_chunk_size_is_used_when_not_overridden(table, energy):
+    """beamlet_chunk_size on the engine applies without passing it per call."""
+    beamlets = _chunking_beamlets(table, energy)
+    phantom, mask = water(table.dtype), all_scored()
+
+    reference = make_engine(table).compute_dose(beamlets, phantom, mask)
+    chunked = make_engine(table, beamlet_chunk_size=2).compute_dose(beamlets, phantom, mask)
+
+    torch.testing.assert_close(chunked, reference, rtol=1e-10, atol=1e-12)
