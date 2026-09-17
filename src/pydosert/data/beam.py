@@ -73,7 +73,7 @@ def condition_beam_params(leafs_raw, mus_raw, jaws_raw, normalize_mu=True, mu_re
     return leafs, mus, jaws
 
 
-@dataclass
+@dataclass(frozen=True)
 class Beam:
     """
     A single control point (beam) in a treatment arc for a single sample.
@@ -256,7 +256,7 @@ class Beam:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class BeamSequence:
     """
     A sequence of control points (beams) for a single treatment arc.

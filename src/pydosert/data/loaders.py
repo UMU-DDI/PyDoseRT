@@ -4,6 +4,7 @@ Patient configuration - CT dimensions and geometric parameters.
 # from pydantic import BaseModel, Field, model_validator
 from typing import List
 import torch
+from dataclasses import replace
 from pathlib import Path
 import numpy as np
 from pydosert.data.utils.dicom_utils import load_ct_series, load_structures, load_dose, fetch_plan_data
@@ -139,7 +140,10 @@ def load_dicom(
             if dose_ref != key:
                 continue
 
-        beam_sequence.iso_center = tuple(np.array(beam_sequence.iso_center) - np.array(origin))
+        beam_sequence = replace(
+            beam_sequence,
+            iso_center=tuple(np.array(beam_sequence.iso_center) - np.array(origin)),
+        )
         if use_delivery:
             # Convert to delivery positions and update treatment config
             beam_sequence = beam_sequence.to_delivery()

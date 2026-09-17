@@ -17,6 +17,8 @@ The "geometry context" is an opaque object produced by ``_full_geometry`` /
 inspects it, so each engine is free to decide what it contains (e.g. the
 beam-count-dependent layers that must vary per chunk).
 """
+from dataclasses import replace
+
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
@@ -546,7 +548,7 @@ class PhotonBaseEngine(nn.Module):
         if calibration_mu is None:
             calibration_mu = self.machine_config.calibration_mu
 
-        beam.mu = calibration_mu * beam.mu
+        beam = replace(beam, mu=calibration_mu * beam.mu)
         water_attenuation = torch.ones(self.dose_grid_shape).to(self.device).to(self.dtype)
 
         self.layers_initialized = False
