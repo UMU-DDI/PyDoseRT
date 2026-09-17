@@ -6,6 +6,8 @@ behaviour, and the converter round-trip is exercised on synthetic ``.mat`` files
 written into ``tmp_path``.
 """
 
+import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -489,3 +491,34 @@ class TestEnergyInterpolation:
         interpolating = IonKernelTable.load(PRESET_NPZ, dtype=torch.float64, allow_energy_interpolation=True)
         for energy in table.available_energies[::23]:
             assert torch.equal(table.edep_curve(energy)[1], interpolating.edep_curve(energy)[1])
+
+
+def test_load_accepts_a_bundled_table_name(tmp_path):
+    """A bare name resolves to the packaged table, like MachineConfig's presets,
+    while paths keep working and a local file of the same name wins."""
+    from pydosert.physics.kernels.ion_kernel_table import list_ion_kernel_tables
+
+    assert "protons_doserad" in list_ion_kernel_tables()
+
+    by_name = IonKernelTable.load("protons_doserad")
+    by_name_ext = IonKernelTable.load("protons_doserad.npz")
+    by_path = IonKernelTable.load(PRESET_NPZ)
+    by_abs = IonKernelTable.load(Path(PRESET_NPZ).resolve())
+    for other in (by_name_ext, by_path, by_abs):
+        assert other.available_energies == by_name.available_energies
+
+    # an existing file is never shadowed by the bundled table of the same name
+    shutil.copy(PRESET_NPZ, tmp_path / "protons_doserad.npz")
+    cwd = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        assert IonKernelTable.load("protons_doserad.npz").available_energies == by_name.available_energies
+    finally:
+        os.chdir(cwd)
+
+
+def test_load_reports_unknown_names_and_paths():
+    with pytest.raises(FileNotFoundError, match="bundled tables"):
+        IonKernelTable.load("not_a_table")
+    with pytest.raises(FileNotFoundError, match="not found"):
+        IonKernelTable.load("no/such/dir/protons_doserad.npz")

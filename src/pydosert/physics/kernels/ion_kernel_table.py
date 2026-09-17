@@ -40,6 +40,7 @@ named for what the engine does with it (deposited energy per unit path length).
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from importlib import resources
 from pathlib import Path
 from typing import Literal
 
@@ -47,6 +48,49 @@ import numpy as np
 import torch
 
 FORMAT_VERSION = 1
+
+#: Packaged kernel tables live beside the photon machine presets.
+_TABLE_PACKAGE = "pydosert.data"
+_TABLE_DIR = "machine_presets"
+
+
+def list_ion_kernel_tables() -> list[str]:
+    """Names of the kernel tables bundled with the package (without ``.npz``).
+
+    Any of these may be passed to :meth:`IonKernelTable.load` in place of a path.
+    """
+    table_dir = resources.files(_TABLE_PACKAGE).joinpath(_TABLE_DIR)
+    return sorted(p.name[: -len(".npz")] for p in table_dir.iterdir() if p.name.endswith(".npz"))
+
+
+def _resolve_table_path(name_or_path: str | Path) -> Path:
+    """Resolve a bundled table name or a filesystem path to a readable path.
+
+    An existing file wins, so a local ``protons_doserad.npz`` is never shadowed by
+    the packaged table of the same name.
+
+    Args:
+        name_or_path: Path to an ``.npz``, or the name of a bundled table
+            (``.npz`` extension optional).
+
+    Returns:
+        Path to the archive.
+
+    Raises:
+        FileNotFoundError: If neither a file nor a bundled table matches.
+    """
+    path = Path(name_or_path)
+    if path.is_file():
+        return path
+    if path.parent != Path("."):          # an explicit path that simply is not there
+        raise FileNotFoundError(f"Ion kernel table not found: {path}")
+    bundled = resources.files(_TABLE_PACKAGE).joinpath(_TABLE_DIR, path.stem + ".npz")
+    if bundled.is_file():
+        return Path(str(bundled))
+    raise FileNotFoundError(
+        f"Ion kernel table not found: {name_or_path}. It is neither a file nor one of the "
+        f"bundled tables {list_ion_kernel_tables()}."
+    )
 
 #: Arrays every table archive must contain.
 _REQUIRED_KEYS = (
@@ -237,7 +281,10 @@ class IonKernelTable:
         """Load a kernel table from an ``.npz`` written by the commissioning converter.
 
         Args:
-            path: Path to the ``.npz`` archive.
+            path: Path to the ``.npz`` archive -- absolute or relative -- or the name
+                of a table bundled with the package, e.g. ``"protons_doserad"``
+                (``.npz`` optional). See :func:`list_ion_kernel_tables`. An existing
+                file always wins over a bundled table of the same name.
             device: Device to hold the curves on (default: CPU).
             dtype: Floating dtype of the curves. The archive stores float64; pass
                 ``torch.float64`` to keep full precision.
@@ -249,12 +296,10 @@ class IonKernelTable:
             The loaded :class:`IonKernelTable`.
 
         Raises:
-            FileNotFoundError: If ``path`` does not exist.
+            FileNotFoundError: If ``path`` is neither an existing file nor a bundled table.
             ValueError: If the archive is missing arrays or has an unknown format version.
         """
-        path = Path(path)
-        if not path.is_file():
-            raise FileNotFoundError(f"Ion kernel table not found: {path}")
+        path = _resolve_table_path(path)
         if not dtype.is_floating_point:
             raise ValueError(f"dtype must be a floating point type, got {dtype}")
         device = torch.device("cpu") if device is None else torch.device(device)
