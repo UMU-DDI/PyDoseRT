@@ -5,6 +5,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
 from pydosert import DoseEngine
+from pydosert.exceptions import ShapeError
 from pydosert.data import BeamSequence
 
 
@@ -329,7 +330,7 @@ def test_forward_fluence_maps_wrong_spatial_dims_raises(
     B, G = 1, dose_engine.number_of_beams
     bad_maps = torch.ones(B, G, 100, 100, device=default_device, dtype=default_dtype)
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(ShapeError, match="shape mismatch"):
         dose_engine.forward(
             leaf_positions=None,
             mus=None,
@@ -353,3 +354,33 @@ def test_forward_fluence_maps_wrong_ndim_raises(
             density_image=default_ct_image,
             fluence_maps=bad_maps,
         )
+
+
+def test_engine_errors_are_typed_and_explain_the_fix(default_machine_config, default_resolution,
+                                                     default_ct_array_shape, default_beam_sequence,
+                                                     default_kernel_size, default_device, default_dtype):
+    """Shape, device and state problems raise PyDoseRT types rather than bare
+    Exception or a stripped-away assert, and say what to do about it."""
+    from pydosert.exceptions import DeviceDtypeError, EngineStateError, PyDoseRTError
+
+    engine = DoseEngine(machine_config=default_machine_config, kernel_size=default_kernel_size,
+                        dose_grid_spacing=default_resolution, dose_grid_shape=default_ct_array_shape,
+                        beam_template=default_beam_sequence, device=default_device, dtype=default_dtype)
+    ct = torch.ones((1, *default_ct_array_shape), device=default_device, dtype=default_dtype)
+    sequence = default_beam_sequence
+
+    with pytest.raises(ShapeError, match="CT shape mismatch"):
+        engine.compute_dose(sequence, density_image=ct[:, :-1])
+
+    if default_device.type == "cuda":        # a mixed-device call names both devices
+        with pytest.raises(DeviceDtypeError, match="one device"):
+            engine.compute_dose(sequence, density_image=ct.cpu())
+
+    bare = DoseEngine(machine_config=default_machine_config, kernel_size=default_kernel_size,
+                      dose_grid_spacing=default_resolution, dose_grid_shape=default_ct_array_shape,
+                      device=default_device, dtype=default_dtype)
+    with pytest.raises(EngineStateError, match="beam template"):
+        bare.forward(leaf_positions=sequence.leaf_positions.unsqueeze(0), mus=sequence.mus.unsqueeze(0),
+                     jaw_positions=sequence.jaw_positions.unsqueeze(0), density_image=ct)
+
+    assert issubclass(ShapeError, PyDoseRTError) and issubclass(ShapeError, ValueError)

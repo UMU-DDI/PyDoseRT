@@ -22,6 +22,7 @@ from torch import nn
 from torch.utils.checkpoint import checkpoint
 
 from pydosert.data import MachineConfig, Beam, BeamSequence
+from pydosert.exceptions import DeviceDtypeError, EngineStateError, ShapeError
 
 
 class PhotonBaseEngine(nn.Module):
@@ -170,15 +171,15 @@ class PhotonBaseEngine(nn.Module):
             if fluence_maps.dim() == 4:
                 B = fluence_maps.shape[0]
                 expected_fm = (B, G, fm_h, fm_w)
-                assert fluence_maps.shape == expected_fm, \
-                    f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
+                if not (fluence_maps.shape == expected_fm):
+                    raise ShapeError(f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}")
             elif fluence_maps.dim() == 3:
-                assert fluence_maps.shape[0] % G == 0, \
-                    f"Fluence maps leading dim {fluence_maps.shape[0]} is not divisible by G={G}"
+                if not (fluence_maps.shape[0] % G == 0):
+                    raise ShapeError(f"Fluence maps leading dim {fluence_maps.shape[0]} is not divisible by G={G}")
                 B = fluence_maps.shape[0] // G
                 expected_fm = (B * G, fm_h, fm_w)
-                assert fluence_maps.shape == expected_fm, \
-                    f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
+                if not (fluence_maps.shape == expected_fm):
+                    raise ShapeError(f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}")
             else:
                 raise ValueError(
                     f"fluence_maps must be 3D [B*G, H, W] or 4D [B, G, H, W], got {fluence_maps.dim()}D"
@@ -186,11 +187,11 @@ class PhotonBaseEngine(nn.Module):
 
             # Validate mus only when provided
             if mus is not None:
-                assert mus.dim() == 2, \
-                    f"MUs needs 2 dimensions [B, G], got {mus.dim()}D: {mus.shape}"
+                if not (mus.dim() == 2):
+                    raise ShapeError(f"MUs needs 2 dimensions [B, G], got {mus.dim()}D: {mus.shape}")
                 expected_mus = (B, G)
-                assert mus.shape == expected_mus, \
-                    f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
+                if not (mus.shape == expected_mus):
+                    raise ShapeError(f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}")
 
             devices = {fluence_maps.device}
             dtypes = {fluence_maps.dtype}
@@ -199,32 +200,32 @@ class PhotonBaseEngine(nn.Module):
                 dtypes.add(mus.dtype)
         else:
             B = leaf_positions.shape[0]
-            assert leaf_positions.dim() == 4, \
-                f"Leaf positions needs 4 dimensions [B, 2, CP, N], got {leaf_positions.dim()}D: {leaf_positions.shape}"
-            assert mus.dim() == 2, \
-                f"MUs needs 2 dimensions [B, CP], got {mus.dim()}D: {mus.shape}"
+            if not (leaf_positions.dim() == 4):
+                raise ShapeError(f"Leaf positions needs 4 dimensions [B, 2, CP, N], got {leaf_positions.dim()}D: {leaf_positions.shape}")
+            if not (mus.dim() == 2):
+                raise ShapeError(f"MUs needs 2 dimensions [B, CP], got {mus.dim()}D: {mus.shape}")
 
-            assert leaf_positions.shape[0] == B and mus.shape[0] == B, \
-                f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, mus={mus.shape[0]}"
+            if not (leaf_positions.shape[0] == B and mus.shape[0] == B):
+                raise ShapeError(f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, mus={mus.shape[0]}")
 
             expected_leaf = (B, G, self.machine_config.number_of_leaf_pairs, 2)
-            assert leaf_positions.shape == expected_leaf, \
-                f"Leaf positions shape mismatch: expected {expected_leaf}, got {leaf_positions.shape}"
+            if not (leaf_positions.shape == expected_leaf):
+                raise ShapeError(f"Leaf positions shape mismatch: expected {expected_leaf}, got {leaf_positions.shape}")
 
             expected_mus = (B, G)
-            assert mus.shape == expected_mus, \
-                f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
+            if not (mus.shape == expected_mus):
+                raise ShapeError(f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}")
 
             if jaw_positions is not None:
-                assert jaw_positions.dim() == 3, \
-                    f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}"
+                if not (jaw_positions.dim() == 3):
+                    raise ShapeError(f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}")
 
-                assert jaw_positions.shape[0] == B, \
-                    f"Batch size mismatch: ct={B}, jaw_positions={jaw_positions.shape[0]}"
+                if not (jaw_positions.shape[0] == B):
+                    raise ShapeError(f"Batch size mismatch: ct={B}, jaw_positions={jaw_positions.shape[0]}")
 
                 expected_jaw = (B, G, 2)
-                assert jaw_positions.shape == expected_jaw, \
-                    f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}"
+                if not (jaw_positions.shape == expected_jaw):
+                    raise ShapeError(f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}")
 
             devices = {leaf_positions.device, mus.device}
             if jaw_positions is not None:
@@ -235,21 +236,25 @@ class PhotonBaseEngine(nn.Module):
 
         if density_image is None:
             raise ValueError("CT image must be provided.")
-        assert density_image.dim() == 4, \
-            f"CT image needs 4 dimensions [B, D, H, W], got {density_image.dim()}D: {density_image.shape}"
+        if not (density_image.dim() == 4):
+            raise ShapeError(f"CT image needs 4 dimensions [B, D, H, W], got {density_image.dim()}D: {density_image.shape}")
 
         expected_ct = (B, *self.dose_grid_shape)
-        assert density_image.shape == expected_ct, \
-            f"CT shape mismatch: expected {expected_ct}, got {density_image.shape}"
+        if not (density_image.shape == expected_ct):
+            raise ShapeError(f"CT shape mismatch: expected {expected_ct}, got {density_image.shape}")
 
         devices.add(density_image.device)
         dtypes.add(density_image.dtype)
 
         if len(devices) != 1:
-            raise ValueError(f"Device mismatch among tensors: {devices}")
+            raise DeviceDtypeError(
+                f"All inputs must be on one device, got {sorted(str(d) for d in devices)}. "
+                "Move them with tensor.to(engine.device).")
 
         if len(dtypes) != 1:
-            raise ValueError(f"Dtype mismatch among tensors: {dtypes}")
+            raise DeviceDtypeError(
+                f"All inputs must share one dtype, got {sorted(str(d) for d in dtypes)}. "
+                "Cast them with tensor.to(engine.dtype).")
 
     def forward(
         self,
@@ -283,7 +288,10 @@ class PhotonBaseEngine(nn.Module):
             self._set_device_dtype(leaf_positions.device, leaf_positions.dtype)
 
         if not self.layers_initialized:
-            raise Exception("Layers haven't been initialized yet. Dose engine cannot perform dose calculations.")
+            raise EngineStateError(
+                "Layers have not been initialized, so no dose can be computed. Pass a beam "
+                "template to the constructor, or call compute_dose(beam_input, ...) which "
+                "initializes them from the beams.")
 
         self._assert_sizes(density_image, leaf_positions, jaw_positions, mus, fluence_maps=fluence_maps)
 
@@ -469,11 +477,17 @@ class PhotonBaseEngine(nn.Module):
             None
         """
         if self.machine_config is None:
-            raise Exception("machine_config must be set before calibration.")
+            raise EngineStateError(
+                "Machine physics is required to calibrate: machine_config is None. Set it on the engine before calling calibrate()."
+            )
         if self.dose_grid_shape is None:
-            raise Exception("dose_grid_shape must be set before calibration.")
+            raise EngineStateError(
+                "The dose grid shape is required to calibrate: dose_grid_shape is None. Set it on the engine before calling calibrate()."
+            )
         if self.dose_grid_spacing is None:
-            raise Exception("dose_grid_spacing must be set before calibration.")
+            raise EngineStateError(
+                "The dose grid spacing is required to calibrate: dose_grid_spacing is None. Set it on the engine before calling calibrate()."
+            )
 
         # Apply defaults so calibration works even without a prior beam template
         if self.device is None:

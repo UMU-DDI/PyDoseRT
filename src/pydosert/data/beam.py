@@ -13,6 +13,8 @@ from typing import Iterator, TYPE_CHECKING, Optional
 import numpy as np
 import torch
 
+from pydosert.exceptions import GeometryError, ShapeError
+
 if TYPE_CHECKING:
     from pydosert.data import MachineConfig
     from pydosert.engine.dose_engine import DoseEngine
@@ -303,16 +305,15 @@ class BeamSequence:
         """Validate tensor shapes."""
         CP = self.leaf_positions.shape[0]  # [CP, N, 2] -> CP is dim 0
 
-        if self.gantry_angles is not None:
-            assert len(self.gantry_angles) == CP, \
-                f"gantry_angles length {len(self.gantry_angles)} doesn't match CP count {CP}"
+        if self.gantry_angles is not None and len(self.gantry_angles) != CP:
+            raise ShapeError(f"gantry_angles length {len(self.gantry_angles)} doesn't match CP count {CP}")
 
-        assert self.mus.shape == (CP,), \
-            f"mus shape {self.mus.shape} doesn't match expected ({CP},)"
-        assert self.leaf_positions.shape[0] == CP and self.leaf_positions.shape[2] == 2, \
-            f"leaf_positions shape should be [CP, N, 2], got: {self.leaf_positions.shape}"
-        assert self.jaw_positions.shape == (CP, 2), \
-            f"jaw_positions shape {self.jaw_positions.shape} doesn't match expected ({CP}, 2)"
+        if self.mus.shape != (CP,):
+            raise ShapeError(f"mus shape {self.mus.shape} doesn't match expected ({CP},)")
+        if self.leaf_positions.shape[0] != CP or self.leaf_positions.shape[2] != 2:
+            raise ShapeError(f"leaf_positions shape should be [CP, N, 2], got: {self.leaf_positions.shape}")
+        if self.jaw_positions.shape != (CP, 2):
+            raise ShapeError(f"jaw_positions shape {self.jaw_positions.shape} doesn't match expected ({CP}, 2)")
 
     @staticmethod
     def stack(sequences: list[BeamSequence]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -654,17 +655,20 @@ class BeamSequence:
         if np.all([np.all(b.iso_center == beams[0].iso_center) for b in beams]):
             iso_center = beams[0].iso_center
         else:
-            raise Exception("Isocenters are different for different beams. This will not work.")
+            raise GeometryError(
+                "Isocenters are different for different beams. A BeamSequence shares one value across its beams.")
         
         if np.all([np.all(b.sid == beams[0].sid) for b in beams]):
             sid = beams[0].sid
         else:
-            raise Exception("SID are different for different beams. This will not work.")
+            raise GeometryError(
+                "SID are different for different beams. A BeamSequence shares one value across its beams.")
         
         if np.all([np.all(b.field_size == beams[0].field_size) for b in beams]):
             field_size = beams[0].field_size
         else:
-            raise Exception("Field sizes are different for different beams. This will not work.")
+            raise GeometryError(
+                "Field sizes are different for different beams. A BeamSequence shares one value across its beams.")
         
 
         return cls(

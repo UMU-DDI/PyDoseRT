@@ -9,12 +9,14 @@ This changelog was introduced after releasing version 1.3.0.
 ## [Unreleased]
 
 ### Added
+- `pydosert.exceptions` with the error types the package raises: `ShapeError`, `DeviceDtypeError`, `EngineStateError`, `StructureError` and `GeometryError`, all deriving from `PyDoseRTError` and from the built-in they replace (so `except ValueError` keeps working).
 - New composable objective primitives in `pydosert.objectives.losses`: `upper_penalty`, `lower_penalty`, `mean_upper_penalty` and `squared_penalty` (one- and two-sided squared-hinge penalties on voxel doses), plus `geud` for the generalized equivalent uniform dose. `geud` is a reduction rather than a loss, so it composes with the penalties to build EUD objectives (e.g. `upper_penalty(geud(x, 2.5), c)` is a max-EUD constraint).
 - New `pydosert.objectives.regularizers` module holding the deliverability regularizers `mus_loss`, `leafs_loss` and `jaws_loss`, each returning a (rate, complexity) pair derived from the machine limits.
 - `condition_aperture_pair` and `condition_beam_params` in `pydosert.data.beam` give direct optimization and deep-learning workflows one shared differentiable map from unconstrained variables to physical ordered leaf/jaw pairs and positive MUs. The MU scale is normalized by the control-point count so the raw variables stay ~O(1) regardless of the number of control points.
 - New plotting functions: `plot_mu_polar`, `plot_fluence_and_mu`, `plot_dvh`, `plot_profiles` and `plot_kernel`, with the reusable `compute_fluence_maps` and `compute_dvh_curves` helpers behind them.
 
 ### Changed
+- **Breaking**: the photon engine, `Patient` and `BeamSequence` raise those types instead of `assert` and bare `Exception`. Asserts disappear under `python -O`, which is exactly when a silent wrong-shape input is worst, and a bare `Exception` cannot be caught selectively. Messages now name the offending value and the way out.
 - **Breaking**: the plotting functions have been renamed to a consistent `plot_*` scheme: `print_paper_plot` is now `plot_overview`, `print_comparison_plot` is now `plot_comparison`, and `make_animation` is now `plot_animation`.
 - `utils.py` docstrings have been converted to the Google style used elsewhere in the package.
 - The example notebooks have been updated to the new objective, conditioning and plotting APIs.
