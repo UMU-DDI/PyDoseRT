@@ -94,30 +94,29 @@ See `pyproject.toml` for the complete dependency list.
 
 PyDoseRT implements dose calculation as a series of differentiable PyTorch layers that process each beam's contribution:
 
-1. **Beam Validation Layer** - Validates beam geometry and MLC positions
-2. **Fluence Map Layer** - Converts MLC leaf positions and jaw settings to 2D fluence maps, accounting for:
+1. **Fluence Map Layer** - Converts MLC leaf positions and jaw settings to 2D fluence maps, accounting for:
    - Leaf transmission
    - Source penumbra (finite source size)
    - Head scatter from collimators
 
-3. **Fluence Volume Layer** - Projects 2D fluence maps into 3D volumes using divergent beam geometry
+2. **Fluence Volume Layer** - Projects 2D fluence maps into 3D volumes using divergent beam geometry
 
-4. **Radiological Depth Layer** - Converts CT Hounsfield Units to radiological depth:
+3. **Radiological Depth Layer** - Converts CT Hounsfield Units to radiological depth:
    - HU-to-density conversion using calibrated lookup tables
    - Ray-tracing through divergent beam geometry
    - Effective depth calculation for tissue heterogeneity correction
 
-5. **Pencil Beam Kernel Layer** - Generates depth-dependent dose deposition kernels:
+4. **Pencil Beam Kernel Layer** - Generates depth-dependent dose deposition kernels:
    - Primary photon dose component
    - Scatter dose with energy spectrum modeling
    - Lateral scatter based on radiological depth
    - Energy-dependent beam hardening
 
-6. **Beam-wise Convolution Layer** - Applies pencil beam kernels
+5. **Beam-wise Convolution Layer** - Applies pencil beam kernels
 
-7. **Beam Rotation Layer** - Rotates dose distribution from beam's-eye-view to patient coordinates using trilinear interpolation
+6. **Beam Rotation Layer** - Rotates dose distribution from beam's-eye-view to patient coordinates using trilinear interpolation
 
-8. **Accumulation** - Sums dose contributions from all control points/beams
+7. **Accumulation** - Sums dose contributions from all control points/beams
 
 ### Key Methods
 
