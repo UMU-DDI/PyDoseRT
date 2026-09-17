@@ -17,11 +17,14 @@ The "geometry context" is an opaque object produced by ``_full_geometry`` /
 inspects it, so each engine is free to decide what it contains (e.g. the
 beam-count-dependent layers that must vary per chunk).
 """
+from dataclasses import replace
+
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
 from pydosert.data import MachineConfig, Beam, BeamSequence
+from pydosert.exceptions import DeviceDtypeError, EngineStateError, ShapeError
 
 
 class PhotonBaseEngine(nn.Module):
@@ -87,9 +90,11 @@ class PhotonBaseEngine(nn.Module):
         self._chunk_geometry_cache = None
         self._chunk_geometry_cache_key = None
 
-        # Handle device default
-        self.device = device
-        self.dtype = dtype
+        # Resolve device and dtype now rather than on the first forward pass: layers
+        # allocate buffers at construction, so leaving them unset silently builds the
+        # geometry on one device and the physics on another.
+        self.device = self._resolve_device(device, beam_template)
+        self.dtype = self._resolve_dtype(dtype, beam_template)
         self.verbose = verbose
 
         self.machine_config = machine_config
@@ -104,17 +109,67 @@ class PhotonBaseEngine(nn.Module):
             self.calibrate(verbose=verbose)
             self._initialize_layers(beam_template)
 
-    def _set_device_dtype(self, device, dtype) -> None:
-        """Adopt the given device/dtype for whichever of the two is still unset.
+    @staticmethod
+    def _resolve_device(device, beam_template) -> torch.device:
+        """Device to build on: the explicit one, else the template's, else CUDA if present.
 
         Args:
-            device (torch.device): Device inferred from the first input tensor.
-            dtype (torch.dtype): Dtype inferred from the first input tensor.
+            device (torch.device | str | None): Explicitly requested device, or None.
+            beam_template (BeamSequence | Beam | None): Template to borrow from.
+
+        Returns:
+            torch.device: The device the engine will build its layers on.
         """
-        if self.dtype is None:
-            self.dtype = dtype
-        if self.device is None:
-            self.device = device
+        if device is None:
+            device = (beam_template.device if beam_template is not None
+                      else ("cuda" if torch.cuda.is_available() else "cpu"))
+        # Resolve through a tensor so "cuda" becomes "cuda:0": the two are the same
+        # device but compare unequal, which would reject every input.
+        return torch.empty(0, device=device).device
+
+    @staticmethod
+    def _resolve_dtype(dtype, beam_template) -> torch.dtype:
+        """Dtype to build in: the explicit one, else the template's, else float32.
+
+        Args:
+            dtype (torch.dtype | None): Explicitly requested dtype, or None.
+            beam_template (BeamSequence | Beam | None): Template to borrow from.
+
+        Returns:
+            torch.dtype: The floating dtype the engine will compute in.
+
+        Raises:
+            DeviceDtypeError: If the requested dtype is not a floating type.
+        """
+        if dtype is None:
+            dtype = beam_template.dtype if beam_template is not None else torch.float32
+        dtype = torch.empty(0, dtype=dtype).dtype
+        if not dtype.is_floating_point:
+            raise DeviceDtypeError(f"dtype must be a floating point type, got {dtype}.")
+        return dtype
+
+    def _check_inputs_match_engine(self, *tensors: torch.Tensor) -> None:
+        """Reject inputs that are not on the engine's device and dtype.
+
+        Args:
+            *tensors (torch.Tensor): Inputs to check; None entries are skipped.
+
+        Raises:
+            DeviceDtypeError: If any input disagrees with the engine.
+        """
+        for tensor in tensors:
+            if tensor is None:
+                continue
+            if tensor.device != self.device:
+                raise DeviceDtypeError(
+                    f"Input is on {tensor.device} but the engine was built on {self.device}. "
+                    "Move it with tensor.to(engine.device), or build the engine with "
+                    f"device='{tensor.device}'.")
+            if tensor.is_floating_point() and tensor.dtype != self.dtype:
+                raise DeviceDtypeError(
+                    f"Input has dtype {tensor.dtype} but the engine computes in {self.dtype}. "
+                    "Cast it with tensor.to(engine.dtype), or build the engine with "
+                    f"dtype={tensor.dtype}.")
 
     @property
     def iso_center_voxel(self) -> tuple[int, int, int]:
@@ -170,15 +225,15 @@ class PhotonBaseEngine(nn.Module):
             if fluence_maps.dim() == 4:
                 B = fluence_maps.shape[0]
                 expected_fm = (B, G, fm_h, fm_w)
-                assert fluence_maps.shape == expected_fm, \
-                    f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
+                if not (fluence_maps.shape == expected_fm):
+                    raise ShapeError(f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}")
             elif fluence_maps.dim() == 3:
-                assert fluence_maps.shape[0] % G == 0, \
-                    f"Fluence maps leading dim {fluence_maps.shape[0]} is not divisible by G={G}"
+                if not (fluence_maps.shape[0] % G == 0):
+                    raise ShapeError(f"Fluence maps leading dim {fluence_maps.shape[0]} is not divisible by G={G}")
                 B = fluence_maps.shape[0] // G
                 expected_fm = (B * G, fm_h, fm_w)
-                assert fluence_maps.shape == expected_fm, \
-                    f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}"
+                if not (fluence_maps.shape == expected_fm):
+                    raise ShapeError(f"Fluence maps shape mismatch: expected {expected_fm}, got {fluence_maps.shape}")
             else:
                 raise ValueError(
                     f"fluence_maps must be 3D [B*G, H, W] or 4D [B, G, H, W], got {fluence_maps.dim()}D"
@@ -186,11 +241,11 @@ class PhotonBaseEngine(nn.Module):
 
             # Validate mus only when provided
             if mus is not None:
-                assert mus.dim() == 2, \
-                    f"MUs needs 2 dimensions [B, G], got {mus.dim()}D: {mus.shape}"
+                if not (mus.dim() == 2):
+                    raise ShapeError(f"MUs needs 2 dimensions [B, G], got {mus.dim()}D: {mus.shape}")
                 expected_mus = (B, G)
-                assert mus.shape == expected_mus, \
-                    f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
+                if not (mus.shape == expected_mus):
+                    raise ShapeError(f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}")
 
             devices = {fluence_maps.device}
             dtypes = {fluence_maps.dtype}
@@ -199,32 +254,32 @@ class PhotonBaseEngine(nn.Module):
                 dtypes.add(mus.dtype)
         else:
             B = leaf_positions.shape[0]
-            assert leaf_positions.dim() == 4, \
-                f"Leaf positions needs 4 dimensions [B, 2, CP, N], got {leaf_positions.dim()}D: {leaf_positions.shape}"
-            assert mus.dim() == 2, \
-                f"MUs needs 2 dimensions [B, CP], got {mus.dim()}D: {mus.shape}"
+            if not (leaf_positions.dim() == 4):
+                raise ShapeError(f"Leaf positions needs 4 dimensions [B, 2, CP, N], got {leaf_positions.dim()}D: {leaf_positions.shape}")
+            if not (mus.dim() == 2):
+                raise ShapeError(f"MUs needs 2 dimensions [B, CP], got {mus.dim()}D: {mus.shape}")
 
-            assert leaf_positions.shape[0] == B and mus.shape[0] == B, \
-                f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, mus={mus.shape[0]}"
+            if not (leaf_positions.shape[0] == B and mus.shape[0] == B):
+                raise ShapeError(f"Batch size mismatch: ct={B}, leaf_positions={leaf_positions.shape[0]}, mus={mus.shape[0]}")
 
             expected_leaf = (B, G, self.machine_config.number_of_leaf_pairs, 2)
-            assert leaf_positions.shape == expected_leaf, \
-                f"Leaf positions shape mismatch: expected {expected_leaf}, got {leaf_positions.shape}"
+            if not (leaf_positions.shape == expected_leaf):
+                raise ShapeError(f"Leaf positions shape mismatch: expected {expected_leaf}, got {leaf_positions.shape}")
 
             expected_mus = (B, G)
-            assert mus.shape == expected_mus, \
-                f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}"
+            if not (mus.shape == expected_mus):
+                raise ShapeError(f"MUs shape mismatch: expected {expected_mus}, got {mus.shape}")
 
             if jaw_positions is not None:
-                assert jaw_positions.dim() == 3, \
-                    f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}"
+                if not (jaw_positions.dim() == 3):
+                    raise ShapeError(f"Jaw positions needs 3 dimensions [B, 2, CP], got {jaw_positions.dim()}D: {jaw_positions.shape}")
 
-                assert jaw_positions.shape[0] == B, \
-                    f"Batch size mismatch: ct={B}, jaw_positions={jaw_positions.shape[0]}"
+                if not (jaw_positions.shape[0] == B):
+                    raise ShapeError(f"Batch size mismatch: ct={B}, jaw_positions={jaw_positions.shape[0]}")
 
                 expected_jaw = (B, G, 2)
-                assert jaw_positions.shape == expected_jaw, \
-                    f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}"
+                if not (jaw_positions.shape == expected_jaw):
+                    raise ShapeError(f"Jaw positions shape mismatch: expected {expected_jaw}, got {jaw_positions.shape}")
 
             devices = {leaf_positions.device, mus.device}
             if jaw_positions is not None:
@@ -235,21 +290,25 @@ class PhotonBaseEngine(nn.Module):
 
         if density_image is None:
             raise ValueError("CT image must be provided.")
-        assert density_image.dim() == 4, \
-            f"CT image needs 4 dimensions [B, D, H, W], got {density_image.dim()}D: {density_image.shape}"
+        if not (density_image.dim() == 4):
+            raise ShapeError(f"CT image needs 4 dimensions [B, D, H, W], got {density_image.dim()}D: {density_image.shape}")
 
         expected_ct = (B, *self.dose_grid_shape)
-        assert density_image.shape == expected_ct, \
-            f"CT shape mismatch: expected {expected_ct}, got {density_image.shape}"
+        if not (density_image.shape == expected_ct):
+            raise ShapeError(f"CT shape mismatch: expected {expected_ct}, got {density_image.shape}")
 
         devices.add(density_image.device)
         dtypes.add(density_image.dtype)
 
         if len(devices) != 1:
-            raise ValueError(f"Device mismatch among tensors: {devices}")
+            raise DeviceDtypeError(
+                f"All inputs must be on one device, got {sorted(str(d) for d in devices)}. "
+                "Move them with tensor.to(engine.device).")
 
         if len(dtypes) != 1:
-            raise ValueError(f"Dtype mismatch among tensors: {dtypes}")
+            raise DeviceDtypeError(
+                f"All inputs must share one dtype, got {sorted(str(d) for d in dtypes)}. "
+                "Cast them with tensor.to(engine.dtype).")
 
     def forward(
         self,
@@ -277,13 +336,13 @@ class PhotonBaseEngine(nn.Module):
         Returns:
             Dose tensor [B, D, H, W].
         """
-        if fluence_maps is not None:
-            self._set_device_dtype(fluence_maps.device, fluence_maps.dtype)
-        else:
-            self._set_device_dtype(leaf_positions.device, leaf_positions.dtype)
+        self._check_inputs_match_engine(fluence_maps, leaf_positions, jaw_positions, mus, density_image)
 
         if not self.layers_initialized:
-            raise Exception("Layers haven't been initialized yet. Dose engine cannot perform dose calculations.")
+            raise EngineStateError(
+                "Layers have not been initialized, so no dose can be computed. Pass a beam "
+                "template to the constructor, or call compute_dose(beam_input, ...) which "
+                "initializes them from the beams.")
 
         self._assert_sizes(density_image, leaf_positions, jaw_positions, mus, fluence_maps=fluence_maps)
 
@@ -469,17 +528,17 @@ class PhotonBaseEngine(nn.Module):
             None
         """
         if self.machine_config is None:
-            raise Exception("machine_config must be set before calibration.")
+            raise EngineStateError(
+                "Machine physics is required to calibrate: machine_config is None. Set it on the engine before calling calibrate()."
+            )
         if self.dose_grid_shape is None:
-            raise Exception("dose_grid_shape must be set before calibration.")
+            raise EngineStateError(
+                "The dose grid shape is required to calibrate: dose_grid_shape is None. Set it on the engine before calling calibrate()."
+            )
         if self.dose_grid_spacing is None:
-            raise Exception("dose_grid_spacing must be set before calibration.")
-
-        # Apply defaults so calibration works even without a prior beam template
-        if self.device is None:
-            self.device = torch.device('cpu')
-        if self.dtype is None:
-            self.dtype = torch.float32
+            raise EngineStateError(
+                "The dose grid spacing is required to calibrate: dose_grid_spacing is None. Set it on the engine before calling calibrate()."
+            )
 
         if original_beam_template is not None:
             print("The argument `original_beam_template` is now deprecated and will not be used for calibration")
@@ -489,7 +548,7 @@ class PhotonBaseEngine(nn.Module):
         if calibration_mu is None:
             calibration_mu = self.machine_config.calibration_mu
 
-        beam.mu = calibration_mu * beam.mu
+        beam = replace(beam, mu=calibration_mu * beam.mu)
         water_attenuation = torch.ones(self.dose_grid_shape).to(self.device).to(self.dtype)
 
         self.layers_initialized = False

@@ -7,6 +7,8 @@ from token import OP
 from typing import Optional, TYPE_CHECKING
 from pydosert.physics.attenuation.hu_density_conversion import convert_HU_to_density
 import torch
+
+from pydosert.exceptions import ShapeError, StructureError
 import numpy as np
 
 if TYPE_CHECKING:
@@ -78,13 +80,13 @@ class Patient:
 
         for name, struct in self.structures.items():
             if struct.shape != base_shape:
-                raise ValueError(
+                raise ShapeError(
                     f"Structure '{name}' has shape {struct.shape}, "
                     f"but expected {base_shape} (same as density_image)."
                 )
 
         if self.dose is not None and self.dose.shape != base_shape:
-            raise ValueError(
+            raise ShapeError(
                 f"Dose has shape {self.dose.shape}, "
                 f"but expected {base_shape} (same as density_image)."
             )
@@ -164,10 +166,12 @@ class Patient:
             Exception: If mask_name is None or not present in structures.
         """
         if mask_name is None:
-            raise Exception("Mask name not provided")
+            raise StructureError(
+                f"No mask name given; available structures are {sorted(self.structures)}.")
         
         if mask_name not in self.structures:
-            raise Exception(f"Mask {mask_name} does not exist in structures ({list(self.structures.keys())})")
+            raise StructureError(
+                f"Structure {mask_name!r} not found; available are {sorted(self.structures)}.")
         
         return torch.where(self.structures[mask_name], self.dose, 0.0)
     
@@ -186,10 +190,12 @@ class Patient:
             Exception: If mask_name is None or not present in structures.
         """
         if mask_name is None:
-            raise Exception("Mask name not provided")
+            raise StructureError(
+                f"No mask name given; available structures are {sorted(self.structures)}.")
         
         if mask_name not in self.structures:
-            raise Exception(f"Mask {mask_name} does not exist in structures ({list(self.structures.keys())})")
+            raise StructureError(
+                f"Structure {mask_name!r} not found; available are {sorted(self.structures)}.")
         
         return torch.where(self.structures[mask_name], self.density_image, -1000.0)
     
@@ -208,7 +214,7 @@ class Patient:
             ValueError: If the mask shape differs from density_image [D, H, W].
         """
         if not overwrite and (mask_name in self.structures):
-            raise Exception(
+            raise StructureError(
                 f"Mask {mask_name} already exists for the patient. "
                 f"If you want to overwrite, set overwrite to True."
             )
@@ -218,7 +224,8 @@ class Patient:
         elif isinstance(mask, torch.Tensor):
             mask = mask > 0
         else:
-            raise Exception(f"Mask type {type(mask)} not supported.")
+            raise StructureError(
+                f"Mask must be a torch.Tensor or numpy.ndarray, got {type(mask).__name__}.")
 
         # Enforce same shape as density_image
         if mask.shape != self.density_image.shape:
