@@ -47,7 +47,8 @@ class BeamRotationLayer(nn.Module):
         Args:
             machine_config (MachineConfig): Configuration parameters for the layer.
             ct_array_shape (tuple[float, float, float]): Shape of CT array in voxels as (H, D, W).
-            iso_center (tuple[float, float, float]): Isocenter in physical coordinates (mm), ordered (X, Y, Z).
+            iso_center (tuple[float, float, float]): Isocentre in mm, ordered (h, d, w)
+                to match the (H, D, W) volume. See :mod:`pydosert.geometry.conventions`.
             resolution (tuple[float, float, float]): Voxel spacing in mm, ordered (rx, ry, rz).
             gantry_angles (list[float] | torch.Tensor): G gantry angles in radians, shape [G].
             device (torch.device | str | None, optional): Device for computation. Defaults to CUDA if available, else CPU.

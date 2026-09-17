@@ -14,8 +14,10 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype, iso_center=No
         angles_rad (Sequence[float] | torch.Tensor): G rotation angles in radians,
             iterated over to produce one ray per angle.
         dtype (type): torch dtype for the output coordinates.
-        iso_center (Optional[tuple]): (X, Y, Z) isocenter in physical coordinates (mm),
-            where X=height, Y=depth, Z=width. Defaults to the volume centre when None.
+        iso_center (Optional[tuple]): (h, d, w) isocentre in mm, in the same axis
+            order as the (H, D, W) volume, measured from the centre of voxel 0.
+            Defaults to the volume centre when None. See
+            :mod:`pydosert.geometry.conventions`.
         resolution (Optional[tuple]): (rx, ry, rz) voxel spacing in mm, where rx=res_height,
             ry=res_depth, rz=res_width. Only used together with iso_center.
 
@@ -29,11 +31,15 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype, iso_center=No
     # Calculate center in voxel coordinates
     if iso_center is not None and resolution is not None:
         # Convert physical isocenter to voxel coordinates
-        # iso_center = (X, Y, Z) where X=height, Y=depth, Z=width (physical mm)
-        # resolution = (rx, ry, rz) where rx=res_height, ry=res_depth, rz=res_width (mm/voxel)
+        # iso_center = (h, d, w) in mm; resolution = (res_h, res_d, res_w) in mm/voxel
         X, Y, Z = iso_center
         rx, ry, rz = resolution
 
+        # NOTE: this ray caster places the isocentre half a voxel further along
+        # every axis than FluenceVolumeLayer and build_rotation_grids, which both
+        # use iso / resolution. The discrepancy is real and unresolved; it is
+        # recorded in pydosert.geometry.conventions and needs cohort validation
+        # before anything is changed. Do not "fix" it here in isolation.
         center_z = X / rx + 0.5  # height dimension (z in voxel coords)
         center_y = Y / ry + 0.5  # depth dimension (y in voxel coords)
         center_x = Z / rz + 0.5  # width dimension (x in voxel coords)
@@ -144,7 +150,10 @@ def build_rotation_grids(input_shape, angles_rad, device, dtype, iso_center=None
         angles_rad (torch.Tensor): G rotation angles in radians, shape [G].
         device: torch device for the output grid.
         dtype: torch dtype for the output grid.
-        iso_center: (X, Y, Z) - isocenter in physical coordinates (mm), where X=height, Y=depth, Z=width. Rotation is centred at the volume centre when None.
+        iso_center: (h, d, w) isocentre in mm, in the same axis order as the
+            (H, D, W) volume, measured from the centre of voxel 0. Rotation is
+            centred at the volume centre when None. See
+            :mod:`pydosert.geometry.conventions`.
         resolution: (rx, ry, rz) - voxel spacing in mm, where rx=res_height, ry=res_depth, rz=res_width. Only used together with iso_center.
 
     Returns:
