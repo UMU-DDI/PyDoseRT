@@ -88,9 +88,11 @@ class PhotonBaseEngine(nn.Module):
         self._chunk_geometry_cache = None
         self._chunk_geometry_cache_key = None
 
-        # Handle device default
-        self.device = device
-        self.dtype = dtype
+        # Resolve device and dtype now rather than on the first forward pass: layers
+        # allocate buffers at construction, so leaving them unset silently builds the
+        # geometry on one device and the physics on another.
+        self.device = self._resolve_device(device, beam_template)
+        self.dtype = self._resolve_dtype(dtype, beam_template)
         self.verbose = verbose
 
         self.machine_config = machine_config
@@ -105,17 +107,67 @@ class PhotonBaseEngine(nn.Module):
             self.calibrate(verbose=verbose)
             self._initialize_layers(beam_template)
 
-    def _set_device_dtype(self, device, dtype) -> None:
-        """Adopt the given device/dtype for whichever of the two is still unset.
+    @staticmethod
+    def _resolve_device(device, beam_template) -> torch.device:
+        """Device to build on: the explicit one, else the template's, else CUDA if present.
 
         Args:
-            device (torch.device): Device inferred from the first input tensor.
-            dtype (torch.dtype): Dtype inferred from the first input tensor.
+            device (torch.device | str | None): Explicitly requested device, or None.
+            beam_template (BeamSequence | Beam | None): Template to borrow from.
+
+        Returns:
+            torch.device: The device the engine will build its layers on.
         """
-        if self.dtype is None:
-            self.dtype = dtype
-        if self.device is None:
-            self.device = device
+        if device is None:
+            device = (beam_template.device if beam_template is not None
+                      else ("cuda" if torch.cuda.is_available() else "cpu"))
+        # Resolve through a tensor so "cuda" becomes "cuda:0": the two are the same
+        # device but compare unequal, which would reject every input.
+        return torch.empty(0, device=device).device
+
+    @staticmethod
+    def _resolve_dtype(dtype, beam_template) -> torch.dtype:
+        """Dtype to build in: the explicit one, else the template's, else float32.
+
+        Args:
+            dtype (torch.dtype | None): Explicitly requested dtype, or None.
+            beam_template (BeamSequence | Beam | None): Template to borrow from.
+
+        Returns:
+            torch.dtype: The floating dtype the engine will compute in.
+
+        Raises:
+            DeviceDtypeError: If the requested dtype is not a floating type.
+        """
+        if dtype is None:
+            dtype = beam_template.dtype if beam_template is not None else torch.float32
+        dtype = torch.empty(0, dtype=dtype).dtype
+        if not dtype.is_floating_point:
+            raise DeviceDtypeError(f"dtype must be a floating point type, got {dtype}.")
+        return dtype
+
+    def _check_inputs_match_engine(self, *tensors: torch.Tensor) -> None:
+        """Reject inputs that are not on the engine's device and dtype.
+
+        Args:
+            *tensors (torch.Tensor): Inputs to check; None entries are skipped.
+
+        Raises:
+            DeviceDtypeError: If any input disagrees with the engine.
+        """
+        for tensor in tensors:
+            if tensor is None:
+                continue
+            if tensor.device != self.device:
+                raise DeviceDtypeError(
+                    f"Input is on {tensor.device} but the engine was built on {self.device}. "
+                    "Move it with tensor.to(engine.device), or build the engine with "
+                    f"device='{tensor.device}'.")
+            if tensor.is_floating_point() and tensor.dtype != self.dtype:
+                raise DeviceDtypeError(
+                    f"Input has dtype {tensor.dtype} but the engine computes in {self.dtype}. "
+                    "Cast it with tensor.to(engine.dtype), or build the engine with "
+                    f"dtype={tensor.dtype}.")
 
     @property
     def iso_center_voxel(self) -> tuple[int, int, int]:
@@ -282,10 +334,7 @@ class PhotonBaseEngine(nn.Module):
         Returns:
             Dose tensor [B, D, H, W].
         """
-        if fluence_maps is not None:
-            self._set_device_dtype(fluence_maps.device, fluence_maps.dtype)
-        else:
-            self._set_device_dtype(leaf_positions.device, leaf_positions.dtype)
+        self._check_inputs_match_engine(fluence_maps, leaf_positions, jaw_positions, mus, density_image)
 
         if not self.layers_initialized:
             raise EngineStateError(
@@ -488,12 +537,6 @@ class PhotonBaseEngine(nn.Module):
             raise EngineStateError(
                 "The dose grid spacing is required to calibrate: dose_grid_spacing is None. Set it on the engine before calling calibrate()."
             )
-
-        # Apply defaults so calibration works even without a prior beam template
-        if self.device is None:
-            self.device = torch.device('cpu')
-        if self.dtype is None:
-            self.dtype = torch.float32
 
         if original_beam_template is not None:
             print("The argument `original_beam_template` is now deprecated and will not be used for calibration")

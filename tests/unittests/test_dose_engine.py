@@ -373,8 +373,11 @@ def test_engine_errors_are_typed_and_explain_the_fix(default_machine_config, def
         engine.compute_dose(sequence, density_image=ct[:, :-1])
 
     if default_device.type == "cuda":        # a mixed-device call names both devices
-        with pytest.raises(DeviceDtypeError, match="one device"):
+        with pytest.raises(DeviceDtypeError, match="Input is on cpu but the engine was built on cuda"):
             engine.compute_dose(sequence, density_image=ct.cpu())
+
+    with pytest.raises(DeviceDtypeError, match="dtype"):   # and a mixed-dtype one names both dtypes
+        engine.compute_dose(sequence, density_image=ct.double())
 
     bare = DoseEngine(machine_config=default_machine_config, kernel_size=default_kernel_size,
                       dose_grid_spacing=default_resolution, dose_grid_shape=default_ct_array_shape,
