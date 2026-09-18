@@ -5,11 +5,9 @@ implements it, so the document cannot quietly drift away from the engine.
 
 The half-voxel tests matter most: the fluence projection, the
 radiological-depth ray caster and the beam rotation each convert the isocentre
-from mm to voxels independently, and they do NOT agree -- the ray caster adds
-+0.5. These tests pin the current numbers on both sides of that gap rather than
-asserting they match, so the known discrepancy stays visible and cannot widen
-while it waits for cohort validation. See the KNOWN DISCREPANCY note in
-:mod:`pydosert.geometry.conventions`.
+from mm to voxels independently, and all three must land on iso / resolution.
+The ray caster used to add +0.5, which offset the depth ray from the beam axis
+whose radiological depth it measures.
 """
 
 import math
@@ -28,10 +26,8 @@ from pydosert.geometry.rotations import (
 SHAPE = (64, 64, 64)          # (H, D, W)
 SPACING = (2.0, 2.0, 2.0)     # (res_H, res_D, res_W)
 ISO_MM = (64.0, 64.0, 64.0)
-#: Where the fluence projection and the rotation put the isocentre: iso / spacing.
+#: Where every layer puts the isocentre: iso / spacing, with no half-voxel shift.
 ISO_VOXEL = 32.0
-#: Where the radiological-depth ray caster puts it instead: iso / spacing + 0.5.
-ISO_VOXEL_RAY = 32.5
 
 
 def _machine_config() -> MachineConfig:
@@ -97,14 +93,11 @@ def test_rotation_grid_centres_on_iso_over_spacing():
     assert float(((in_w + out_w) / 2).mean()) == pytest.approx(ISO_VOXEL, abs=1e-6)
 
 
-def test_radiological_depth_ray_is_half_a_voxel_off_the_beam_axis():
-    """The depth ray sits at iso / spacing + 0.5, half a voxel off the beam axis.
+def test_radiological_depth_ray_runs_along_the_beam_axis():
+    """The depth ray sits at iso / spacing, the same place as the beam axis.
 
-    This pins the KNOWN DISCREPANCY, it does not endorse it. The ray measures
-    radiological depth for a beam whose axis the other two layers place at
-    iso / spacing, so the two are 0.5 voxel (1 mm here) apart. Changing it
-    changes dose and needs validating on a cohort first; until then this test
-    fails if the gap moves in either direction.
+    It used to sit half a voxel further along every axis, so it measured
+    radiological depth for a line beside the beam rather than along it.
     """
     points = get_radiological_depth_indices(
         SHAPE,
@@ -114,9 +107,8 @@ def test_radiological_depth_ray_is_half_a_voxel_off_the_beam_axis():
         resolution=SPACING,
     )[0, 0]                       # [D, 3], last axis ordered (x=W, y=D, z=H)
 
-    assert float(points[:, 0].mean()) == pytest.approx(ISO_VOXEL_RAY, abs=1e-6)   # W
-    assert float(points[:, 2].mean()) == pytest.approx(ISO_VOXEL_RAY, abs=1e-6)   # H
-    assert ISO_VOXEL_RAY - ISO_VOXEL == pytest.approx(0.5)
+    assert float(points[:, 0].mean()) == pytest.approx(ISO_VOXEL, abs=1e-6)   # W
+    assert float(points[:, 2].mean()) == pytest.approx(ISO_VOXEL, abs=1e-6)   # H
 
 
 def test_beam_axis_lands_on_the_isocentre(default_device):
@@ -170,7 +162,7 @@ def test_conventions_document_states_the_axis_order():
     assert "(cos theta, -sin theta)" in CONVENTIONS
 
 
-def test_conventions_document_records_the_half_voxel_discrepancy():
-    """The open half-voxel gap is written down, not silently tolerated."""
-    assert "KNOWN DISCREPANCY" in CONVENTIONS
-    assert "iso / resolution + 0.5" in CONVENTIONS
+def test_conventions_document_states_the_isocentre_rule():
+    """The summary states the single mm-to-voxel rule every layer follows."""
+    assert "iso_center / dose_grid_spacing" in CONVENTIONS
+    assert "KNOWN DISCREPANCY" not in CONVENTIONS

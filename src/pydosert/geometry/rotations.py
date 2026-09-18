@@ -35,14 +35,12 @@ def get_radiological_depth_indices(input_shape, angles_rad, dtype, iso_center=No
         X, Y, Z = iso_center
         rx, ry, rz = resolution
 
-        # NOTE: this ray caster places the isocentre half a voxel further along
-        # every axis than FluenceVolumeLayer and build_rotation_grids, which both
-        # use iso / resolution. The discrepancy is real and unresolved; it is
-        # recorded in pydosert.geometry.conventions and needs cohort validation
-        # before anything is changed. Do not "fix" it here in isolation.
-        center_z = X / rx + 0.5  # height dimension (z in voxel coords)
-        center_y = Y / ry + 0.5  # depth dimension (y in voxel coords)
-        center_x = Z / rz + 0.5  # width dimension (x in voxel coords)
+        # iso / resolution, matching FluenceVolumeLayer and build_rotation_grids:
+        # iso_center is measured from the centre of voxel 0, so voxel i is at
+        # i * resolution mm. See pydosert.geometry.conventions.
+        center_z = X / rx  # height dimension (z in voxel coords)
+        center_y = Y / ry  # depth dimension (y in voxel coords)
+        center_x = Z / rz  # width dimension (x in voxel coords)
     else:
         # Default to volume center if isocenter not specified
         center_x = W / 2.0
