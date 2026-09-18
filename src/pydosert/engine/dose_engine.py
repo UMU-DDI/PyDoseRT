@@ -69,11 +69,6 @@ class DoseEngine(PhotonBaseEngine):
             gantry_angles = new_beam_data.gantry_angles
             collimator_angles = new_beam_data.collimator_angles.to(self.dtype).to(self.device)
 
-        if self.dtype is None:
-            self.dtype = new_beam_data.dtype
-        if self.device is None:
-            self.device = new_beam_data.device
-
         if  self.number_of_beams is None or (self.number_of_beams != number_of_beams):
             initialize_rad_depth_layer = True
             initialize_rotation_layer = True
@@ -101,10 +96,6 @@ class DoseEngine(PhotonBaseEngine):
             initialize_rotation_layer = True
         self.iso_center = new_beam_data.iso_center
 
-        if self.dtype is None:
-            return
-        if self.device is None:
-            return
         if self.dose_grid_shape is None:
             return
         if self.dose_grid_spacing is None:

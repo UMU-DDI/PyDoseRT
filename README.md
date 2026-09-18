@@ -22,6 +22,9 @@ PyDoseRT implements a physics-based **pencil beam convolution model** with full 
   - Sequential processing mode for memory-efficient computation
   - Parallel processing for maximum speed
 - **Treatment Modalities**: Support for VMAT (Volumetric Modulated Arc Therapy), IMRT, and static fields
+- **Proton Pencil Beam**: Differentiable ion dose engine with a heterogeneity-aware
+  multiple-Coulomb-scattering model and a commissioned kernel table that can itself be
+  calibrated by gradient descent
 - **Clinical Validation**:
   - Gamma index analysis (2%/2mm, 3%/3mm)
   - DVH constraint evaluation
@@ -91,30 +94,29 @@ See `pyproject.toml` for the complete dependency list.
 
 PyDoseRT implements dose calculation as a series of differentiable PyTorch layers that process each beam's contribution:
 
-1. **Beam Validation Layer** - Validates beam geometry and MLC positions
-2. **Fluence Map Layer** - Converts MLC leaf positions and jaw settings to 2D fluence maps, accounting for:
+1. **Fluence Map Layer** - Converts MLC leaf positions and jaw settings to 2D fluence maps, accounting for:
    - Leaf transmission
    - Source penumbra (finite source size)
    - Head scatter from collimators
 
-3. **Fluence Volume Layer** - Projects 2D fluence maps into 3D volumes using divergent beam geometry
+2. **Fluence Volume Layer** - Projects 2D fluence maps into 3D volumes using divergent beam geometry
 
-4. **Radiological Depth Layer** - Converts CT Hounsfield Units to radiological depth:
+3. **Radiological Depth Layer** - Converts CT Hounsfield Units to radiological depth:
    - HU-to-density conversion using calibrated lookup tables
    - Ray-tracing through divergent beam geometry
    - Effective depth calculation for tissue heterogeneity correction
 
-5. **Pencil Beam Kernel Layer** - Generates depth-dependent dose deposition kernels:
+4. **Pencil Beam Kernel Layer** - Generates depth-dependent dose deposition kernels:
    - Primary photon dose component
    - Scatter dose with energy spectrum modeling
    - Lateral scatter based on radiological depth
    - Energy-dependent beam hardening
 
-6. **Beam-wise Convolution Layer** - Applies pencil beam kernels
+5. **Beam-wise Convolution Layer** - Applies pencil beam kernels
 
-7. **Beam Rotation Layer** - Rotates dose distribution from beam's-eye-view to patient coordinates using trilinear interpolation
+6. **Beam Rotation Layer** - Rotates dose distribution from beam's-eye-view to patient coordinates using trilinear interpolation
 
-8. **Accumulation** - Sums dose contributions from all control points/beams
+7. **Accumulation** - Sums dose contributions from all control points/beams
 
 ### Key Methods
 
@@ -192,6 +194,96 @@ CT Hounsfield Units (HU) are converted to radiological depth using:
 - **Source penumbra** - Geometric penumbra from finite source size
 - **Tongue-and-groove effect** - MLC interdigitation
 
+## Proton Dose Calculation
+
+PyDoseRT also ships a **differentiable proton pencil-beam engine**, `IonDoseEngine`. It is
+independent of the photon pipeline: it shares no layers and no state, and enabling it changes
+nothing about photon dose calculation.
+
+### Pipeline
+
+An ion call computes the dose of a *batch of beamlets* which are independent pencil beams, each with its own gantry angle, energy, spot position, spot size and weight. They are processed in a per-beam beam's-eye view (BEV) and are rotated then back into the patient frame:
+
+1. **BEV resampling** - The stopping-power-ratio volume is resampled into each beamlet's BEV
+   window and integrated along depth into a per-column water-equivalent depth (WEQ)
+2. **Lattice pencil beam** - Each beamlet is split into `n**2` sub-beams on a quarter-FWHM
+   grid; every sub-beam looks up its own WEQ column in the kernel table, so both the
+   Bragg-peak depth and the lateral sigma respond to the tissue that sub-beam crosses
+3. **Lateral model** - A narrow multiple-Coulomb-scattering core per sub-beam plus a broad
+   nuclear halo laid down once per beamlet, both cell-integrated with `erf` rather than
+   point-sampled
+4. **Heterogeneity correction** - A Fermi-Eyges lever-arm variance excess added to the core
+   sigma, identically zero in homogeneous water by construction
+5. **Correction hook** - An optional `bev_correction` module sees the complete BEV payload
+   before it is rotated back; this is the documented injection point for a learned residual
+   model
+6. **Finalisation** - Rotation into the patient frame and conversion from MeV to Gy
+
+Everything is plain differentiable PyTorch: gradients flow to the beamlet weights, positions,
+energies and sigmas, and to the commissioned kernel table itself.
+
+### Minimal example
+
+```python
+import torch
+from importlib import resources
+
+from pydosert import IonBeamletBatch, IonDoseEngine, IonMachineConfig
+from pydosert.physics import IonKernelTable
+
+# 1. Commissioned base data: one .npz per machine, shipped as package data.
+table_path = resources.files("pydosert.data").joinpath("machine_presets/protons_doserad.npz")
+kernel_table = IonKernelTable.load(table_path, device="cpu", dtype=torch.float32)
+
+# 2. A batch of beamlets: one gantry angle, one energy, one spot each.
+grid_shape = (48, 200, 48)          # (H, D, W) voxels
+spacing_mm = (1.0, 1.0, 1.0)        # (rh, rd, rw)
+energy_mev = 120.4273              # tabulated; kernel_table.available_energies lists all 114
+beamlets = IonBeamletBatch.create(
+    gantry_angle_deg=[0.0],
+    position_mm=[[0.0, 0.0]],
+    energy_mev=[energy_mev],
+    sigma_mm=[6.0],                 # isotropic initial spot sigma
+    weight=[1e8],                   # particles
+    iso_center_mm=[23.5, 100.0, 23.5],
+    sad_mm=10_000.0,
+)
+
+# 3. The engine.
+engine = IonDoseEngine(
+    machine_config=IonMachineConfig(),
+    kernel_table=kernel_table,
+    dose_grid_spacing=spacing_mm,
+    dose_grid_shape=grid_shape,
+    field_size=(32, 32),            # BEV window in voxels, per beamlet
+)
+
+# 4. Dose, in Gy, on a water phantom scored everywhere.
+density = torch.ones(grid_shape)            # stopping-power ratio, not mass density
+dose_mask = torch.ones(grid_shape, dtype=torch.bool)
+dose = engine.compute_dose(beamlets, density, dose_mask)
+
+central_axis = dose[0, 24, :, 24]           # depth profile through the beam axis
+print(f"dose {tuple(dose.shape)}, peak {float(dose.max()):.4f} Gy, "
+      f"Bragg peak at {int(central_axis.argmax())} mm depth")
+# dose (1, 48, 200, 48), peak 0.1548 Gy, Bragg peak at 105 mm depth
+```
+
+`compute_dose(..., return_per_beamlet=True)` returns one cropped dose per beamlet from the
+same single BEV pass, instead of the summed volume.
+
+### Commissioning and calibration
+
+- `commissioning/conversion/convert_proton_mat_to_npz.py` converts a pyRadPlan/matRad proton
+  machine `.mat` into the `.npz` kernel table `IonKernelTable` loads. Rows are stored
+  padded-rectangular rather than resampled, so they round-trip bit-exactly.
+- `commissioning/calibrate_ion_kernel_table.py` calibrates a table against water-phantom
+  Monte Carlo **by backpropagation through the engine**. `IonKernelCalibration` holds
+  learnable per-row residuals that are exactly zero at initialisation — a table carrying an
+  untrained calibration computes bit-identically to the table it was built from — and that
+  cannot produce an unphysical curve for any parameter value.
+
+
 ## Examples
 
 ### Jupyter Notebooks
@@ -238,7 +330,8 @@ Typical performance (NVIDIA A100):
 ## Limitations
 
 - **Pencil beam model**: Less accurate than Monte Carlo for high tissue heterogeneity
-- **Photon therapy only**: Electron and proton therapy not currently supported
+- **No electron therapy**: Photons and protons only
+- **Protons report dose to water**: no dose-to-medium conversion is applied
 - **Simplified MLC model**: Does not include all vendor-specific details
 - **Research tool**: Not clinically validated for treatment planning
 

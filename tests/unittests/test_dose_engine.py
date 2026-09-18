@@ -5,6 +5,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
 from pydosert import DoseEngine
+from pydosert.exceptions import ShapeError
 from pydosert.data import BeamSequence
 
 
@@ -329,7 +330,7 @@ def test_forward_fluence_maps_wrong_spatial_dims_raises(
     B, G = 1, dose_engine.number_of_beams
     bad_maps = torch.ones(B, G, 100, 100, device=default_device, dtype=default_dtype)
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(ShapeError, match="shape mismatch"):
         dose_engine.forward(
             leaf_positions=None,
             mus=None,
@@ -353,3 +354,74 @@ def test_forward_fluence_maps_wrong_ndim_raises(
             density_image=default_ct_image,
             fluence_maps=bad_maps,
         )
+
+
+def test_engine_errors_are_typed_and_explain_the_fix(default_machine_config, default_resolution,
+                                                     default_ct_array_shape, default_beam_sequence,
+                                                     default_kernel_size, default_device, default_dtype):
+    """Shape, device and state problems raise PyDoseRT types rather than bare
+    Exception or a stripped-away assert, and say what to do about it."""
+    from pydosert.exceptions import DeviceDtypeError, EngineStateError, PyDoseRTError
+
+    engine = DoseEngine(machine_config=default_machine_config, kernel_size=default_kernel_size,
+                        dose_grid_spacing=default_resolution, dose_grid_shape=default_ct_array_shape,
+                        beam_template=default_beam_sequence, device=default_device, dtype=default_dtype)
+    ct = torch.ones((1, *default_ct_array_shape), device=default_device, dtype=default_dtype)
+    sequence = default_beam_sequence
+
+    with pytest.raises(ShapeError, match="CT shape mismatch"):
+        engine.compute_dose(sequence, density_image=ct[:, :-1])
+
+    if default_device.type == "cuda":        # a mixed-device call names both devices
+        with pytest.raises(DeviceDtypeError, match="Input is on cpu but the engine was built on cuda"):
+            engine.compute_dose(sequence, density_image=ct.cpu())
+
+    with pytest.raises(DeviceDtypeError, match="dtype"):   # and a mixed-dtype one names both dtypes
+        engine.compute_dose(sequence, density_image=ct.double())
+
+    bare = DoseEngine(machine_config=default_machine_config, kernel_size=default_kernel_size,
+                      dose_grid_spacing=default_resolution, dose_grid_shape=default_ct_array_shape,
+                      device=default_device, dtype=default_dtype)
+    with pytest.raises(EngineStateError, match="beam template"):
+        bare.forward(leaf_positions=sequence.leaf_positions.unsqueeze(0), mus=sequence.mus.unsqueeze(0),
+                     jaw_positions=sequence.jaw_positions.unsqueeze(0), density_image=ct)
+
+    assert issubclass(ShapeError, PyDoseRTError) and issubclass(ShapeError, ValueError)
+
+
+def test_beam_sequence_is_immutable_but_stays_differentiable(default_beam_sequence):
+    """Beam and BeamSequence are frozen: rebinding a field raises instead of
+    silently doing nothing, while autograd and the derive-a-copy API keep working."""
+    from dataclasses import FrozenInstanceError, replace
+
+    sequence = default_beam_sequence
+
+    with pytest.raises(FrozenInstanceError):
+        sequence.iso_center = (1.0, 2.0, 3.0)
+    with pytest.raises(FrozenInstanceError):
+        sequence.mus = torch.ones_like(sequence.mus)
+    # seq[0] returns views into the sequence, so a rebind there would have been a
+    # silent no-op rather than an edit of the sequence; frozen turns it into an error.
+    with pytest.raises(FrozenInstanceError):
+        sequence[0].mu = torch.zeros(())
+
+    shifted = replace(sequence, iso_center=(1.0, 2.0, 3.0))
+    assert shifted.iso_center == (1.0, 2.0, 3.0)
+    assert sequence.iso_center != (1.0, 2.0, 3.0)      # original untouched
+    assert shifted.mus is sequence.mus                 # tensors shared, not copied
+
+    assert sequence.mus.requires_grad
+    sequence.mus.sum().backward()
+    assert sequence.mus.grad is not None
+
+
+def test_calibrate_runs_and_sets_the_energy_scale(default_machine_config, default_resolution,
+                                                  default_ct_array_shape, default_kernel_size,
+                                                  default_device, default_dtype):
+    """calibrate() builds its own water phantom beam and solves for the energy scale."""
+    engine = DoseEngine(machine_config=default_machine_config, kernel_size=default_kernel_size,
+                        dose_grid_spacing=default_resolution, dose_grid_shape=default_ct_array_shape,
+                        device=default_device, dtype=default_dtype)
+    engine.calibrate(verbose=False)
+    assert engine.machine_config.mean_photon_energy_MeV > 0
+    assert not engine.layers_initialized

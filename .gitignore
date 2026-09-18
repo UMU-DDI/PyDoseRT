@@ -17,4 +17,9 @@ dist/
 *.dcm
 *egg-info
 *.stats
+checkpoints/
+docs/
+debug/
+example_data/
+experiments/
 .venv*
