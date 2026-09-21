@@ -9,7 +9,7 @@ This changelog was introduced after releasing version 1.3.0.
 ## [Unreleased]
 
 ### Added
-- `pydosert.geometry.conventions` is the single definition of the axis conventions (volume layout, isocentre order/units/origin, gantry rotation plane and direction, units), exported as `pydosert.CONVENTIONS`. Every photon example now opens with the same summary, and `tests/unittests/test_conventions.py` checks each statement against the layer that implements it. It also records a known half-voxel discrepancy: the fluence projection and beam rotation place the isocentre at `iso / resolution`, the radiological-depth ray caster at `iso / resolution + 0.5`. Nothing is changed yet -- it needs validating on a cohort first.
+- `pydosert.geometry.conventions` is the single definition of the axis conventions (volume layout, isocentre order/units/origin, gantry rotation plane and direction, units), exported as `pydosert.CONVENTIONS`. Every photon example now opens with the same summary, and `tests/unittests/test_conventions.py` checks each statement against the layer that implements it.
 - `IonBeamletBatch` supports indexing (`batch[i]`, slices, index tensors and bool masks, always returning a batch) and `chunks(n)` for walking it in sub-batches. Slices are views, so gradients flow back to the parent.
 - `IonDoseEngine` takes `beamlet_chunk_size`, on the constructor or per `compute_dose` call, computing the beamlets in gradient-checkpointed groups. Peak memory becomes flat in the spot count instead of linear (190 MiB at every size from G=64 to G=2048 on a 32x150x32 grid, against 317 MiB to out-of-memory unchunked). The result is unchanged for any chunk size.
 - Proton pencil-beam dose calculation. `IonDoseEngine` computes the dose of a batch of ion beamlets on a beam's-eye-view lattice and is differentiable end to end, including an optional `bev_correction` hook for a learned residual model. Supporting types: `IonKernelTable` (commissioned base data in a padded-rectangular `.npz`), `IonBeamletBatch`, `IonMachineConfig`, `fermi_eyges_excess` (heterogeneity-aware multiple-Coulomb-scattering correction, identically zero in water) and the BEV geometry helpers in `pydosert.geometry.bev`. Nothing in the photon pipeline changes.
@@ -31,6 +31,7 @@ This changelog was introduced after releasing version 1.3.0.
 - The example notebooks have been updated to the new objective, conditioning and plotting APIs.
 
 ### Fixed
+- The radiological-depth ray caster placed the isocentre at `iso / resolution + 0.5`, half a voxel further along every axis than `FluenceVolumeLayer` and `build_rotation_grids`, so the depth ray ran beside the beam axis whose radiological depth it measures rather than along it. All three now use `iso / resolution`. Dose changes most at field edges and in the entrance region, and a four-field box in water sits twice as close to its isocentre (0.81 mm off, now 0.41 mm).
 - `Patient.device` and `Patient.dtype` read the density-image tensor directly; they previously referenced a non-existent `.attenuation.data` attribute and raised.
 - `load_structures` returns early when no structure set is given, instead of nesting the whole body in a conditional.
 
