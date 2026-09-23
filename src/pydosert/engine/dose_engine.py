@@ -214,8 +214,14 @@ class DoseEngine(PhotonBaseEngine):
             chunks.append((start, end, (rad_depth_layer, rotation_layer)))
         return chunks
 
-    #: Depth planes the contamination term projects at once, bounding its transient.
-    CONTAMINATION_SLAB = 32
+    #: Depth planes the contamination term reuses one projection for. Over 4 planes
+    #: the divergence moves the projected position by a fraction of the blur it is
+    #: sampling, and it bounds the term's transient too.
+    CONTAMINATION_PLANES = 4
+
+    #: The blur is computed on a fluence map coarsened by this factor; its sigma is
+    #: tens of millimetres, so sampling it this coarsely costs a fraction of a percent.
+    CONTAMINATION_COARSEN = 8
 
     def _add_electron_contamination(self, dose: torch.Tensor, fluence_maps: torch.Tensor,
                                     depths: torch.Tensor) -> None:
@@ -234,25 +240,28 @@ class DoseEngine(PhotonBaseEngine):
         """
         amplitude, sigma_mm, range_mm = self.machine_config.electron_contamination
         with torch.autocast(device_type=self.device.type, enabled=False):
-            sigma_px = sigma_mm / self.fluence_map_layer.pixel_size_mm
+            coarse = self.CONTAMINATION_COARSEN
+            sigma_px = sigma_mm / self.fluence_map_layer.pixel_size_mm / coarse
             r = int(3 * sigma_px)
             x = torch.arange(-r, r + 1, device=fluence_maps.device, dtype=torch.float32)
             g = torch.exp(-0.5 * (x / sigma_px) ** 2)
             g = g / g.sum()
-            f = fluence_maps.float().unsqueeze(1)
+            f = F.avg_pool2d(fluence_maps.float().unsqueeze(1), coarse)
             f = F.conv2d(f, g.view(1, 1, -1, 1), padding=(r, 0))
-            f = F.conv2d(f, g.view(1, 1, 1, -1), padding=(0, r))[:, 0].to(fluence_maps.dtype)
+            f = F.conv2d(f, g.view(1, 1, 1, -1), padding=(0, r))
+            f = F.interpolate(f, size=fluence_maps.shape[-2:], mode="bilinear",
+                              align_corners=False)[:, 0].to(fluence_maps.dtype)
         D = depths.shape[1]
-        for d0 in range(0, D, self.CONTAMINATION_SLAB):
-            d1 = min(D, d0 + self.CONTAMINATION_SLAB)
-            dep = depths[:, d0:d1].float()
+        for d0 in range(0, D, self.CONTAMINATION_PLANES):
+            d1 = min(D, d0 + self.CONTAMINATION_PLANES)
+            dep = depths[:, d0:d1]
             # zero in front of the skin, where the depth is zero too
             att = torch.exp(-(dep / range_mm) ** 2) * (dep > 0)
             if not bool((att > 1e-6).any()):
                 continue
-            vol = self.fluence_volume_layer(f, planes=(d0, d1))
+            vol = self.fluence_volume_layer(f, planes=(d0, d0 + 1))   # reused across the group
             dose[:, d0:d1] += (amplitude * vol * att.unsqueeze(-1).to(vol.dtype)).to(dose.dtype)
-            del dep, att, vol
+            del att, vol
 
     def _forward_core(
         self,
