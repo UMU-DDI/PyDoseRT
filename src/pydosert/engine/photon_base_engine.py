@@ -17,6 +17,7 @@ The "geometry context" is an opaque object produced by ``_full_geometry`` /
 inspects it, so each engine is free to decide what it contains (e.g. the
 beam-count-dependent layers that must vary per chunk).
 """
+import warnings
 from dataclasses import replace
 
 import torch
@@ -358,6 +359,32 @@ class PhotonBaseEngine(nn.Module):
             fluence_maps,
         )
 
+    def _warn_if_rotation_clips(self, density_image: torch.Tensor) -> None:
+        """Warn once if tissue sits outside the cylinder that survives every gantry angle.
+
+        Each axial slice is rotated about the isocentre, so only the largest circle
+        about it that fits in the grid is kept; anything further out leaves the array
+        at some angles and is treated as air.
+        """
+        if getattr(self, "_clip_warned", False):
+            return
+        self._clip_warned = True
+        _, res_d, res_w = self.dose_grid_spacing
+        _, D, W = self.dose_grid_shape
+        iso_d, iso_w = self.iso_center[1], self.iso_center[2]
+        radius = min(iso_d, D * res_d - iso_d, iso_w, W * res_w - iso_w)
+        d = torch.arange(D, device=density_image.device) * res_d - iso_d
+        w = torch.arange(W, device=density_image.device) * res_w - iso_w
+        outside = (d[:, None] ** 2 + w[None, :] ** 2) > radius ** 2
+        body = density_image > 0.05
+        lost = int((body & outside).sum())
+        if lost:
+            warnings.warn(
+                f"{lost} non-air voxels ({100 * lost / max(int(body.sum()), 1):.1f}% of the "
+                f"patient) lie further than {radius:.0f} mm from the isocentre and are lost "
+                "when a slice is rotated. Pad the grid: load_dicom(pad_to_cylinder=True), "
+                "or pydosert.data.loaders.pad_to_cylinder.", stacklevel=2)
+
     def compute_dose(
         self,
         beam_input: BeamSequence | Beam,
@@ -396,6 +423,7 @@ class PhotonBaseEngine(nn.Module):
             ct_tensor = density_image
             if ct_tensor.dim() == 3:
                 ct_tensor = ct_tensor.unsqueeze(0)
+            self._warn_if_rotation_clips(ct_tensor)
         else:
             ct_tensor = None
 
@@ -553,6 +581,9 @@ class PhotonBaseEngine(nn.Module):
 
         self.layers_initialized = False
 
+        # the calibration phantom is water to the grid edge, which is not the caller's
+        # patient leaving the rotation cylinder
+        self._clip_warned = True
         dose = self.compute_dose(
             beam,
             density_image=water_attenuation,
@@ -570,6 +601,8 @@ class PhotonBaseEngine(nn.Module):
             if verbose:
                 print(f"Calibration failed. Adjusting calibration factor to: {calibration_factor}")
             self.machine_config.mean_photon_energy_MeV = calibration_factor
+
+        self._clip_warned = False
 
         # Reset layers to apply new beam sequence
         self.layers_initialized = False
