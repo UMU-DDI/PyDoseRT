@@ -307,7 +307,7 @@ class PencilBeamModel:
                         normalize: bool = True,
                         apply_circular_mask: bool = False, 
                         mask_radius_cm: float = None,
-                        depth_threshold_mm: float = 0.5) -> torch.Tensor:
+                        depth_threshold_mm: float = 0.0) -> torch.Tensor:
         """
         Generate pencil beam kernel for given depths and radial grid.
 
@@ -315,7 +315,8 @@ class PencilBeamModel:
             d (torch.Tensor): Radiological depth [mm], shape (B*G, N, 1).  # TODO: Fix this documentation as it does not correspond with the implementation
             r (torch.Tensor): Radial grid [mm], shape (Hk, Wk).
             normalize (bool): Normalize to the unit kernel at 10cm radiological depth.            
-            depth_threshold_mm (float): Minimum radiological depth [mm] below which kernel is zero. Default is 0.5mm.
+            depth_threshold_mm (float): Radiological depth [mm] below which the kernel is
+                zero. Default is 0, which zeroes nothing.
 
         Returns:
             torch.Tensor: Pencil beam kernel, shape (B*G, N, Hk, Wk).
