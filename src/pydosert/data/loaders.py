@@ -2,6 +2,7 @@
 Patient configuration - CT dimensions and geometric parameters.
 """
 # from pydantic import BaseModel, Field, model_validator
+import math
 from typing import List
 import torch
 from dataclasses import replace
@@ -12,6 +13,137 @@ from pydosert.data import Patient, BeamSequence
 import SimpleITK as sitk
 from typing import List, Dict, Any, Tuple
 
+
+def body_cylinder_radius_mm(ct_volume, resolution, iso_center, air_hu: float = -500.0) -> float:
+    """Largest axial distance from the isocentre to a non-air voxel, in mm.
+
+    Args:
+        ct_volume: CT in HU, (H, D, W).
+        resolution: Voxel spacing (res_H, res_D, res_W) in mm.
+        iso_center: Isocentre (iso_H, iso_D, iso_W) in mm from the grid origin.
+        air_hu: HU at or below which a voxel counts as air.
+
+    Returns:
+        float: Radius in mm, 0.0 if the volume is all air.
+    """
+    arr = ct_volume.detach().cpu().numpy() if isinstance(ct_volume, torch.Tensor) else np.asarray(ct_volume)
+    body = (arr > air_hu).any(axis=0)                  # a voxel's axial radius does not depend on H
+    if not body.any():
+        return 0.0
+    _, res_d, res_w = resolution
+    d_idx, w_idx = np.nonzero(body)
+    dd = (d_idx + 0.5) * res_d - iso_center[1]
+    ww = (w_idx + 0.5) * res_w - iso_center[2]
+    return float(np.sqrt(dd * dd + ww * ww).max())
+
+
+def pad_to_cylinder(volumes, resolution, iso_center, radius_mm: float = 0.0, fill_value=0.0):
+    """Pad the axial plane so that rotating about the isocentre crops nothing.
+
+    D and W are padded symmetrically until the isocentre is centred and the
+    inscribed circle covers ``radius_mm`` (from ``body_cylinder_radius_mm``). H is
+    the rotation axis and is left alone. Move the beams to ``new_iso_center`` and
+    bring dose back with ``crop_from_cylinder``.
+
+    Args:
+        volumes: One (..., H, D, W) volume or a list/tuple of them on one grid.
+        resolution: Voxel spacing (res_H, res_D, res_W) in mm.
+        iso_center: Isocentre (iso_H, iso_D, iso_W) in mm from the grid origin.
+        radius_mm: Radius the axial plane must hold; 0 only centres the isocentre.
+        fill_value: Pad value, one scalar or one per volume.
+
+    Returns:
+        tuple: (padded, new_iso_center, pad_info).
+    """
+    single = not isinstance(volumes, (list, tuple))
+    vol_list = [volumes] if single else list(volumes)
+    fills = list(fill_value) if isinstance(fill_value, (list, tuple)) else [fill_value] * len(vol_list)
+    if len(fills) != len(vol_list):
+        raise ValueError(f"{len(fills)} fill values for {len(vol_list)} volumes")
+    H, D, W = vol_list[0].shape[-3:]
+    if any(tuple(v.shape[-3:]) != (H, D, W) for v in vol_list):
+        raise ValueError(f"all volumes must share the (H, D, W) grid {(H, D, W)}")
+
+    _, res_d, res_w = resolution
+    _, iso_d, iso_w = iso_center
+
+    def _centring(n, iso_voxels):
+        diff = 2.0 * iso_voxels - n
+        return (0, math.ceil(diff)) if diff >= 0 else (math.ceil(-diff), 0)
+
+    d_before, d_after = _centring(D, iso_d / res_d)
+    w_before, w_after = _centring(W, iso_w / res_w)
+
+    if radius_mm:
+        # +2 voxels: the radius is measured to voxel centres, so the outermost
+        # voxel's far corner sits up to one voxel beyond it. Grow both sides
+        # equally -- padding one side would move the isocentre off centre.
+        need_d = math.ceil(2.0 * radius_mm / res_d) + 2 - (D + d_before + d_after)
+        need_w = math.ceil(2.0 * radius_mm / res_w) + 2 - (W + w_before + w_after)
+        if need_d > 0:
+            d_before += math.ceil(need_d / 2.0)
+            d_after += math.ceil(need_d / 2.0)
+        if need_w > 0:
+            w_before += math.ceil(need_w / 2.0)
+            w_after += math.ceil(need_w / 2.0)
+
+    def _pad(v, fv):
+        if isinstance(v, torch.Tensor):
+            return torch.nn.functional.pad(v, (w_before, w_after, d_before, d_after),
+                                           mode="constant", value=float(fv))
+        widths = [(0, 0)] * (v.ndim - 2) + [(d_before, d_after), (w_before, w_after)]
+        return np.pad(v, widths, mode="constant", constant_values=fv)
+
+    padded = [_pad(v, fv) for v, fv in zip(vol_list, fills)]
+    new_iso_center = (iso_center[0], iso_d + d_before * res_d, iso_w + w_before * res_w)
+    pad_info = {"d_before": d_before, "w_before": w_before, "original_shape": (H, D, W)}
+    if single:
+        return padded[0], new_iso_center, pad_info
+    return (tuple(padded) if isinstance(volumes, tuple) else padded), new_iso_center, pad_info
+
+
+def crop_from_cylinder(volumes, pad_info: dict):
+    """Undo ``pad_to_cylinder``, cropping back to the original grid.
+
+    Args:
+        volumes: One (..., H, D, W) volume on the padded grid, or a list/tuple.
+        pad_info: As returned by ``pad_to_cylinder``.
+
+    Returns:
+        The volume(s) on the original grid, in the container type given.
+    """
+    _, D, W = pad_info["original_shape"]
+    d0, w0 = pad_info["d_before"], pad_info["w_before"]
+
+    def _crop(v):
+        return v[..., d0:d0 + D, w0:w0 + W]
+
+    if isinstance(volumes, (list, tuple)):
+        cropped = [_crop(v) for v in volumes]
+        return tuple(cropped) if isinstance(volumes, tuple) else cropped
+    return _crop(volumes)
+
+def _pad_patient_to_cylinder(patient: 'Patient', beam_sequences: list) -> tuple['Patient', list]:
+    """Pad the patient's volumes to the rotation cylinder and move the beams with them."""
+    isos = {tuple(round(float(v), 3) for v in s.iso_center) for s in beam_sequences}
+    if len(isos) != 1:
+        raise ValueError(f"beams have different isocentres, cannot pad once: {isos}")
+    iso = tuple(float(v) for v in beam_sequences[0].iso_center)
+    radius = body_cylinder_radius_mm(patient._ct_tensor, patient.resolution, iso)
+    names = list(patient.structures)
+    volumes = [patient._ct_tensor, patient.dose] + [patient.structures[n] for n in names]
+    fills = [-1000.0, 0.0] + [0] * len(names)
+    keep = [i for i, v in enumerate(volumes) if v is not None]
+    padded, new_iso, _ = pad_to_cylinder([volumes[i] for i in keep], patient.resolution, iso,
+                                         radius, [fills[i] for i in keep])
+    out = dict(zip(keep, padded))
+    patient = Patient(ct_tensor=out.get(0), dose=out.get(1),
+                      structures={n: out[2 + k] for k, n in enumerate(names) if 2 + k in out},
+                      resolution=patient.resolution,
+                      number_of_fractions=patient.number_of_fractions)
+    return patient, [replace(s, iso_center=new_iso) for s in beam_sequences]
+
+
 def load_dicom(
     ct_folder: Path,
     dose_path: List[Path] | Path | None,
@@ -21,6 +153,7 @@ def load_dicom(
     use_delivery: bool = False,
     new_spacing: tuple[float, float, float] = (2.0, 2.0, 2.0),
     crop_volume: bool = True,
+    pad_to_cylinder: bool = False,
     device: torch.device | str = 'cuda',
     dtype: torch.dtype = torch.float32,
 ) -> tuple['Patient', 'BeamSequence']:
@@ -37,6 +170,9 @@ def load_dicom(
             If False (default), configure for raw control points (N+1 from DICOM).
         new_spacing (tuple[float, float, float]): Target voxel spacing (z, y, x) in mm.
         crop_volume (bool): If True, center-crop the axial plane to 40 cm.
+        pad_to_cylinder (bool): If True, pad the axial plane so that no tissue leaves
+            the grid when a slice is rotated about the isocentre, and move the beams
+            with it. The dose then comes out on the padded grid.
         device (torch.device | str): Device for BeamSequence tensors.
         dtype (torch.dtype): Data type for BeamSequence tensors.
     Returns:
@@ -149,7 +285,8 @@ def load_dicom(
             beam_sequence = beam_sequence.to_delivery()
         beam_sequences.append(beam_sequence)
 
-        
+    if pad_to_cylinder and beam_sequences:
+        patient, beam_sequences = _pad_patient_to_cylinder(patient, beam_sequences)
 
     return patient, beam_sequences
 
