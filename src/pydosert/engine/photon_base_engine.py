@@ -63,6 +63,8 @@ class PhotonBaseEngine(nn.Module):
         dtype: torch.dtype = None,
         verbose: bool = False,
         beam_chunk_size: int | None = None,
+        conv_backend: str = "direct",
+        depth_threshold_mm: float = 0.0,
     ) -> "PhotonBaseEngine":
         """
         Initializes the engine.
@@ -79,6 +81,12 @@ class PhotonBaseEngine(nn.Module):
             device: PyTorch device for computation.
             dtype: Data type for tensors.
             verbose: Enable verbose output (default: False).
+            conv_backend: ``"direct"`` (default) or ``"fft"`` for the per-plane kernel
+                convolution. Identical results; the FFT path's cost does not grow with
+                ``kernel_size``, so a large, untruncated kernel costs no more than a
+                small one.
+            depth_threshold_mm: Radiological depth below which kernels are zeroed
+                (default 0, i.e. never).
             beam_chunk_size: Default number of beams processed per gradient-checkpointed
                 chunk in compute_dose. None (default) processes all beams in a single
                 pass (lowest runtime, highest peak memory). Set a positive value to trade
@@ -88,6 +96,8 @@ class PhotonBaseEngine(nn.Module):
         super().__init__()
         self.kernel_size = kernel_size
         self.beam_chunk_size = beam_chunk_size
+        self.conv_backend = conv_backend
+        self.depth_threshold_mm = depth_threshold_mm
         self._chunk_geometry_cache = None
         self._chunk_geometry_cache_key = None
 

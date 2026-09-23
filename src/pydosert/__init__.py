@@ -1,5 +1,6 @@
 from pydosert.engine.photon_base_engine import PhotonBaseEngine
 from pydosert.engine.dose_engine import DoseEngine
+from pydosert.engine.pencil_depth_engine import PencilDepthEngine
 from pydosert.engine.ion_dose_engine import IonDoseEngine
 from pydosert.physics.dose_mask import patient_dose_mask
 from pydosert.geometry.conventions import CONVENTIONS, print_conventions
@@ -21,6 +22,7 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
     
 __all__ = ['DoseEngine', 
+           'PencilDepthEngine',
            'PhotonBaseEngine',
            'IonDoseEngine',
            'MachineConfig', 

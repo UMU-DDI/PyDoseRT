@@ -172,6 +172,8 @@ class PencilBeamModel:
         """
         self.tpr = tpr_20_10
         self.resolution = resolution
+        # what get_nested_kernels -- the path every engine uses -- passes on
+        self.depth_threshold_mm = 0.0
         self.res_h, self.res_w = resolution[0] / 10, resolution[2] / 10
 
         # Determine which dimension has smaller pixel size
@@ -445,6 +447,7 @@ class PencilBeamModel:
         return self.get_pencil_beam(
             d=radiological_depth[..., 0, torch.newaxis, torch.newaxis],
             r=self.rs[torch.newaxis, torch.newaxis, :, :],
+            depth_threshold_mm=self.depth_threshold_mm,
         )
 
     def R_limit(self, d: torch.Tensor, F: torch.Tensor) -> torch.Tensor:

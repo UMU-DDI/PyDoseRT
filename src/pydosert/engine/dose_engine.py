@@ -147,12 +147,15 @@ class DoseEngine(PhotonBaseEngine):
                 kernel_size=self.kernel_size,
                 verbose=self.verbose
             )
+            self.pencil_beam_kernel_layer.pbm.depth_threshold_mm = getattr(
+                self, "depth_threshold_mm", 0.0)
 
         if initialize_beam_wise_conv_layer:
             self.beam_wise_conv_layer = BeamWiseConvolutionalLayer(
                 self.device,
                 self.dtype,
-                verbose=self.verbose
+                verbose=self.verbose,
+                backend=getattr(self, "conv_backend", "direct"),
             )
 
         if initialize_rotation_layer:
@@ -263,6 +266,34 @@ class DoseEngine(PhotonBaseEngine):
             dose[:, d0:d1] += (amplitude * vol * att.unsqueeze(-1).to(vol.dtype)).to(dose.dtype)
             del att, vol
 
+    def _bev_dose(self, fluence_maps: torch.Tensor, kernels: torch.Tensor,
+                  central_depths: torch.Tensor, density_image: torch.Tensor,
+                  rotation_layer: nn.Module, keep_fluence: bool = False):
+        """Dose in each beam's frame from its fluence maps, before energy and MU scaling.
+
+        The one step a subclass replaces to compute dose differently from the same
+        fluence; PencilDepthEngine picks the kernel per pencil here. It projects the
+        fluence itself, so a subclass can free the projected volume as early as it likes.
+
+        Args:
+            fluence_maps: [B*G, Hf, Wf] fluence maps, collimator rotation applied.
+            kernels: [kH, kW, B*G, D] per-plane kernels at the central-axis depth.
+            central_depths: [B*G, D] central-axis radiological depth, density x mm.
+            density_image: [B, H, D, W] relative density.
+            rotation_layer: The beams' rotation layer (for their gantry angles).
+            keep_fluence: Also return the projected fluence volume.
+
+        Returns:
+            (dose [B*G, D, H, W, 1], fluence volume [B*G, D, H, W, 1] or None).
+        """
+        fluence_volumes = self.fluence_volume_layer(fluence_maps)
+        dose = self.beam_wise_conv_layer(fluence_volumes, kernels)
+        if self.machine_config.electron_contamination is not None:
+            H, _, W = self.dose_grid_shape
+            self._add_electron_contamination(
+                dose, fluence_maps, central_depths[:, :, None, None].expand(-1, -1, H, W))
+        return dose, (fluence_volumes if keep_fluence else None)
+
     def _forward_core(
         self,
         leaf_positions: torch.Tensor | None,
@@ -341,16 +372,9 @@ class DoseEngine(PhotonBaseEngine):
                     dtype=self.dtype
                 )  # [B*G, H, W]
 
-            batched_fluence_volumes = self.fluence_volume_layer(
-                batched_fluence_maps
-            )
-            batched_accumulated_dose = self.beam_wise_conv_layer(
-                batched_fluence_volumes, batched_kernels
-            )
-            if self.machine_config.electron_contamination is not None:
-                self._add_electron_contamination(
-                    batched_accumulated_dose, batched_fluence_maps,
-                    central_depths[:, :, None, None].expand(-1, -1, H, W))
+            batched_accumulated_dose, batched_fluence_volumes = self._bev_dose(
+                batched_fluence_maps, batched_kernels, central_depths, density_image,
+                rotation_layer, keep_fluence=return_intermediates)
             batched_accumulated_dose.mul_(self.machine_config.mean_photon_energy_MeV)
 
             if not(return_intermediates):

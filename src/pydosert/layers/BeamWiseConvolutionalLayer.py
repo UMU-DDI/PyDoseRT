@@ -105,6 +105,85 @@ class BeamWiseConvolutionalLayer(nn.Module):
                 return n
             n += 1
 
+    def depth_binned(self, fluence_vol: torch.Tensor, depth: torch.Tensor,
+                     nodes_mm: torch.Tensor, node_kernels: torch.Tensor) -> torch.Tensor:
+        """Convolve with a kernel chosen per PENCIL rather than per plane.
+
+        Each pencil's fluence is split between the two depth nodes bracketing its
+        own radiological depth, with linear weights that sum to one, and each node
+        is convolved with that node's kernel::
+
+            dose = sum_m  ( fluence * lambda_m(depth) )  (*)  K(d_m)
+
+        which equals convolving every pencil with the kernel linearly interpolated
+        to its own depth. The node kernels are shared by every plane and beam, so
+        their spectra are computed once; per group of planes only the nodes the
+        group's depths actually reach are transformed, and the spectra accumulate
+        before a single inverse transform.
+
+        Args:
+            fluence_vol (torch.Tensor): [B*G, D, H, W, 1] BEV fluence.
+            depth (torch.Tensor): [B*G, D, H, W] per-pencil radiological depth, in
+                the same density x mm units the kernel model takes.
+            nodes_mm (torch.Tensor): [M] increasing node depths, density x mm.
+            node_kernels (torch.Tensor): [M, kH, kW] kernel at each node.
+
+        Returns:
+            torch.Tensor: [B*G, D, H, W, 1], in the dtype F.conv2d would return.
+        """
+        BG, D, H, W, _ = fluence_vol.shape
+        M, kH, kW = node_kernels.shape
+        dev_type = fluence_vol.device.type
+        out_dtype = (torch.get_autocast_dtype(dev_type) if torch.is_autocast_enabled(dev_type)
+                     else fluence_vol.dtype)
+        fh = self._fft_size(H + kH - 1)
+        fw = self._fft_size(W + kW - 1)
+        ch, cw = (kH - 1) // 2, (kW - 1) // 2
+        x = fluence_vol.reshape(BG * D, H, W)
+        dep = depth.reshape(BG * D, H, W)
+        out = torch.empty((BG * D, H, W), device=x.device, dtype=out_dtype)
+        group = max(1, (H * W * 8) // max(1, fh * (fw // 2 + 1)))
+        group = max(1, min(BG * D, group * 4))
+        with torch.autocast(device_type=dev_type, enabled=False):
+            nodes = nodes_mm.to(device=x.device, dtype=torch.float32)
+            khat = torch.fft.rfft2(torch.flip(node_kernels.float(), dims=(-2, -1)), s=(fh, fw))
+            for s in range(0, BG * D, group):
+                e = min(s + group, BG * D)
+                xs = x[s:e].float()
+                ds = dep[s:e].float().clamp(float(nodes[0]), float(nodes[-1]))
+                lo = (torch.searchsorted(nodes, ds.contiguous(), right=True) - 1).clamp(0, M - 2)
+                t = (ds - nodes[lo]) / (nodes[lo + 1] - nodes[lo])
+                # Which planes reach which nodes. A group spans many planes, shallow
+                # to deep, so almost every node is reached by SOME plane -- but each
+                # plane reaches only a few (2-4 at depth, ~10-20 at the skin).
+                # Transforming only the planes that reach a node, instead of the
+                # whole group for every node reached by any of them, is the
+                # difference between ~4 and ~44 transforms per plane.
+                # Node activity is decided by the pencils that carry fluence. A BEV
+                # plane spans the whole patient cross-section, so it meets the skin
+                # somewhere and would otherwise reach almost every node -- from
+                # pencils with no fluence, which contribute nothing to any of them.
+                live = xs != 0
+                lo_min = torch.where(live, lo, torch.full_like(lo, M)).flatten(1).amin(1)
+                hi_max = torch.where(live, lo, torch.full_like(lo, -1)).flatten(1).amax(1) + 1
+                if not bool(live.any()):
+                    out[s:e] = 0
+                    continue
+                acc = torch.zeros((e - s, fh, fw // 2 + 1), device=x.device,
+                                  dtype=torch.complex64)
+                for m in range(int(lo_min.min()), int(hi_max.max()) + 1):
+                    planes = ((lo_min <= m) & (hi_max >= m)).nonzero().flatten()
+                    if planes.numel() == 0:
+                        continue
+                    lo_p, t_p = lo[planes], t[planes]
+                    w = torch.where(lo_p == m, 1.0 - t_p, torch.zeros_like(t_p))
+                    w = w + torch.where(lo_p + 1 == m, t_p, torch.zeros_like(t_p))
+                    acc[planes] += torch.fft.rfft2(xs[planes] * w, s=(fh, fw)) * khat[m]
+                    del w, lo_p, t_p
+                out[s:e] = torch.fft.irfft2(acc, s=(fh, fw))[:, ch:ch + H, cw:cw + W]
+                del acc, xs, ds, lo, t, lo_min, hi_max
+        return out.reshape(BG, D, H, W, 1)
+
     def _forward_fft(self, fluence_vol: torch.Tensor, kernels: torch.Tensor) -> torch.Tensor:
         """The same convolution by FFT, at a cost independent of the kernel support.
 

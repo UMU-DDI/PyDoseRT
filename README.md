@@ -22,6 +22,8 @@ PyDoseRT implements a physics-based **pencil beam convolution model** with full 
   - Sequential processing mode for memory-efficient computation
   - Parallel processing for maximum speed
 - **Treatment Modalities**: Support for VMAT (Volumetric Modulated Arc Therapy), IMRT, and static fields
+- **Per-Pencil Depth**: `PencilDepthEngine` picks each pencil's kernel from its own
+  radiological depth rather than the central axis's
 - **Proton Pencil Beam**: Differentiable ion dose engine with a heterogeneity-aware
   multiple-Coulomb-scattering model and a commissioned kernel table that can itself be
   calibrated by gradient descent
@@ -179,6 +181,23 @@ The dose calculation uses a parameterized convolution method based on Nyholm et.
 ```
 
 For a deeper understanding of the kernel computations, run `examples/kernel.ipynb`.
+
+### Per-Pencil Depth
+
+`DoseEngine` gives every voxel of a depth plane the radiological depth of the central
+axis, which is exact for a flat surface at normal incidence and wrong under oblique or
+curved skin and behind off-axis bone. `PencilDepthEngine` gives each pencil (beam's-eye-view
+column) its own depth, convolving by FFT with the kernel interpolated between fixed depth
+nodes (`depth_nodes_mm`, its cost knob):
+
+```python
+from pydosert import PencilDepthEngine
+
+engine = PencilDepthEngine(machine_config=config, kernel_size=51,
+                           dose_grid_spacing=spacing, dose_grid_shape=shape,
+                           beam_template=sequence)
+dose = engine.compute_dose(sequence, density_image=density)
+```
 
 ### Tissue Heterogeneity
 
