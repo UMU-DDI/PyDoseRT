@@ -874,8 +874,11 @@ class BeamSequence:
         intermediate positions.
 
         The returned BeamSequence has N control points (one less than original),
-        where each value is the average of adjacent control points:
+        where each position and angle is the average of adjacent control points:
             delivery[i] = (control_point[i] + control_point[i+1]) / 2
+        and each MU is the one delivered between them. Control-point mus follow
+        the DICOM loader's convention -- mus[i] is the MU delivered on the way
+        INTO control point i, zero at the first -- so that is mus[i + 1].
 
         Gradients flow back to the original control points.
 
@@ -896,8 +899,10 @@ class BeamSequence:
             self.leaf_positions[:-1, :, :] + self.leaf_positions[1:, :, :]
         ) / 2
 
-        # mus: [CP] -> [CP-1]
-        avg_mus = (self.mus[:-1] + self.mus[1:]) / 2
+        # mus: [CP] -> [CP-1]. The segment between control points i and i+1
+        # delivered mus[i + 1]; averaging it with mus[i] would smear the MU over
+        # two segments and drop half of the last one.
+        avg_mus = self.mus[1:]
 
         # jaw_positions: [CP, 2] -> [CP-1, 2]
         avg_jaw_positions = (

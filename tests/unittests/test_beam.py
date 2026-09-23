@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 import pytest
 import torch
+import dataclasses
 import math
 from pydosert.data import Beam, BeamSequence
 
@@ -181,6 +182,27 @@ class TestBeamSequence:
         assert beam_seq.jaw_positions.shape == (4, 2)
         assert beam_seq.mus.shape == (4,)
         assert beam_seq.gantry_angles.shape == (4,)
+
+    def test_delivery_segments_carry_their_own_mu(self, default_device, default_dtype):
+        """Segment i, between control points i and i+1, delivered mus[i + 1]."""
+        mus = torch.tensor([0.0, 3.0, 1.0, 4.0], device=default_device, dtype=default_dtype)
+        seq = BeamSequence.create(
+            gantry_angles_deg=[0.0, 2.0, 4.0, 6.0],
+            number_of_leaf_pairs=60,
+            field_size=(400, 400),
+            iso_center=(0.0, 0.0, 0.0),
+            device=default_device,
+            dtype=default_dtype,
+        )
+        seq = dataclasses.replace(seq, mus=mus)
+
+        delivery = seq.to_delivery()
+
+        assert torch.equal(delivery.mus, mus[1:])
+        assert float(delivery.mus.sum()) == pytest.approx(float(mus.sum()))
+        assert torch.allclose(delivery.gantry_angles,
+                              torch.tensor([1.0, 3.0, 5.0], device=default_device,
+                                           dtype=default_dtype) * math.pi / 180)
 
     def test_beam_sequence_indexing(self, default_device, default_dtype):
         """Test indexing into beam sequence returns Beam objects"""
