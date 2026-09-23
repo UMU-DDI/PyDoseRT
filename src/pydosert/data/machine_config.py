@@ -38,6 +38,8 @@ class MachineConfig(BaseSettings):
         minimum_dose_rate (float): Minimum dynamic-arc dose rate (MU/s).
         maximum_dose_rate (float): Maximum dynamic-arc dose rate (MU/s).
         mlc_transmission (float): Closed-MLC transmission as a fraction of open fluence.
+        electron_contamination (Optional[list[float]]): Contamination-electron term
+            [amplitude, sigma_mm, range_mm], or None.
         penumbra_fwhm (Optional[list[float]]): Penumbra FWHM (mm); one value, or two
             for the MLC and jaw directions respectively.
         head_scatter_amplitude (Optional[list[float]]): Head-scatter amplitude as a
@@ -144,6 +146,15 @@ class MachineConfig(BaseSettings):
             "this value so that the effective aperture is wider than the nominal "
             "leaf positions, matching the sub-field radiation leakage observed in "
             "physical measurements."
+        ),
+    )
+    electron_contamination: Optional[list[float]] = Field(
+        default=None,
+        description=(
+            "Electron contamination [amplitude, sigma_mm, range_mm]. The engine adds "
+            "amplitude * (fluence blurred by a Gaussian of sigma_mm at the isocentre "
+            "plane) * exp(-(d / range_mm)^2), d the radiological depth in mm. None "
+            "(the default) adds nothing."
         ),
     )
     sc_source_sigma_mm: Optional[list[float]] = Field(
