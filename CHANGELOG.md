@@ -9,6 +9,7 @@ This changelog was introduced after releasing version 1.3.0.
 ## [Unreleased]
 
 ### Added
+- `BeamWiseConvolutionalLayer(backend="fft")` convolves each depth plane with its kernel by FFT rather than a grouped `conv2d`: same result, but the cost no longer grows with `kernel_size`, so an untruncated kernel is as cheap as a small one. The default stays `"direct"`.
 - `pydosert.geometry.conventions` is the single definition of the axis conventions (volume layout, isocentre order/units/origin, gantry rotation plane and direction, units), exported as `pydosert.CONVENTIONS`. Every photon example now opens with the same summary, and `tests/unittests/test_conventions.py` checks each statement against the layer that implements it.
 - `IonBeamletBatch` supports indexing (`batch[i]`, slices, index tensors and bool masks, always returning a batch) and `chunks(n)` for walking it in sub-batches. Slices are views, so gradients flow back to the parent.
 - `IonDoseEngine` takes `beamlet_chunk_size`, on the constructor or per `compute_dose` call, computing the beamlets in gradient-checkpointed groups. Peak memory becomes flat in the spot count instead of linear (190 MiB at every size from G=64 to G=2048 on a 32x150x32 grid, against 317 MiB to out-of-memory unchunked). The result is unchanged for any chunk size.
