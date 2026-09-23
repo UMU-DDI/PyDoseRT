@@ -35,6 +35,7 @@ This changelog was introduced after releasing version 1.3.0.
 - The example notebooks have been updated to the new objective, conditioning and plotting APIs.
 
 ### Fixed
+- `BeamSequence.to_delivery` gave each segment the mean of two neighbouring MU increments, which smeared the MU half a segment backwards and dropped half of the last one -- an arc came out 448.66 MU against the plan's 450.36. Each segment now carries the MU delivered between its own two control points.
 - The radiological-depth ray caster placed the isocentre at `iso / resolution + 0.5`, half a voxel further along every axis than `FluenceVolumeLayer` and `build_rotation_grids`, so the depth ray ran beside the beam axis whose radiological depth it measures rather than along it. All three now use `iso / resolution`. Dose changes most at field edges and in the entrance region, and a four-field box in water sits twice as close to its isocentre (0.81 mm off, now 0.41 mm).
 - `Patient.device` and `Patient.dtype` read the density-image tensor directly; they previously referenced a non-existent `.attenuation.data` attribute and raised.
 - `load_structures` returns early when no structure set is given, instead of nesting the whole body in a conditional.
