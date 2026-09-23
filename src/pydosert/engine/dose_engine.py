@@ -12,6 +12,7 @@ the same hooks this class provides (``_initialize_layers``, ``_full_geometry``,
 ``_build_chunk_geometry`` and ``_forward_core``).
 """
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from pydosert.engine.photon_base_engine import PhotonBaseEngine
@@ -213,6 +214,46 @@ class DoseEngine(PhotonBaseEngine):
             chunks.append((start, end, (rad_depth_layer, rotation_layer)))
         return chunks
 
+    #: Depth planes the contamination term projects at once, bounding its transient.
+    CONTAMINATION_SLAB = 32
+
+    def _add_electron_contamination(self, dose: torch.Tensor, fluence_maps: torch.Tensor,
+                                    depths: torch.Tensor) -> None:
+        """Add the contamination-electron dose to the BEV ``dose`` [B*G, D, H, W, 1], in place.
+
+        Electrons from the treatment head are modelled as their own fluence: the photon
+        fluence blurred by a broad Gaussian, projected like it (divergence, inverse
+        square) and falling off as exp(-(d / range)^2) with radiological depth. The blur
+        gives the field-size dependence, since in a small field most of it falls outside
+        the aperture. Called only when the machine has the term.
+
+        Args:
+            dose: [B*G, D, H, W, 1] BEV dose, accumulated into.
+            fluence_maps: [B*G, Hf, Wf] fluence maps, collimator rotation applied.
+            depths: [B*G, D, H, W] radiological depth, density x mm.
+        """
+        amplitude, sigma_mm, range_mm = self.machine_config.electron_contamination
+        with torch.autocast(device_type=self.device.type, enabled=False):
+            sigma_px = sigma_mm / self.fluence_map_layer.pixel_size_mm
+            r = int(3 * sigma_px)
+            x = torch.arange(-r, r + 1, device=fluence_maps.device, dtype=torch.float32)
+            g = torch.exp(-0.5 * (x / sigma_px) ** 2)
+            g = g / g.sum()
+            f = fluence_maps.float().unsqueeze(1)
+            f = F.conv2d(f, g.view(1, 1, -1, 1), padding=(r, 0))
+            f = F.conv2d(f, g.view(1, 1, 1, -1), padding=(0, r))[:, 0].to(fluence_maps.dtype)
+        D = depths.shape[1]
+        for d0 in range(0, D, self.CONTAMINATION_SLAB):
+            d1 = min(D, d0 + self.CONTAMINATION_SLAB)
+            dep = depths[:, d0:d1].float()
+            # zero in front of the skin, where the depth is zero too
+            att = torch.exp(-(dep / range_mm) ** 2) * (dep > 0)
+            if not bool((att > 1e-6).any()):
+                continue
+            vol = self.fluence_volume_layer(f, planes=(d0, d1))
+            dose[:, d0:d1] += (amplitude * vol * att.unsqueeze(-1).to(vol.dtype)).to(dose.dtype)
+            del dep, att, vol
+
     def _forward_core(
         self,
         leaf_positions: torch.Tensor | None,
@@ -260,6 +301,7 @@ class DoseEngine(PhotonBaseEngine):
                 batched_radiological_depths = rad_depth_layer(density_image).detach()
                 batched_kernels = self.pencil_beam_kernel_layer(batched_radiological_depths).detach()
 
+            central_depths = batched_radiological_depths[..., 0]         # [B*G, D]
             if not(return_intermediates):
                 del batched_radiological_depths
             H, D, W = self.dose_grid_shape
@@ -296,6 +338,10 @@ class DoseEngine(PhotonBaseEngine):
             batched_accumulated_dose = self.beam_wise_conv_layer(
                 batched_fluence_volumes, batched_kernels
             )
+            if self.machine_config.electron_contamination is not None:
+                self._add_electron_contamination(
+                    batched_accumulated_dose, batched_fluence_maps,
+                    central_depths[:, :, None, None].expand(-1, -1, H, W))
             batched_accumulated_dose.mul_(self.machine_config.mean_photon_energy_MeV)
 
             if not(return_intermediates):

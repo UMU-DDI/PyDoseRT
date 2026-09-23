@@ -158,7 +158,8 @@ class FluenceVolumeLayer(nn.Module):
             )
 
     def forward(
-        self, fluence_map: torch.Tensor, bbox: tuple[int, int, int, int] = (None, None, None, None)
+        self, fluence_map: torch.Tensor, bbox: tuple[int, int, int, int] = (None, None, None, None),
+        planes: tuple[int, int] | None = None,
     ) -> torch.Tensor:
         """
         Projects the 2D fluence map into the 3D CT volume, applying geometric and profile corrections.
@@ -168,10 +169,12 @@ class FluenceVolumeLayer(nn.Module):
                 (a channel dim of 1 is inserted internally before grid sampling).
             bbox (tuple[int, int, int, int]): Crop indices (h_min_idx, h_max_idx, w_min_idx,
                 w_max_idx) into the CT (H, W) plane; None entries default to the full extent.
+            planes (tuple[int, int] | None): Half-open range [start, end) of depth planes
+                to project; None projects all D.
 
         Returns:
             torch.Tensor: Projected 3D volume of shape [B*G, D, cropped_H, cropped_W, 1],
-            where cropped_H and cropped_W follow from bbox.
+            where cropped_H and cropped_W follow from bbox, and D from planes.
         """
         B = fluence_map.shape[0]
         fluence_map = fluence_map.unsqueeze(1)
@@ -184,7 +187,7 @@ class FluenceVolumeLayer(nn.Module):
         
         vol_slices = []
         open_volumes = torch.sum(fluence_map, [1, 2, 3], keepdims=True)
-        for d in range(self.D):
+        for d in range(*(planes or (0, self.D))):
             # Get the precomputed sampling grid of the slice, crop to region
             grid = (
                 self.sampling_grids[d][
