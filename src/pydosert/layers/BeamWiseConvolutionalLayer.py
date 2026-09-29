@@ -212,17 +212,18 @@ class BeamWiseConvolutionalLayer(nn.Module):
         fh = self._fft_size(H + kH - 1)
         fw = self._fft_size(W + kW - 1)
         ch, cw = (kH - 1) // 2, (kW - 1) // 2
-        out = torch.empty((BG * D, H, W), device=x.device, dtype=out_dtype)
         # groups sized to one direct-path volume: the spectra of every plane at once
         # cost ~3x its peak memory, for no measurable time
         group = max(1, (H * W * 8) // max(1, fh * (fw // 2 + 1)))
         group = max(1, min(BG * D, group * 4))
+        # split + cat, not slicing and slice assignment: in backward every slice (and
+        # slice write) materialises a full-size gradient, quadratic in the group count
+        out = []
         with torch.autocast(device_type=x.device.type, enabled=False):
-            for s in range(0, BG * D, group):
-                e = min(s + group, BG * D)
-                spec = torch.fft.rfft2(x[s:e].float(), s=(fh, fw))
+            for xs, ks in zip(x.split(group), k.split(group)):
+                spec = torch.fft.rfft2(xs.float(), s=(fh, fw))
                 # flip: the direct path is a correlation, the FFT a convolution
-                spec *= torch.fft.rfft2(torch.flip(k[s:e].float(), dims=(-2, -1)), s=(fh, fw))
-                out[s:e] = torch.fft.irfft2(spec, s=(fh, fw))[:, ch:ch + H, cw:cw + W]
+                spec *= torch.fft.rfft2(torch.flip(ks.float(), dims=(-2, -1)), s=(fh, fw))
+                out.append(torch.fft.irfft2(spec, s=(fh, fw))[:, ch:ch + H, cw:cw + W].to(out_dtype))
                 del spec
-        return out.reshape(BG, D, H, W, 1)
+        return torch.cat(out).reshape(BG, D, H, W, 1)

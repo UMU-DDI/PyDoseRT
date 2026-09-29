@@ -227,8 +227,8 @@ class DoseEngine(PhotonBaseEngine):
     CONTAMINATION_COARSEN = 8
 
     def _add_electron_contamination(self, dose: torch.Tensor, fluence_maps: torch.Tensor,
-                                    depths: torch.Tensor) -> None:
-        """Add the contamination-electron dose to the BEV ``dose`` [B*G, D, H, W, 1], in place.
+                                    depths: torch.Tensor) -> torch.Tensor:
+        """The BEV ``dose`` [B*G, D, H, W, 1] plus the contamination-electron dose.
 
         Electrons from the treatment head are modelled as their own fluence: the photon
         fluence blurred by a broad Gaussian, projected like it (divergence, inverse
@@ -237,7 +237,7 @@ class DoseEngine(PhotonBaseEngine):
         the aperture. Called only when the machine has the term.
 
         Args:
-            dose: [B*G, D, H, W, 1] BEV dose, accumulated into.
+            dose: [B*G, D, H, W, 1] BEV dose.
             fluence_maps: [B*G, Hf, Wf] fluence maps, collimator rotation applied.
             depths: [B*G, D, H, W] radiological depth, density x mm.
         """
@@ -255,16 +255,19 @@ class DoseEngine(PhotonBaseEngine):
             f = F.interpolate(f, size=fluence_maps.shape[-2:], mode="bilinear",
                               align_corners=False)[:, 0].to(fluence_maps.dtype)
         D = depths.shape[1]
+        parts = []  # concatenated once: slice-wise += costs a full-size gradient copy per group in backward
         for d0 in range(0, D, self.CONTAMINATION_PLANES):
             d1 = min(D, d0 + self.CONTAMINATION_PLANES)
             dep = depths[:, d0:d1]
             # zero in front of the skin, where the depth is zero too
             att = torch.exp(-(dep / range_mm) ** 2) * (dep > 0)
             if not bool((att > 1e-6).any()):
+                parts.append(dose.new_zeros((dose.shape[0], d1 - d0, *dose.shape[2:])))
                 continue
             vol = self.fluence_volume_layer(f, planes=(d0, d0 + 1))   # reused across the group
-            dose[:, d0:d1] += (amplitude * vol * att.unsqueeze(-1).to(vol.dtype)).to(dose.dtype)
+            parts.append((amplitude * vol * att.unsqueeze(-1).to(vol.dtype)).to(dose.dtype))
             del att, vol
+        return dose + torch.cat(parts, dim=1)
 
     def _bev_dose(self, fluence_maps: torch.Tensor, kernels: torch.Tensor,
                   central_depths: torch.Tensor, density_image: torch.Tensor,
@@ -290,7 +293,7 @@ class DoseEngine(PhotonBaseEngine):
         dose = self.beam_wise_conv_layer(fluence_volumes, kernels)
         if self.machine_config.electron_contamination is not None:
             H, _, W = self.dose_grid_shape
-            self._add_electron_contamination(
+            dose = self._add_electron_contamination(
                 dose, fluence_maps, central_depths[:, :, None, None].expand(-1, -1, H, W))
         return dose, (fluence_volumes if keep_fluence else None)
 
