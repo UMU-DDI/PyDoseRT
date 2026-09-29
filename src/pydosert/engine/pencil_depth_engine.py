@@ -150,5 +150,5 @@ class PencilDepthEngine(DoseEngine):
             dose[:, :, h0:h1, w0:w1] += part.to(dose.dtype)
             del part
         if self.machine_config.electron_contamination is not None:
-            self._add_electron_contamination(dose, fluence_maps, depths)
+            dose = self._add_electron_contamination(dose, fluence_maps, depths)
         return dose, kept

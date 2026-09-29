@@ -48,6 +48,9 @@ class FluenceVolumeLayer(nn.Module):
         sampling_grids (torch.Tensor): Precomputed ray sampling grids mapping the MLC plane to the CT volume, shape [D, W, H, 2].
     """
 
+    #: Depth planes sampled per grid_sample call.
+    PLANE_GROUP = 16
+
     def __init__(self, machine_config: MachineConfig, 
                  resolution: tuple[float, float, float],
                  ct_array_shape: tuple[float, float, float],
@@ -185,32 +188,26 @@ class FluenceVolumeLayer(nn.Module):
         w_min_idx = 0 if w_min_idx is None else w_min_idx
         w_max_idx = W - 1 if w_max_idx is None else w_max_idx
         
-        vol_slices = []
-        open_volumes = torch.sum(fluence_map, [1, 2, 3], keepdims=True)
-        for d in range(*(planes or (0, self.D))):
-            # Get the precomputed sampling grid of the slice, crop to region
-            grid = (
-                self.sampling_grids[d][
-                    w_min_idx : w_max_idx + 1, h_min_idx : h_max_idx + 1, :
-                ]
-                .unsqueeze(0)
-                .repeat(B, 1, 1, 1)
-            ).to(fluence_map.dtype)
-            # Use the grid to sample the 2D fluence map into the slice
+        # PLANE_GROUP planes per grid_sample call (their grids stacked along W): one call
+        # per plane made the backward write a full fluence-map gradient per plane
+        d_start, d_end = planes or (0, self.D)
+        groups = []
+        for d0 in range(d_start, d_end, self.PLANE_GROUP):
+            d1 = min(d_end, d0 + self.PLANE_GROUP)
+            grid = self.sampling_grids[d0:d1, w_min_idx : w_max_idx + 1, h_min_idx : h_max_idx + 1, :]
+            P, Wc, Hc, _ = grid.shape
+            grid = grid.reshape(1, P * Wc, Hc, 2).expand(B, -1, -1, -1).to(fluence_map.dtype)
             sampled = F.grid_sample(
                 fluence_map,
                 grid,
                 mode="bilinear",
                 padding_mode="zeros",
                 align_corners=False,
-            )
-            sampled = sampled.permute(0, 2, 3, 1)  # [B*G,cropped_W,cropped_H,1]
-            # Apply correction
-            corr = self.profile_corrections[d].unsqueeze(0).unsqueeze(-1)
-            # corr = (open_volumes / torch.sum(sampled, (1, 2, 3), keepdims=True)).to(self.dtype)
-            vol_slices.append(sampled * corr)
-        volume_grid = torch.stack(vol_slices, dim=1)  # [B*G,D,cropped_W,cropped_H,1]
-        del sampled, fluence_map, grid, corr, vol_slices, open_volumes
+            )  # [B*G,1,P*cropped_W,cropped_H]
+            corr = self.profile_corrections[d0:d1].view(1, P, 1, 1).to(sampled.dtype)
+            groups.append(sampled.view(B, P, Wc, Hc) * corr)
+        volume_grid = torch.cat(groups, dim=1).unsqueeze(-1)  # [B*G,D,cropped_W,cropped_H,1]
+        del sampled, fluence_map, grid, corr, groups
 
         volume_grid = volume_grid.permute(0, 1, 3, 2, 4)
         return volume_grid
