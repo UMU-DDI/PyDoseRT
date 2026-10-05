@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 PyDoseRT uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 This changelog was introduced after releasing version 1.3.0.
 
-## [Unreleased]
+## [1.5.0]
 
 ### Added
 - `PencilDepthEngine`, a `DoseEngine` that picks the kernel per pencil (beam's-eye-view column) from that pencil's own radiological depth rather than per depth plane from the central axis's, so oblique and curved skin and off-axis bone get the kernel of their own depth. It interpolates between depth nodes (`depth_nodes_mm`, its cost knob) by depth-binned FFT superposition, at the peak memory of the direct convolution. `DoseEngine` gains one overridable step, `_bev_dose`, for it, and `conv_backend` / `depth_threshold_mm` on the constructor.
