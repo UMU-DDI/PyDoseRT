@@ -100,6 +100,7 @@ def test_engine_warns_about_what_rotation_would_clip(default_machine_config, def
                         device=default_device, dtype=torch.float32)
     with pytest.warns(UserWarning, match="non-air voxels"):
         engine.compute_dose(seq, density_image=density)
-    with warnings.catch_warnings():                  # warned once, not on every call
-        warnings.simplefilter("error")
+    with warnings.catch_warnings(record=True) as seen:   # warned once, not on every call
+        warnings.simplefilter("always")
         engine.compute_dose(seq, density_image=density)
+    assert not [w for w in seen if "non-air voxels" in str(w.message)]

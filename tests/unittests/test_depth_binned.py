@@ -9,7 +9,7 @@ from pydosert.layers.BeamWiseConvolutionalLayer import BeamWiseConvolutionalLaye
 
 
 def _rel(a: torch.Tensor, b: torch.Tensor) -> float:
-    return float((a - b).abs().max() / b.abs().max())
+    return float(((a - b).abs().max() / b.abs().max()).detach())
 
 
 def test_depth_binned_matches_per_pencil_interpolation_with_gradients(default_device):
